@@ -43,6 +43,26 @@ function basenameOf(path: string): string {
 /** Temporary diagnostics in the footer; off for release. */
 const MEDIA_DEBUG = false
 
+/**
+ * Which transport the desktop uses.
+ *
+ * `false` (today): the shell's forwarding proxy withholds `Content-Length`, so
+ * a proxied media response reports no seekable range. The desktop therefore
+ * addresses the same bytes over the signed loopback route, which Chromium's
+ * http media loader seeks in. If that route is unavailable or fails, the pane
+ * falls back to the proxied URL and buffers the file locally to restore
+ * seeking.
+ *
+ * `true` (once DSH preserves `Content-Length`): the proxied URL seeks natively
+ * and the loopback route is bypassed entirely — no minting, no extra server
+ * route. The Blob fallback stays in place either way, so an older shell still
+ * gets a working scrubber.
+ *
+ * This is a code switch on purpose: the transport is a property of the shell
+ * version, and flipping one constant is clearer than probing every open.
+ */
+const TRUST_CONTENT_LENGTH = false
+
 interface MediaBodyProps extends PreviewBodyProps {
   readonly kind: 'video' | 'audio'
 }
@@ -75,6 +95,8 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   // page already seeks natively, so it keeps the same-origin URL.
   useEffect(() => {
     if (remote === undefined) return
+    // Content-Length mode: the proxied URL is the transport, nothing to mint.
+    if (TRUST_CONTENT_LENGTH) return
     if (typeof location === 'undefined' || !location.protocol.startsWith('dsh-app')) return
     let alive = true
     void (async () => {
