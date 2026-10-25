@@ -174,6 +174,11 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
  */
 export async function serveMedia(request: Request, fs: HostFileSystem): Promise<Response> {
   const url = new URL(request.url)
+  // Experiment: tell the page which loopback origin answered, so it can try
+  // loading media over real HTTP instead of the dsh-app:// proxy.
+  if (url.searchParams.get('origin') === '1') {
+    return Response.json({ origin: url.origin }, { headers: BASE_HEADERS })
+  }
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')
   if (path.includes('\0') || !isAbsolute(path)) return failure(400, 'absolute path required')

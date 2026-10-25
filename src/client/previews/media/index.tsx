@@ -53,6 +53,8 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [buffering, setBuffering] = useState(false)
   const [blocked, setBlocked] = useState(false)
   const [size, setSize] = useState<number | undefined>(meta?.size)
+  const [diag, setDiag] = useState('')
+  const [lanSrc, setLanSrc] = useState('')
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
 
@@ -61,6 +63,28 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const name = typeof absolutePath === 'string' ? basenameOf(absolutePath) : ''
   const bytes = formatBytes(size ?? meta?.size)
   const metaLine = bytes === '' ? name : `${name} · ${bytes}`
+
+  // Experiment: ask the Host for its loopback origin, then address the same
+  // bytes over real HTTP so Chromium uses its http media loader.
+  useEffect(() => {
+    if (remote === undefined) return
+    let alive = true
+    void (async () => {
+      try {
+        const probe = new URL(remote)
+        probe.searchParams.set('origin', '1')
+        const response = await fetch(probe)
+        if (!response.ok) return
+        const body = await response.json() as { origin?: unknown }
+        if (typeof body.origin !== 'string' || body.origin === '') return
+        const target = new URL(remote)
+        if (alive) setLanSrc(`${body.origin}${target.pathname}${target.search}`)
+      } catch {
+        // Leave the proxied URL in place.
+      }
+    })()
+    return () => { alive = false }
+  }, [remote])
 
   useEffect(() => {
     setFailed(false)
@@ -103,6 +127,20 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       if (!element.isConnected) return
       const end = element.seekable.length > 0 ? element.seekable.end(0) : 0
       void (async () => {
+        // Diagnostic: what the element believes, next to whether the loopback
+        // HTTP URL answers at all.
+        const duration = Number.isFinite(element.duration) ? element.duration.toFixed(2) : '?'
+        let lanStatus = 0
+        if (lanSrc !== '') {
+          try {
+            const response = await fetch(lanSrc, { headers: { Range: 'bytes=0-1' } })
+            lanStatus = response.status
+            await response.body?.cancel()
+          } catch {
+            lanStatus = -1
+          }
+        }
+        setDiag(`seekable=${end.toFixed(2)} dur=${duration} lan=${lanStatus}`)
         // The desktop file resource usually reports no size. Without one the
         // buffering cap cannot apply, and any file — however large — would be
         // pulled into memory. The route's Content-Range carries the real
@@ -139,7 +177,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     }, 300)
   }
 
-  const activeSrc = bufferedUrl === '' ? remote : bufferedUrl
+  const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
 
   if (remote === undefined) {
     return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
@@ -205,6 +243,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
         {info !== '' && <span style={styles.name}>{info}</span>}
+        {diag !== '' && <span style={styles.name}>{diag}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
         <a style={styles.link} href={remote} target="_blank" rel="noreferrer">{t('common.openInNewTab')}</a>
       </div>
