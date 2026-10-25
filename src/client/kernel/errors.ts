@@ -9,6 +9,7 @@
  * properties: this file is loaded by Node's type stripping in the tests, which
  * does not support parameter properties.
  */
+import { t } from '../i18n.ts'
 import type { MessageKey } from '../locales.ts'
 
 /** A failure that carries a message key instead of finished prose. */
@@ -39,4 +40,16 @@ export class PreviewError extends Error {
  */
 export function previewError(key: MessageKey, params?: Readonly<Record<string, string | number>>): PreviewError {
   return new PreviewError(key, params)
+}
+
+/**
+ * Turn any thrown value into display text.
+ * @param error - the caught value.
+ * @param fallback - key used when the value carries no message.
+ * @returns localized text for the pane.
+ */
+export function errorText(error: unknown, fallback: MessageKey): string {
+  if (error instanceof PreviewError) return t(error.key, error.params)
+  if (error instanceof Error && error.message !== '') return error.message
+  return t(fallback)
 }

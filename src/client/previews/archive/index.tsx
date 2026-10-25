@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Archive listing: zip through its central directory (ranged reads when the
  * size is known, whole-file otherwise), tar and tar.gz through the whole file
  * (gzip inflate is native).
@@ -7,6 +7,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { t } from '../../i18n.ts'
+import { errorText, PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -44,7 +46,7 @@ async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
     body: JSON.stringify(body),
   })
   if (response.status === 404) {
-    throw new Error('解压服务未加载：Host 半只在应用启动时加载，请重启应用后重试')
+    throw new PreviewError('archive.routeMissing')
   }
   if (!response.ok) throw new Error((await response.text()) || `HTTP ${String(response.status)}`)
   return await response.json() as T
@@ -79,7 +81,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
         setLoaded({ status: 'ready', bytes, text })
       })
       .catch((error: unknown) => {
-        if (alive) setLoaded({ status: 'error', message: error instanceof Error ? error.message : '无法读取条目' })
+        if (alive) setLoaded({ status: 'error', message: errorText(error, 'archive.entryFailed') })
       })
     return () => { alive = false }
   }, [url, entry, module])
@@ -100,13 +102,13 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
       // Cancelling keeps the current directory: only a real choice replaces it.
       if (chosen !== undefined && chosen.trim() !== '') setDir(chosen)
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : '无法选择目录')
+      setFailure(errorText(error, 'archive.chooseFailed'))
     }
   }
 
   const extract = async (force = false): Promise<void> => {
     if (dir.trim() === '') {
-      setFailure('请先填写解压目录')
+      setFailure(t('archive.dirRequired'))
       return
     }
     setExtracting(true)
@@ -123,10 +125,10 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
       onOpened(entry)
       const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
       setNotice(address !== undefined && openResourceAddress(address)
-        ? `已解压并在主预览中打开：${result.path}`
-        : `已解压到 ${result.path}，可在文件树中打开`)
+        ? t('archive.extractedOpened', { path: result.path })
+        : t('archive.extractedTo', { path: result.path }))
     } catch (error) {
-      setFailure(error instanceof Error ? error.message : '解压失败')
+      setFailure(errorText(error, 'archive.extractFailed'))
     } finally {
       setExtracting(false)
     }
@@ -135,10 +137,10 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
   const openExisting = (): void => {
     const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
     if (address !== undefined && openResourceAddress(address)) {
-      setNotice('已在主预览中打开')
+      setNotice(t('archive.opened'))
       return
     }
-    setNotice(`文件在 ${existing ?? dir}，可在文件树中打开`)
+    setNotice(t('archive.fileAt', { path: existing ?? dir }))
   }
 
   // An entry that was extracted before opens itself: the extra panel and the
@@ -157,18 +159,18 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
       <div style={{ color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 }}>
         {loaded.status === 'error'
           ? loaded.message
-          : '此类型需解压后用主预览查看。'}
+          : t('archive.needsExtract')}
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           value={dir}
           onChange={event => setDir(event.target.value)}
-          aria-label="解压目录"
+          aria-label={t('archive.dirLabel')}
           style={pathInputStyle}
         />
-        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
+        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>{t('common.choose')}</button>
         <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
-          {extracting ? '解压中…' : '解压并打开'}
+          {extracting ? t('archive.extracting') : t('archive.extractOpen')}
         </button>
       </div>
       {notice !== undefined && <div style={{ marginTop: 8, color: 'var(--dsw-alias-label-secondary)' }}>{notice}</div>}
@@ -178,7 +180,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
 
   const extractedNote = (
     <div style={panelStyle}>
-      <div>{notice ?? '已在主预览中打开。'}</div>
+      <div>{notice ?? t('archive.openedNote')}</div>
       <div style={{ marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' }}>{existing}</div>
       {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
     </div>
@@ -186,7 +188,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
 
   let body: ReactNode
   if (loaded.status === 'loading') {
-    body = <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>正在解压…</div>
+    body = <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>{t('archive.extracting')}</div>
   } else if (loaded.status === 'error') {
     body = existing !== undefined ? extractedNote : panel
   } else if (module !== undefined && module.load === 'bytes-complete' && loaded.bytes !== undefined) {
@@ -203,7 +205,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
     <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
-          <button type="button" onClick={onBack} style={backStyle}>← 返回</button>
+          <button type="button" onClick={onBack} style={backStyle}>{t('common.back')}</button>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
         </span>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
@@ -244,7 +246,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
       } catch (error) {
         if (!alive) return
         setStatus('error')
-        setDetail(error instanceof Error ? error.message : '无法读取压缩包')
+        setDetail(errorText(error, 'archive.readFailed'))
       }
     })()
     return () => { alive = false }
@@ -253,7 +255,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   if (status !== 'ready') {
     return (
       <div style={PANE_FILL}>
-        {status === 'loading' ? '正在读取压缩包…' : `无法预览：${detail}`}
+        {status === 'loading' ? t('archive.loading') : t('common.error', { detail })}
       </div>
     )
   }
@@ -268,9 +270,9 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
         action: 'clean',
         targetDir: defaultTargetDir(absolutePath),
       })
-      setBarNotice(result.removed === 0 ? '没有需要清理的解压文件' : `已清理 ${String(result.removed)} 个解压文件`)
+      setBarNotice(result.removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: result.removed }))
     } catch (error) {
-      setBarNotice(error instanceof Error ? error.message : '清理失败')
+      setBarNotice(errorText(error, 'archive.cleanFailed'))
     }
   }
 
@@ -288,9 +290,9 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
       })
       const address = extractedAddress(resourceAddress, lastEntry.name, dir, dir)
       const opened = address !== undefined && openResourceAddress(address)
-      setBarNotice(opened ? `已重新解压并打开 ${lastEntry.name}` : `已重新解压到 ${result.path}`)
+      setBarNotice(opened ? t('archive.reextracted', { name: lastEntry.name }) : t('archive.reextractedTo', { path: result.path }))
     } catch (error) {
-      setBarNotice(error instanceof Error ? error.message : '重新解压失败')
+      setBarNotice(errorText(error, 'archive.reextractFailed'))
     }
   }
 
@@ -311,19 +313,18 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
     <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
-          {entries.length.toLocaleString('en-US')} 个条目
-          {' · '}解压后 {formatBytes(total)}
-          {entries.length >= MAX_ENTRIES && ' · 已达上限'}
+          {t('archive.summary', { count: entries.length.toLocaleString('en-US'), total: formatBytes(total) })}
+          {entries.length >= MAX_ENTRIES && ` · ${t('archive.limitReached')}`}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)' }}>
-          <span>{barNotice ?? '点击条目预览内容'}</span>
+          <span>{barNotice ?? t('archive.hint')}</span>
           {absolutePath !== undefined && lastEntry !== undefined && (
             <button type="button" onClick={() => { void reextract() }} style={smallButtonStyle}>
-              重新解压 {lastEntry.name}
+              {t('archive.reextract', { name: lastEntry.name })}
             </button>
           )}
           {absolutePath !== undefined && (
-            <button type="button" onClick={() => { void clean() }} style={smallButtonStyle}>清理解压</button>
+            <button type="button" onClick={() => { void clean() }} style={smallButtonStyle}>{t('archive.clean')}</button>
           )}
         </span>
       </div>
@@ -331,8 +332,8 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
         <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12 }}>
           <thead>
             <tr>
-              <th style={headerStyle}>名称</th>
-              <th style={{ ...headerStyle, textAlign: 'right', width: 90 }}>大小</th>
+              <th style={headerStyle}>{t('common.name')}</th>
+              <th style={{ ...headerStyle, textAlign: 'right', width: 90 }}>{t('common.size')}</th>
             </tr>
           </thead>
           <tbody>
@@ -436,6 +437,6 @@ export const archivePreview: PreviewModule = {
   binary: ARCHIVE_EXTENSIONS,
   load: 'renderer',
   wrap: false,
-  title: () => '压缩包',
+  title: () => t('archive.title'),
   Body: ArchiveBody,
 }

@@ -9,6 +9,7 @@
 import { LIMITS } from '../../shared/limits.ts'
 import { findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../shared/zip/parse.ts'
+import { previewError } from './errors.ts'
 import { formatBytes } from './format.ts'
 
 /** Anything read whole must fit this. */
@@ -29,7 +30,7 @@ export async function readRange(url: string, start: number, end: number): Promis
     const whole = new Uint8Array(await response.arrayBuffer())
     return whole.subarray(start, Math.min(whole.length, end + 1))
   }
-  throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+  throw previewError('zip.httpError', { status: response.status })
 }
 
 /**
@@ -51,7 +52,7 @@ export async function fileSize(url: string): Promise<number | undefined> {
 export function readAll(url: string): Promise<Uint8Array> {
   return fetch(url).then(async (response) => {
     if (response.status !== 200 && response.status !== 206) {
-      throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+      throw previewError('zip.httpError', { status: response.status })
     }
     return new Uint8Array(await response.arrayBuffer())
   })
@@ -68,9 +69,9 @@ export async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
 /** Parse the central directory out of a complete archive buffer. */
 export function listEntriesFromBuffer(archive: Uint8Array): ArchiveEntry[] {
   const eocd = findEocd(archive)
-  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
+  if (eocd < 0) throw previewError('zip.noCentralDirectory')
   const range = zipDirectoryRange(archive, eocd)
-  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
+  if (range === undefined) throw previewError('zip.zip64')
   if (range.size === 0) return []
   return parseZipDirectory(archive.subarray(range.offset, range.offset + range.size))
 }
@@ -86,7 +87,7 @@ export async function listZipEntries(url: string, sizeHint: number): Promise<Arc
   if (size === undefined || size <= 0) {
     const whole = await readAll(url)
     if (whole.length > MAX_WHOLE_BYTES) {
-      throw new Error(`压缩包 ${formatBytes(whole.length)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
+      throw previewError('zip.tooLarge', { size: formatBytes(whole.length), limit: formatBytes(MAX_WHOLE_BYTES) })
     }
     return listEntriesFromBuffer(whole)
   }
@@ -94,9 +95,9 @@ export async function listZipEntries(url: string, sizeHint: number): Promise<Arc
   const tailStart = Math.max(0, size - TAIL_BYTES)
   const tail = await readRange(url, tailStart, size - 1)
   const eocd = findEocd(tail)
-  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
+  if (eocd < 0) throw previewError('zip.noCentralDirectory')
   const range = zipDirectoryRange(tail, eocd)
-  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
+  if (range === undefined) throw previewError('zip.zip64')
   if (range.size === 0) return []
 
   const inTail = range.offset >= tailStart && range.offset + range.size <= tailStart + tail.length
@@ -113,7 +114,7 @@ export async function listZipEntries(url: string, sizeHint: number): Promise<Arc
  */
 export async function listTarEntries(url: string, size: number): Promise<ArchiveEntry[]> {
   if (size > MAX_WHOLE_BYTES) {
-    throw new Error(`压缩包 ${formatBytes(size)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
+    throw previewError('zip.tooLarge', { size: formatBytes(size), limit: formatBytes(MAX_WHOLE_BYTES) })
   }
   const bytes = await readAll(url)
   const gzipped = bytes[0] === 0x1f && bytes[1] === 0x8b
@@ -128,7 +129,7 @@ export async function listTarEntries(url: string, size: number): Promise<Archive
  */
 export async function readEntryBytesFromUrl(url: string, entry: ArchiveEntry, maxBytes = MAX_ENTRY_BYTES): Promise<Uint8Array> {
   if (entry.size > maxBytes) {
-    throw new Error(`条目 ${formatBytes(entry.size)} 超过 ${formatBytes(maxBytes)} 上限`)
+    throw previewError('zip.entryTooLarge', { size: formatBytes(entry.size), limit: formatBytes(maxBytes) })
   }
   const header = await readRange(url, entry.offset, entry.offset + 29)
   const dataStart = entry.offset + localDataStart(header)
@@ -137,7 +138,7 @@ export async function readEntryBytesFromUrl(url: string, entry: ArchiveEntry, ma
     : await readRange(url, dataStart, dataStart + entry.compressedSize - 1)
   if (entry.method === 0) return raw
   if (entry.method === 8) return inflateRaw(raw)
-  throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
+  throw previewError('zip.unsupportedMethod', { method: String(entry.method) })
 }
 
 /**
@@ -150,7 +151,7 @@ export async function entryBytes(archive: Uint8Array, entry: ArchiveEntry): Prom
   const raw = archive.subarray(start, start + entry.compressedSize)
   if (entry.method === 0) return raw
   if (entry.method === 8) return inflateRaw(raw)
-  throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
+  throw previewError('zip.unsupportedMethod', { method: String(entry.method) })
 }
 
 /** Compare entry names across the separators and `./` prefixes archives use. */
