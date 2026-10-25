@@ -22,6 +22,7 @@ import { logPreview } from '../log/index.tsx'
 import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
+import { defaultTargetDir, extractedAddress } from './paths.ts'
 
 /** Formats this package renders from content alone, without a file address. */
 const CONTENT_MODULES: readonly PreviewModule[] = [
@@ -33,38 +34,6 @@ function contentModuleFor(name: string): PreviewModule | undefined {
   if (dot < 0) return undefined
   const extension = name.slice(dot + 1).toLowerCase()
   return CONTENT_MODULES.find(module => module.extensions.includes(extension))
-}
-
-/** Default extraction directory: a hidden folder beside the archive. */
-export function defaultTargetDir(archivePath: string): string {
-  const normalized = archivePath.replaceAll('\\', '/')
-  const cut = normalized.lastIndexOf('/')
-  return `${cut < 0 ? '.' : normalized.slice(0, cut)}/.dsh-any-preview`
-}
-
-/**
- * Address of an extracted member, when the archive is a session file and the
- * member landed in the default directory beside it. Anything else cannot be
- * referenced by the file resource.
- */
-export function extractedAddress(
-  resourceAddress: string,
-  entryName: string,
-  targetDir: string,
-  expectedDir: string,
-): string | undefined {
-  const prefix = 'dsh-resource://file/session/'
-  if (!resourceAddress.startsWith(prefix)) return undefined
-  if (targetDir.replaceAll('\\', '/') !== expectedDir) return undefined
-  const segments = resourceAddress.slice(prefix.length).split('/')
-  const sessionId = segments[0]
-  if (sessionId === undefined || sessionId === '') return undefined
-  const relative = segments.slice(1).map(decodeURIComponent).join('/')
-  const cut = relative.lastIndexOf('/')
-  const directory = cut < 0 ? '' : relative.slice(0, cut)
-  const name = entryName.replaceAll('\\', '/').split('/').pop() ?? entryName
-  const encodedDir = directory === '' ? '' : `${directory.split('/').map(encodeURIComponent).join('/')}/`
-  return `${prefix}${sessionId}/${encodedDir}.dsh-any-preview/${encodeURIComponent(name)}`
 }
 
 /** One request to the extraction route; `action` selects extract, check or clean. */

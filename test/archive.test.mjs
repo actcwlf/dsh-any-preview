@@ -5,6 +5,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/shared/zip/parse.ts'
 import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName } from '../src/host/extract-route.ts'
+import { defaultTargetDir, extractedAddress } from '../src/client/previews/archive/paths.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
@@ -98,4 +99,21 @@ test('extraction is reusable, reportable and cleanable', { skip: !available }, a
   // Only a directory actually named `.dsh-any-preview` may be removed.
   await assert.rejects(() => cleanExtractionDir(root))
   rmSync(root, { recursive: true, force: true })
+})
+
+test('the extraction directory sits beside the archive', () => {
+  assert.equal(defaultTargetDir('F:/w/samples/b.zip'), 'F:/w/samples/.dsh-any-preview')
+  assert.equal(defaultTargetDir('C:\\w\\b.zip'), 'C:/w/.dsh-any-preview')
+  assert.equal(defaultTargetDir('b.zip'), './.dsh-any-preview')
+})
+
+test('only a default-directory extraction gets a session address', () => {
+  const archive = 'dsh-resource://file/session/abc/dir/samples/b.zip'
+  const expected = 'F:/w/samples/.dsh-any-preview'
+  assert.equal(
+    extractedAddress(archive, 'img/cover.png', expected, expected),
+    'dsh-resource://file/session/abc/dir/samples/.dsh-any-preview/cover.png',
+  )
+  assert.equal(extractedAddress(archive, 'a.png', 'F:/elsewhere', expected), undefined)
+  assert.equal(extractedAddress('dsh-resource://file/absolute/x', 'a.png', expected, expected), undefined)
 })
