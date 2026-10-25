@@ -8,6 +8,7 @@
  */
 import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
+import { setDirectoryPicker, setOpenResource, setRemoteLookup } from './runtime.ts'
 
 interface DocumentPreviewDefinition {
   readonly id: string
@@ -65,13 +66,30 @@ function registerPreview(ctx: ClientContext, module: PreviewModule): void {
 export function apply(ctx: ClientContext): void {
   // Optional capabilities. A profile without them still renders every preview;
   // only the "open elsewhere" and "choose a directory" affordances are lost.
-  ctx.inject?.(['sidebarRight'], (scope: never) => {
-    const sidebar = (scope as { sidebarRight: { openResource(address: string): void } }).sidebarRight
-    setOpenResource(address => { sidebar.openResource(address) })
-  })
+  // Each is resolved twice: immediately when already active, and again through
+  // a deferred injection for services that come up after this plugin.
+  const get = (name: string): unknown =>
+    (ctx as { get?(key: string, strict?: boolean): unknown }).get?.(name, false)
+
+  const bindSidebar = (sidebar: unknown): void => {
+    const api = sidebar as { openResource?(address: string): void } | undefined
+    if (typeof api?.openResource === 'function') {
+      setOpenResource(address => { api.openResource!(address) })
+    }
+  }
+  const bindPicker = (remote: unknown): void => {
+    const api = (remote as { directoryPicker?: { pick(lifetime: AbortSignal): Promise<string | null> } } | undefined)
+      ?.directoryPicker
+    if (api !== undefined) setDirectoryPicker(signal => api.pick(signal))
+  }
+
+  if (get('sidebarRight') !== undefined) bindSidebar(get('sidebarRight'))
+  if (get('remote') !== undefined) bindPicker(get('remote'))
+
+  ctx.inject?.(['sidebarRight'], (scope: never) => { bindSidebar((scope as { sidebarRight: unknown }).sidebarRight) })
   ctx.inject?.(['remote', 'remote.directoryPicker'], (scope: never) => {
-    const picker = (scope as { remote: { directoryPicker: { pick(signal: AbortSignal): Promise<string | null> } } }).remote.directoryPicker
-    setDirectoryPicker(signal => picker.pick(signal))
+    bindPicker((scope as { remote: unknown }).remote)
+    setRemoteLookup(() => (scope as { remote: unknown }).remote)
   })
   for (const module of PREVIEWS) registerPreview(ctx, module)
 }

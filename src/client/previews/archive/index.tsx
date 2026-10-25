@@ -244,6 +244,9 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ archive: archivePath, entry: entry.name, targetDir: dir }),
       })
+      if (response.status === 404) {
+        throw new Error('解压服务未加载：Host 半只在应用启动时加载，请重启应用后重试')
+      }
       if (!response.ok) throw new Error((await response.text()) || `HTTP ${String(response.status)}`)
       const result = await response.json() as { path: string }
       const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
