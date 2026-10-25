@@ -25,9 +25,11 @@
     "lib/index.js",
     "lib/client.js",
     "lib/three-chunk.js",
+    "lib/lzma.wasm",
     "cordis.patch.yml"
   ],
   "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-isolation=none \"test/*.test.mjs\""
