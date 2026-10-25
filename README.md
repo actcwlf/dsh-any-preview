@@ -196,20 +196,38 @@ dsh plugin --profile desktop remove dsh-any-preview
 ## 桌面版的媒体播放
 
 桌面版把界面跑在 `dsh-app://app/`，`/api` 请求经 `forwardWebRequest` 转发，而该转发会
-移除 `Content-Length`（Node 的 `fetch` 解码后长度已失真）。Chromium 因此把媒体当作
-「长度未知的流」，`video.seekable` 恒为 `[0, 0]`，进度条拖不动——**这与插件无关**，
-浏览器直连 `http://127.0.0.1:<port>` 时一切正常。
+移除 `Content-Length`。Chromium 因此把媒体当作「长度未知的流」，`video.seekable` 恒为
+`[0, 0]`，进度条拖不动。
 
-插件内置兜底：检测到 `seekable` 为空时，把文件整段取成 Blob 再播，拖动随之恢复。
-上限 `MAX_BUFFER_BYTES`（64 MB），超限会显示说明，而不是留一条看起来坏掉的进度条。
+实测排除了两个错误猜测：给代理路径回 `206 + Content-Range` **无效**（头确实到达页面——
+手动 `fetch` 能看到 `content-range`——但媒体加载器不采用它）；把同一份字节放到
+`http://127.0.0.1` 上则正常（`seekable == duration`）。差别在**传输载体**，不在响应头。
 
-根治在上游：`apps/desktop/src/web-document.ts` 只应在响应被解码（存在
+因此桌面端走三层阶梯：
+
+1. **回环 HTTP（默认）**：已认证的 `/api` 路由铸造一条**签名 URL**
+   （`HMAC(进程密钥, 路径)`，不过期），页面用它作为 `<video src>`。
+   - 不设过期：播放会持续发出 Range 请求，任何短 TTL 都会把长视频截断；
+   - 签名只对**它命名的那个文件**有效，进程重启即全部失效；
+   - 页面在 `dsh-app://` 上，跨站媒体请求带不上会话 cookie（`/api` 实测 401），
+     所以 URL 自身就是凭证；路由只回环、只服务媒体后缀、CORS 只授予壳层 origin。
+2. **代理 URL + Blob 兜底**：回环不可用（无 `webServer` / 403 / 加载失败）时先退回代理，
+   若 `seekable` 仍为空则整段取成 Blob 再播，上限 `MAX_BUFFER_BYTES`（64 MB）。
+3. **浏览器直连**不做任何特殊处理——原生就能拖。
+
+`TRUST_CONTENT_LENGTH`（`src/client/previews/media/index.tsx`）是一个**代码开关**：
+上游一旦保留 `Content-Length`，改成 `true` 即可让代理路径成为首选、完全绕开回环路由，
+其余代码无需改动。Blob 兜底在两种模式下都仍然可用。
+
+根治仍在上游：`apps/desktop/src/web-document.ts` 只应在响应被解码（存在
 `Content-Encoding`）时丢弃 `content-length`，未压缩的响应应保留。
 
 ## 已知限制
 
 - 只读渲染，不支持编辑或写回
-- 分页渲染（默认 500 行/页），尚未做到虚拟滚动；行缓冲上限 20 000 行
+- 表格类预览按格式各自分页/虚拟滚动，行缓冲上限 20 000 行
 - 列宽自动，不记忆用户拖拽
-- 未做 i18n，标题为中文常量
-- 桌面版里超过 64 MB 的媒体不能拖动进度条（受上面的代理限制，非插件可解）
+- i18n：界面文案已中英双语；解析层内部诊断（ZIP 守卫、邮件头标签等）仍为中文
+- 回环媒体路由依赖 `webServer`，缺失该服务的 profile 会退回代理路径（受 Blob 上限约束）
+- 加密压缩包、ZIP64、7z / rar 仍未支持
+
