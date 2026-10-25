@@ -1,6 +1,7 @@
 /**
- * Archive listing: zip through its central directory (ranged reads), tar and
- * tar.gz through the whole file (gzip inflate is native).
+ * Archive listing: zip through its central directory (ranged reads when the
+ * size is known, whole-file otherwise), tar and tar.gz through the whole file
+ * (gzip inflate is native).
  *
  * Listing only — extracting an entry is a later step.
  */
@@ -8,21 +9,14 @@ import { useEffect, useRef, useState } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { MAX_ENTRIES, findEocd, parseTar, parseZipDirectory, zipDirectoryRange } from './parse.ts'
+import type { ArchiveEntry } from './parse.ts'
 
-/** tar must be read whole, so it is capped. */
+/** Anything read whole must fit this. */
 const MAX_WHOLE_BYTES = 64 * 1024 * 1024
 
 /** Enough tail to cover an archive comment plus the end-of-central-directory record. */
 const TAIL_BYTES = 66_000
-
-/** Refuse listings past this many entries. */
-const MAX_ENTRIES = 5_000
-
-interface ArchiveEntry {
-  readonly name: string
-  readonly size: number
-  readonly directory: boolean
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${String(bytes)} B`
@@ -39,65 +33,73 @@ function formatBytes(bytes: number): string {
 /** Read an inclusive byte window, working whether or not the server honours Range. */
 async function readRange(url: string, start: number, end: number): Promise<Uint8Array> {
   const response = await fetch(url, { headers: { Range: `bytes=${String(start)}-${String(end)}` } })
-  if (!response.ok && response.status !== 206) throw new Error(`读取失败（HTTP ${String(response.status)}）`)
-  const buffer = await response.arrayBuffer()
-  if (response.status === 200) return new Uint8Array(buffer).slice(start, end + 1)
-  return new Uint8Array(buffer)
+  if (response.status === 206) return new Uint8Array(await response.arrayBuffer())
+  if (response.status === 200) {
+    // The server ignored Range and sent everything.
+    const whole = new Uint8Array(await response.arrayBuffer())
+    return whole.subarray(start, Math.min(whole.length, end + 1))
+  }
+  throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+}
+
+/**
+ * Total size from a one-byte range. `Content-Range` carries it and, unlike
+ * `Content-Length`, survives the desktop shell's forwarding proxy.
+ */
+async function fileSize(url: string): Promise<number | undefined> {
+  const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
+  if (response.status !== 206) {
+    await response.body?.cancel()
+    return undefined
+  }
+  const match = /\/(\d+)$/u.exec(response.headers.get('content-range') ?? '')
+  await response.body?.cancel()
+  return match === null ? undefined : Number(match[1])
 }
 
 function readAll(url: string): Promise<Uint8Array> {
   return fetch(url).then(async (response) => {
-    if (!response.ok) throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+    if (response.status !== 200 && response.status !== 206) {
+      throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+    }
     return new Uint8Array(await response.arrayBuffer())
   })
 }
 
-function u16(bytes: Uint8Array, at: number): number {
-  return bytes[at]! | (bytes[at + 1]! << 8)
+/** Parse the directory out of a complete archive buffer. */
+function listZipFromBuffer(bytes: Uint8Array): ArchiveEntry[] {
+  const eocd = findEocd(bytes)
+  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
+  const range = zipDirectoryRange(bytes, eocd)
+  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
+  if (range.size === 0) return []
+  return parseZipDirectory(bytes.subarray(range.offset, range.offset + range.size))
 }
 
-function u32(bytes: Uint8Array, at: number): number {
-  return (u16(bytes, at) | (u16(bytes, at + 2) << 16)) >>> 0
-}
+async function listZip(url: string, sizeHint: number): Promise<ArchiveEntry[]> {
+  const size = sizeHint > 0 ? sizeHint : await fileSize(url)
 
-/** Parse the zip central directory into entries. */
-function parseZipDirectory(directory: Uint8Array): ArchiveEntry[] {
-  const entries: ArchiveEntry[] = []
-  let at = 0
-  while (at + 46 <= directory.length && entries.length < MAX_ENTRIES) {
-    if (u32(directory, at) !== 0x02014b50) break
-    const flags = u16(directory, at + 8)
-    const nameLength = u16(directory, at + 28)
-    const extraLength = u16(directory, at + 30)
-    const commentLength = u16(directory, at + 32)
-    const size = u32(directory, at + 24)
-    const nameBytes = directory.subarray(at + 46, at + 46 + nameLength)
-    const encoding = (flags & 0x800) !== 0 ? 'utf-8' : 'utf-8'
-    const name = new TextDecoder(encoding).decode(nameBytes)
-    entries.push({ name, size, directory: name.endsWith('/') })
-    at += 46 + nameLength + extraLength + commentLength
+  if (size === undefined || size <= 0) {
+    const whole = await readAll(url)
+    if (whole.length > MAX_WHOLE_BYTES) {
+      throw new Error(`压缩包 ${formatBytes(whole.length)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
+    }
+    return listZipFromBuffer(whole)
   }
-  return entries
-}
 
-/** Walk tar headers (512-byte blocks, octal size fields). */
-function parseTar(bytes: Uint8Array): ArchiveEntry[] {
-  const entries: ArchiveEntry[] = []
-  let at = 0
-  const decoder = new TextDecoder()
-  while (at + 512 <= bytes.length && entries.length < MAX_ENTRIES) {
-    const header = bytes.subarray(at, at + 512)
-    if (header.every(byte => byte === 0)) break
-    const rawName = decoder.decode(header.subarray(0, 100)).replace(/\0.*$/u, '')
-    const prefix = decoder.decode(header.subarray(345, 500)).replace(/\0.*$/u, '')
-    const name = prefix === '' ? rawName : `${prefix}/${rawName}`
-    const sizeField = decoder.decode(header.subarray(124, 136)).replace(/[\0 ]+$/u, '').trim()
-    const size = Number.parseInt(sizeField, 8) || 0
-    const type = String.fromCharCode(header[156] ?? 0)
-    entries.push({ name, size, directory: type === '5' || name.endsWith('/') })
-    at += 512 + Math.ceil(size / 512) * 512
-  }
-  return entries
+  const tailStart = Math.max(0, size - TAIL_BYTES)
+  const tail = await readRange(url, tailStart, size - 1)
+  const eocd = findEocd(tail)
+  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
+  const range = zipDirectoryRange(tail, eocd)
+  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
+  if (range.size === 0) return []
+
+  const inTail = range.offset >= tailStart && range.offset + range.size <= tailStart + tail.length
+  const directory = inTail
+    ? tail.subarray(range.offset - tailStart, range.offset - tailStart + range.size)
+    : await readRange(url, range.offset, range.offset + range.size - 1)
+  return parseZipDirectory(directory)
 }
 
 /** Decompress a gzip stream with the platform's inflate. */
@@ -106,31 +108,10 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
-async function listZip(url: string, size: number): Promise<ArchiveEntry[]> {
-  const tailStart = Math.max(0, size - TAIL_BYTES)
-  const tail = await readRange(url, tailStart, size - 1)
-  // The comment length is unknown, so scan backwards for the EOCD signature.
-  let eocd = -1
-  for (let at = tail.length - 22; at >= 0; at -= 1) {
-    if (u32(tail, at) === 0x06054b50) {
-      eocd = at
-      break
-    }
-  }
-  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
-  const count = u16(tail, eocd + 10)
-  const directorySize = u32(tail, eocd + 12)
-  const directoryOffset = u32(tail, eocd + 16)
-  if (directoryOffset === 0xffffffff || directorySize === 0xffffffff) {
-    throw new Error('暂不支持 ZIP64 格式')
-  }
-  if (count === 0) return []
-  const directory = await readRange(url, directoryOffset, directoryOffset + directorySize - 1)
-  return parseZipDirectory(directory)
-}
-
 async function listTar(url: string, size: number, gzipped: boolean): Promise<ArchiveEntry[]> {
-  if (size > MAX_WHOLE_BYTES) throw new Error(`压缩包 ${formatBytes(size)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
+  if (size > MAX_WHOLE_BYTES) {
+    throw new Error(`压缩包 ${formatBytes(size)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
+  }
   const bytes = await readAll(url)
   const raw = gzipped || (bytes[0] === 0x1f && bytes[1] === 0x8b) ? await gunzip(bytes) : bytes
   return parseTar(raw)
