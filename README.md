@@ -20,6 +20,12 @@
 | 字体 | `ttf` `otf` `woff` `woff2` | FontFace + 字形表 |
 | 压缩包 | `zip` `tar` `tar.gz` `tgz` | 中央目录 / 顺序头解析；zip 条目按扩展名复用本插件渲染器，其余可一键解压后在主预览打开 |
 | 邮件 | `eml` | 头部、正文、附件名（不提取附件） |
+| 电子书 | `epub` | 读容器 → OPF 书脊 → 分章渲染（标题/段落/列表/代码/引用），可上一章/下一章 |
+| Notebook | `ipynb` | markdown 单元格渲染；代码单元格与文本/图片/异常输出 |
+| reST | `rst` | 标题、列表、字面块、`code-block`/`note` 指令、行内强调与角色 |
+
+> `.bib`、`.tex`、`.sty`、`.cls` 不接管：它们已由内置 Code 渲染器按 BibTeX / LaTeX 语法高亮。
+> EPUB 的图片与样式暂不呈现（文本级阅读视图）；`ipynb` 的 `text/html` 输出只显示类型占位。
 
 zip 条目在面板内直接预览：按扩展名复用本插件的 csv / diff / log / jsonl / 字体 / 邮件渲染器，
 不需要落盘。其余类型（图片、PDF、Office、音视频、3D）显示「此类型需解压后用主预览查看」，

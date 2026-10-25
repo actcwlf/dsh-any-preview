@@ -77,6 +77,9 @@ test('client bundle registers every preview in the list', { skip: !available }, 
     'dsh-any-preview/font',
     'dsh-any-preview/archive',
     'dsh-any-preview/eml',
+    'dsh-any-preview/epub',
+    'dsh-any-preview/ipynb',
+    'dsh-any-preview/rst',
   ]) {
     assert.ok(ids.includes(expected), `missing ${expected}`)
   }
