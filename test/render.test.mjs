@@ -69,6 +69,10 @@ test('client bundle registers every preview in the list', { skip: !available }, 
     'dsh-any-preview/jsonl',
     'dsh-any-preview/video',
     'dsh-any-preview/audio',
+    'dsh-any-preview/glb',
+    'dsh-any-preview/gltf',
+    'dsh-any-preview/obj',
+    'dsh-any-preview/stl',
   ])
   for (const definition of definitions) {
     assert.equal(definition.priority, 'extension')

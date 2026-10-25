@@ -29,5 +29,8 @@
   "scripts": {
     "build": "tsdown",
     "test": "node --test --test-isolation=none \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "three": "^0.180.0"
   }
 }

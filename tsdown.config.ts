@@ -42,7 +42,12 @@ export default [
     fixedExtension: false,
     dts: false,
     clean: false,
-    deps: { neverBundle: PLATFORM_MODULES },
+    // three and its addons ship inside the bundle: the Harness module table
+    // provides platform modules only, so an external require would throw.
+    deps: {
+      neverBundle: PLATFORM_MODULES,
+      alwaysBundle: [/^three(?:\/|$)/],
+    },
     define: {
       'process.env.NODE_ENV': JSON.stringify('production'),
       'import.meta.env.MODE': JSON.stringify('production'),

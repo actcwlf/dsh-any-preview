@@ -8,6 +8,7 @@ import { diffPreview } from './diff/index.tsx'
 import { jsonlPreview } from './jsonl/index.tsx'
 import { logPreview } from './log/index.tsx'
 import { audioPreview, videoPreview } from './media/index.tsx'
+import { glbPreview, gltfPreview, objPreview, stlPreview } from './model/index.tsx'
 
 /** Every preview this package ships, in registration order. */
 export const PREVIEWS: readonly PreviewModule[] = [
@@ -17,4 +18,8 @@ export const PREVIEWS: readonly PreviewModule[] = [
   jsonlPreview,
   videoPreview,
   audioPreview,
+  glbPreview,
+  gltfPreview,
+  objPreview,
+  stlPreview,
 ]
