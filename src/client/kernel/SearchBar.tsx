@@ -1,4 +1,6 @@
-/** The shared search field: query, toggles, match navigation, optional filtering. */
+﻿/** The shared search field: query, toggles, match navigation, optional filtering. */
+import { useLocale } from '../useLocale.ts'
+import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
 import type { SearchOptions } from './search.ts'
 
@@ -30,8 +32,9 @@ export interface SearchBarProps {
 
 export function SearchBar({
   options, onChange, matches, index, total, onPrev, onNext, filter, onFilter,
-  placeholder = '搜索', children,
+  placeholder, children,
 }: SearchBarProps) {
+  useLocale()
   const active = options.query.trim() !== ''
   return (
     <div style={rowStyle}>
@@ -39,13 +42,13 @@ export function SearchBar({
         type="search"
         value={options.query}
         onChange={event => onChange({ ...options, query: event.target.value })}
-        placeholder={placeholder}
-        aria-label="在当前文件中搜索"
+        placeholder={placeholder ?? t('search.placeholder')}
+        aria-label={t('search.aria')}
         style={inputStyle}
       />
       <button
         type="button"
-        title="区分大小写"
+        title={t('search.case')}
         aria-pressed={options.caseSensitive}
         onClick={() => onChange({ ...options, caseSensitive: !options.caseSensitive })}
         style={toggleStyle(options.caseSensitive)}
@@ -54,7 +57,7 @@ export function SearchBar({
       </button>
       <button
         type="button"
-        title="正则表达式"
+        title={t('search.regex')}
         aria-pressed={options.regex}
         onClick={() => onChange({ ...options, regex: !options.regex })}
         style={toggleStyle(options.regex)}
@@ -62,13 +65,13 @@ export function SearchBar({
         .*
       </button>
       <span style={countStyle}>
-        {active ? `${index + 1}/${matches}` : `${total.toLocaleString('en-US')} 行`}
+        {active ? `${index + 1}/${matches}` : t('search.lines', { count: total.toLocaleString('en-US') })}
       </span>
-      <button type="button" title="上一个匹配" onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-      <button type="button" title="下一个匹配" onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+      <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+      <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
       <label style={labelStyle}>
         <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
-        仅匹配
+        {t('search.onlyMatches')}
       </label>
       {children}
     </div>

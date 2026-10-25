@@ -1,4 +1,6 @@
-/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
+﻿/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -15,6 +17,7 @@ import { collectColumns, createJsonlConsumer, formatValue } from './parse.ts'
 const DISPLAY_ROWS = 2_000
 
 export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const jsonl = useStreamedText(content, () => createJsonlConsumer())
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
@@ -34,7 +37,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (jsonl === null) {
-    return <div style={PANE_FILL}>正在读取…</div>
+    return <div style={PANE_FILL}>{t('common.loading')}</div>
   }
 
   const columns = collectColumns(jsonl.records)
@@ -49,10 +52,10 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
     <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
-          {jsonl.records.length.toLocaleString('en-US')} 条记录
-          {columns.length === 0 ? '（非对象行）' : ` × ${String(columns.length)} 字段`}
+          {t('jsonl.records', { count: jsonl.records.length.toLocaleString('en-US') })}
+          {columns.length === 0 ? t('jsonl.nonObject') : t('jsonl.fields', { count: columns.length })}
           {jsonl.invalid > 0 && (
-            <span style={{ color: 'rgb(248, 81, 73)' }}> · {jsonl.invalid.toLocaleString('en-US')} 坏行</span>
+            <span style={{ color: 'rgb(248, 81, 73)' }}>{t('jsonl.invalid', { count: jsonl.invalid.toLocaleString('en-US') })}</span>
           )}
         </span>
         <SearchBar
@@ -68,8 +71,8 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
         />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
           {jsonl.truncated
-            ? '已截断'
-            : hidden > 0 ? `仅显示前 ${DISPLAY_ROWS.toLocaleString('en-US')} 条` : ''}
+            ? t('common.truncated')
+            : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : ''}
         </span>
       </div>
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>

@@ -3,6 +3,10 @@
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
  */
+import { formatBytes } from '../../kernel/format.ts'
+import { PreviewError, errorText } from '../../kernel/errors.ts'
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
@@ -71,6 +75,7 @@ async function chapterImages(
 }
 
 export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  useLocale()
   const { absolutePath } = useDocument(content, resourceAddress, useResource)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
@@ -88,20 +93,20 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
     void (async () => {
       try {
         const url = fileUrl(path)
-        if (url === undefined) throw new Error('无法生成文件地址')
+        if (url === undefined) throw new PreviewError('common.fileUrl')
         const response = await fetch(url)
-        if (!response.ok) throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+        if (!response.ok) throw new PreviewError('common.httpError', { status: response.status })
         const buffer = await response.arrayBuffer()
-        if (buffer.byteLength > MAX_BYTES) throw new Error('文件超过 64 MB 上限')
+        if (buffer.byteLength > MAX_BYTES) throw new PreviewError('epub.tooLarge', { limit: formatBytes(MAX_BYTES) })
         const archive = new Uint8Array(buffer)
         const entries = listEntriesFromBuffer(archive)
 
         const container = await readEntryText(archive, entries, 'META-INF/container.xml')
-        if (container === undefined) throw new Error('缺少 META-INF/container.xml')
+        if (container === undefined) throw new PreviewError('epub.missingContainer')
         const opfPath = containerOpfPath(container)
-        if (opfPath === undefined) throw new Error('container.xml 里没有 rootfile')
+        if (opfPath === undefined) throw new PreviewError('epub.noRootfile')
         const opf = await readEntryText(archive, entries, opfPath)
-        if (opf === undefined) throw new Error(`找不到包文档 ${opfPath}`)
+        if (opf === undefined) throw new PreviewError('epub.missingOpf', { path: opfPath })
         const packaged = parseOpf(opf, opfPath)
 
         let toc: TocEntry[] = []
@@ -135,18 +140,18 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
         setCss(scoped)
         setCurrent(0)
         setStatus(loaded.length === 0 ? 'error' : 'ready')
-        if (loaded.length === 0) setDetail('书脊里没有可读章节')
+        if (loaded.length === 0) setDetail(t('epub.noChapters'))
       } catch (error) {
         if (!alive) return
         setStatus('error')
-        setDetail(error instanceof Error ? error.message : '无法读取 EPUB')
+        setDetail(errorText(error, 'epub.readFailed'))
       }
     })()
     return () => { alive = false }
   }, [absolutePath])
 
   if (status !== 'ready') {
-    return <div style={PANE_FILL}>{status === 'loading' ? '正在读取电子书…' : `无法预览：${detail}`}</div>
+    return <div style={PANE_FILL}>{status === 'loading' ? t('epub.loading') : t('common.error', { detail })}</div>
   }
 
   const chapter = chapters[current]
@@ -157,13 +162,13 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
       {css !== '' && <style>{css}</style>}
       <div style={barStyle}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto' }}>
-          {title === '' ? '电子书' : title}
+          {title === '' ? t('epub.title') : title}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
           <button type="button" style={buttonStyle} disabled={current === 0}
-            onClick={() => setCurrent(index => Math.max(0, index - 1))}>上一章</button>
+            onClick={() => setCurrent(index => Math.max(0, index - 1))}>{t('epub.prev')}</button>
           <select
-            aria-label="章节"
+            aria-label={t('epub.chapter')}
             value={current}
             onChange={event => setCurrent(Number(event.target.value))}
             style={selectStyle}
@@ -174,12 +179,12 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
           </select>
           <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{current + 1} / {total}</span>
           <button type="button" style={buttonStyle} disabled={current >= total - 1}
-            onClick={() => setCurrent(index => Math.min(total - 1, index + 1))}>下一章</button>
+            onClick={() => setCurrent(index => Math.min(total - 1, index + 1))}>{t('epub.next')}</button>
         </span>
       </div>
       <div className={SCOPE} style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 18px 24px', fontSize: 13 }}>
         {chapter === undefined
-          ? <div style={{ color: 'var(--dsw-alias-label-tertiary)' }}>没有可显示的章节</div>
+          ? <div style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('epub.noChapter')}</div>
           : <Blocks blocks={chapter.blocks} />}
       </div>
     </div>
@@ -211,6 +216,6 @@ export const epubPreview: PreviewModule = {
   binary: ['epub'],
   load: 'renderer',
   wrap: false,
-  title: () => '电子书',
+  title: () => t('epub.title'),
   Body: EpubBody,
 }

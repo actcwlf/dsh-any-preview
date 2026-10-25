@@ -5,6 +5,9 @@
  * from the shared file route (kernel/file-url.ts) rather than the byte pipeline,
  * which would hand them over as base64.
  */
+import { PreviewError, errorText } from '../../kernel/errors.ts'
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -50,7 +53,7 @@ async function parseModel(extension: string, bytes: ArrayBuffer): Promise<Object
     geometry.computeVertexNormals()
     return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xbfc4cc, metalness: 0.1, roughness: 0.7 }))
   }
-  throw new Error(`不支持的模型格式 .${extension}`)
+  throw new PreviewError('model.unsupported', { ext: extension })
 }
 
 /** Count triangles so an oversized mesh can be refused after parsing. */
@@ -82,6 +85,7 @@ function disposeObject(root: Object3D): void {
 }
 
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  useLocale()
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
@@ -97,7 +101,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     if (host === null || url === undefined) return
     if (size > MAX_BYTES) {
       setStatus('error')
-      setDetail(`文件 ${formatBytes(size)} 超过 ${formatBytes(MAX_BYTES)} 上限`)
+      setDetail(t('model.tooLarge', { size: formatBytes(size), limit: formatBytes(MAX_BYTES) }))
       return
     }
 
@@ -148,7 +152,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     void (async () => {
       try {
         const response = await fetch(url)
-        if (!response.ok) throw new Error(`读取失败（HTTP ${String(response.status)}）`)
+        if (!response.ok) throw new PreviewError('common.httpError', { status: response.status })
         const bytes = await response.arrayBuffer()
         if (!alive) return
         const object = await parseModel(extension, bytes)
@@ -159,7 +163,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         const count = triangleCount(object)
         if (count > MAX_TRIANGLES) {
           disposeObject(object)
-          throw new Error(`网格约 ${count.toLocaleString('en-US')} 个三角形，超过预览上限`)
+          throw new PreviewError('model.tooManyTriangles', { count: count.toLocaleString('en-US') })
         }
         model = object
         scene.add(object)
@@ -180,7 +184,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         setTriangles(count)
         setStatus('ready')
       } catch (error) {
-        fail(error instanceof Error ? error.message : '模型解析失败')
+        fail(errorText(error, 'model.parseFailed'))
       }
     })()
 
@@ -201,16 +205,16 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
-          {typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() : '3D 模型'}
-          {triangles > 0 && ` · ${triangles.toLocaleString('en-US')} 三角形`}
+          {typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() : t('model.title')}
+          {triangles > 0 && t('model.triangles', { count: triangles.toLocaleString('en-US') })}
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>拖拽旋转 · 滚轮缩放</span>
+        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('model.hint')}</span>
       </div>
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
         <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
         {status !== 'ready' && (
           <div style={{ ...PANE_FILL, background: 'transparent' }}>
-            {status === 'loading' ? '正在加载模型…' : `无法预览：${detail}`}
+            {status === 'loading' ? t('model.loading') : t('common.error', { detail })}
           </div>
         )}
       </div>
@@ -225,19 +229,19 @@ const barStyle = {
 } as const
 
 /** One module per extension so the toolbar can still offer the text view. */
-function module_(id: string, extensions: readonly string[], binary: readonly string[] | undefined, title: string): PreviewModule {
+function module_(id: string, extensions: readonly string[], binary: readonly string[] | undefined, title: () => string): PreviewModule {
   return {
     id,
     extensions,
     ...(binary === undefined ? {} : { binary }),
     load: 'renderer',
     wrap: false,
-    title: () => title,
+    title,
     Body: ModelBody,
   }
 }
 
-export const glbPreview = module_('dsh-any-preview/glb', ['glb'], ['glb'], '3D 模型')
-export const gltfPreview = module_('dsh-any-preview/gltf', ['gltf'], undefined, '3D 模型')
-export const objPreview = module_('dsh-any-preview/obj', ['obj'], undefined, '3D 模型')
-export const stlPreview = module_('dsh-any-preview/stl', ['stl'], undefined, '3D 模型')
+export const glbPreview = module_('dsh-any-preview/glb', ['glb'], ['glb'], () => t('model.title'))
+export const gltfPreview = module_('dsh-any-preview/gltf', ['gltf'], undefined, () => t('model.title'))
+export const objPreview = module_('dsh-any-preview/obj', ['obj'], undefined, () => t('model.title'))
+export const stlPreview = module_('dsh-any-preview/stl', ['stl'], undefined, () => t('model.title'))

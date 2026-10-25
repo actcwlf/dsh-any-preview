@@ -1,4 +1,6 @@
-/** `.eml` viewer: headers, the message text, and attachment names. */
+﻿/** `.eml` viewer: headers, the message text, and attachment names. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useMemo } from 'react'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
@@ -9,11 +11,12 @@ import { PRIMARY_HEADERS, headerLabel, parseEml } from './parse.ts'
 const MAX_CHARS = 2 * 1024 * 1024
 
 export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const source = previewSourceOf(content)
   const raw = source.kind === 'text' ? source.text : ''
   const mail = useMemo(() => parseEml(raw.slice(0, MAX_CHARS)), [raw])
 
-  if (raw === '') return <div style={PANE_FILL}>正在读取…</div>
+  if (raw === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
 
   const ordered = [
     ...PRIMARY_HEADERS
@@ -38,7 +41,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
         </table>
         {mail.attachments.length > 0 && (
           <div style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary)', marginBottom: 10 }}>
-            附件：{mail.attachments.join('、')}
+            {t('eml.attachments', { names: mail.attachments.join('、') })}
           </div>
         )}
         <pre style={{
@@ -50,7 +53,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
           wordBreak: 'break-word',
           color: 'var(--dsw-alias-label-primary)',
         }}>
-          {mail.text === '' ? '（没有可显示的文本正文）' : mail.text}
+          {mail.text === '' ? t('eml.noBody') : mail.text}
         </pre>
       </div>
     </div>
@@ -76,6 +79,6 @@ export const emlPreview: PreviewModule = {
   extensions: ['eml'],
   load: 'text-pages',
   wrap: false,
-  title: () => '邮件',
+  title: () => t('eml.title'),
   Body: EmlBody,
 }

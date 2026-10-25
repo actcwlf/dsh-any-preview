@@ -1,3 +1,5 @@
+﻿import type { MessageKey } from '../../locales.ts'
+
 /** Pick the delimiter that appears most often on the first line. */
 
 const CANDIDATES = [',', '\t', ';', '|'] as const
@@ -21,10 +23,10 @@ export function detectDelimiter(text: string): string {
   return best
 }
 
-/** Human label for the delimiter shown in the info bar. */
-export const DELIMITER_LABEL: Record<string, string> = {
-  ',': '逗号',
-  '\t': '制表符',
-  ';': '分号',
-  '|': '竖线',
+/** Message key for the delimiter shown in the info bar. */
+export const DELIMITER_LABEL: Record<string, MessageKey> = {
+  ',': 'csv.comma',
+  '\t': 'csv.tab',
+  ';': 'csv.semicolon',
+  '|': 'csv.pipe',
 }

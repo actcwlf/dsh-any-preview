@@ -6,6 +6,8 @@
  * "open this elsewhere" and "choose a directory" affordances.
  */
 
+import { PreviewError } from './kernel/errors.ts'
+
 type OpenResource = (address: string) => void
 type PickDirectory = (signal: AbortSignal) => Promise<string | null>
 
@@ -44,7 +46,7 @@ export function openResourceAddress(address: string): boolean {
  * @throws when the environment offers no picker at all.
  */
 export async function chooseDirectory(signal: AbortSignal): Promise<string | undefined> {
-  if (pickDirectory === undefined) throw new Error('当前环境未提供目录选择器，请直接编辑路径')
+  if (pickDirectory === undefined) throw new PreviewError('runtime.noPicker')
   const chosen = await pickDirectory(signal)
   // A cancelled chooser arrives as null, and some backends flatten that to an
   // empty string; both mean "keep what was there", never "clear the field".

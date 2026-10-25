@@ -1,4 +1,6 @@
 ﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import { sanitizeHtml } from '../../kernel/html.ts'
@@ -11,11 +13,12 @@ import { parseNotebook } from './parse.ts'
 const MAX_CHARS = LIMITS.notebookChars
 
 export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const source = previewSourceOf(content)
   const raw = source.kind === 'text' ? source.text.slice(0, MAX_CHARS) : ''
-  if (raw.trim() === '') return <div style={PANE_FILL}>正在读取…</div>
+  if (raw.trim() === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
   const notebook = parseNotebook(raw)
-  if (notebook.cells.length === 0) return <div style={PANE_FILL}>不是可识别的 notebook（缺少 cells）</div>
+  if (notebook.cells.length === 0) return <div style={PANE_FILL}>{t('ipynb.notNotebook')}</div>
 
   return (
     <div style={PANE_ROOT}>
@@ -33,7 +36,7 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
               : <pre style={codeStyle}>{cell.source}</pre>}
             {cell.outputs.map((output, outputIndex) => {
               if (output.kind === 'image' && output.dataUri !== undefined) {
-                return <img key={outputIndex} src={output.dataUri} alt="输出图像" style={imageStyle} />
+                return <img key={outputIndex} src={output.dataUri} alt={t('ipynb.outputImage')} style={imageStyle} />
               }
               if (output.kind === 'error') {
                 return <pre key={outputIndex} style={errorStyle}>{output.text}</pre>

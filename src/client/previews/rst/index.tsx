@@ -1,4 +1,6 @@
 ﻿/** reStructuredText viewer. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { Blocks } from '../../kernel/blocks.tsx'
@@ -10,9 +12,10 @@ import { parseRst } from './parse.ts'
 const MAX_CHARS = LIMITS.rstChars
 
 export function RstBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const source = previewSourceOf(content)
   const text = source.kind === 'text' ? source.text.slice(0, MAX_CHARS) : ''
-  if (text.trim() === '') return <div style={PANE_FILL}>正在读取…</div>
+  if (text.trim() === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
   return (
     <div style={PANE_ROOT}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 16px 24px', fontSize: 13 }} ref={scrollportRef}>

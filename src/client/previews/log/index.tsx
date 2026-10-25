@@ -1,4 +1,6 @@
-/** Streaming log viewer: severity colouring, search, tail follow. */
+﻿/** Streaming log viewer: severity colouring, search, tail follow. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -21,6 +23,7 @@ const LEVEL_COLOR: Record<LogLevel, string> = {
 }
 
 export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const log = useStreamedText(content, () => createLogConsumer())
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
@@ -48,7 +51,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (log === null) {
-    return <div style={PANE_FILL}>正在读取…</div>
+    return <div style={PANE_FILL}>{t('common.loading')}</div>
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {
@@ -72,11 +75,11 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
         >
           <label style={labelStyle}>
             <input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} />
-            跟随尾部
+            {t('log.follow')}
           </label>
         </SearchBar>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {log.truncated ? '已截断' : ''}
+          {log.truncated ? t('common.truncated') : ''}
         </span>
       </div>
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
@@ -127,6 +130,6 @@ export const logPreview: PreviewModule = {
   extensions: ['log'],
   load: 'text-pages',
   wrap: false,
-  title: () => '日志',
+  title: () => t('log.title'),
   Body: LogBody,
 }

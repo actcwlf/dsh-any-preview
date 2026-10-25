@@ -1,9 +1,11 @@
-/**
+﻿/**
  * Shared presentation for the metadata inspectors (SafeTensors, GGUF, SQLite).
  *
  * These formats are not rendered as content: the body reads a bounded header
  * and shows what the file says about itself. The pieces below are all they need.
  */
+import { useLocale } from '../useLocale.ts'
+import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
 
 /** One summary fact shown above the content. */
@@ -70,8 +72,9 @@ export function Note({ children }: { readonly children: ReactNode }): ReactNode 
 
 /** Key/value table for metadata dictionaries. */
 export function KeyValueTable({ entries }: { readonly entries: readonly (readonly [string, string])[] }): ReactNode {
+  useLocale()
   if (entries.length === 0) return null
-  return <DataTable columns={['键', '值']} rows={entries.map(entry => [entry[0], entry[1]])} />
+  return <DataTable columns={[t('common.key'), t('common.value')]} rows={entries.map(entry => [entry[0], entry[1]])} />
 }
 
 const summaryStyle = {

@@ -1,4 +1,7 @@
-/** Font preview: load the file into a FontFace and draw a specimen. */
+﻿/** Font preview: load the file into a FontFace and draw a specimen. */
+import { errorText } from '../../kernel/errors.ts'
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useEffect, useState } from 'react'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -11,6 +14,7 @@ const SIZES = [12, 16, 22, 30, 44] as const
 const GLYPHS = Array.from({ length: 95 }, (_unused, index) => String.fromCharCode(32 + index))
 
 export function FontBody({ content }: PreviewBodyProps) {
+  useLocale()
   const bytes = content.kind === 'bytes' ? content.data : undefined
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
@@ -33,7 +37,7 @@ export function FontBody({ content }: PreviewBodyProps) {
       } catch (error) {
         if (!alive) return
         setStatus('error')
-        setDetail(error instanceof Error ? error.message : '字体解析失败')
+        setDetail(errorText(error, 'font.parseFailed'))
       }
     })()
     return () => {
@@ -45,7 +49,7 @@ export function FontBody({ content }: PreviewBodyProps) {
   if (status !== 'ready') {
     return (
       <div style={PANE_FILL}>
-        {status === 'loading' ? '正在加载字体…' : `无法预览：${detail}`}
+        {status === 'loading' ? t('font.loading') : t('common.error', { detail })}
       </div>
     )
   }
@@ -53,8 +57,8 @@ export function FontBody({ content }: PreviewBodyProps) {
   return (
     <div style={PANE_ROOT}>
       <div style={barStyle}>
-        <span>字体样本</span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>已加载到预览页</span>
+        <span>{t('font.sample')}</span>
+        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('font.loaded')}</span>
       </div>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '12px 16px' }}>
         {SIZES.map(size => (
@@ -68,7 +72,7 @@ export function FontBody({ content }: PreviewBodyProps) {
           </div>
         ))}
         <div style={{ marginTop: 18, fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 6 }}>
-          字形表 · U+0020–U+007E
+          {t('font.glyphs')}
         </div>
         <div style={{
           display: 'grid',
@@ -114,6 +118,6 @@ export const fontPreview: PreviewModule = {
   binary: FONT_EXTENSIONS,
   load: 'bytes-complete',
   wrap: false,
-  title: () => '字体',
+  title: () => t('font.title'),
   Body: FontBody,
 }

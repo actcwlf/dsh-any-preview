@@ -1,4 +1,6 @@
 ﻿/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
@@ -40,6 +42,7 @@ function normalize(rows: readonly (readonly string[])[]): {
 }
 
 export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const source = previewSourceOf(content)
   const text = source.kind === 'text' ? source.text : ''
   const eof = source.kind === 'text' ? source.eof : false
@@ -133,7 +136,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     const empty = source.kind === 'text' && eof && text.length === 0
     return (
       <div style={PANE_FILL}>
-        {empty ? '空文件' : '正在读取…'}
+        {empty ? t('csv.empty') : t('common.loading')}
       </div>
     )
   }
@@ -145,7 +148,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
 
   // Only a real condition is worth a label here: the row budget.
   const status = buffer.truncated
-    ? `已截断（上限 ${MAX_ROWS.toLocaleString('en-US')} 行）`
+    ? t('csv.truncated', { limit: MAX_ROWS.toLocaleString('en-US') })
     : ''
 
   return (
@@ -156,8 +159,8 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
         borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
       }}>
         <span>
-          {view.body.length.toLocaleString('en-US')} 行 × {view.columns} 列
-          {' · '}分隔符 {DELIMITER_LABEL[delimiterRef.current] ?? delimiterRef.current}
+          {t('csv.summary', { rows: view.body.length.toLocaleString('en-US'), columns: view.columns })}
+          {t('csv.delimiter', { name: t(DELIMITER_LABEL[delimiterRef.current] ?? 'csv.comma') })}
         </span>
         <SearchBar
           options={options}
@@ -187,7 +190,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
             <tr>
               <th style={cornerStyle} />
               {view.header.map((value, column) => (
-                <th key={column} style={headerStyle}>{value || `列 ${column + 1}`}</th>
+                <th key={column} style={headerStyle}>{value || t('csv.column', { index: column + 1 })}</th>
               ))}
             </tr>
           </thead>
@@ -271,6 +274,6 @@ export const csvPreview: PreviewModule = {
   extensions: ['csv', 'tsv'],
   load: 'text-pages',
   wrap: false,
-  title: () => 'CSV 表格',
+  title: () => t('csv.title'),
   Body: CsvBody,
 }

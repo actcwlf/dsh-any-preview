@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Media previews: native `<video>` / `<audio>` over the Host's byte-range route.
  *
  * `loading: 'renderer'` keeps the whole file out of the shared content
@@ -12,6 +12,8 @@
  * instead: seeking works again at the cost of memory, which is why it is
  * bounded by a cap and explained in the UI rather than done silently.
  */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -42,6 +44,7 @@ interface MediaBodyProps extends PreviewBodyProps {
 }
 
 function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyProps) {
+  useLocale()
   const { meta, absolutePath, version } = useDocument(content, resourceAddress, useResource)
   const [failed, setFailed] = useState(false)
   const [info, setInfo] = useState('')
@@ -77,7 +80,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     // Read the real metadata once the browser has it: duration in particular is
     // the fastest way to tell a truncated file from a short one.
     const facts: string[] = []
-    if (Number.isFinite(element.duration)) facts.push(`${element.duration.toFixed(1)} 秒`)
+    if (Number.isFinite(element.duration)) facts.push(t('media.seconds', { value: element.duration.toFixed(1) }))
     if (element instanceof HTMLVideoElement && element.videoWidth > 0) {
       facts.push(`${String(element.videoWidth)}×${String(element.videoHeight)}`)
     }
@@ -129,7 +132,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const activeSrc = bufferedUrl === '' ? remote : bufferedUrl
 
   if (remote === undefined) {
-    return <Status text={absolutePath === undefined ? '无法读取此文件的路径。' : '正在载入媒体…'} />
+    return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
   }
 
   const playerKey = `${remote}|${content.kind === 'renderer' ? String(content.revision) : '0'}|${version ?? ''}`
@@ -137,9 +140,9 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   if (failed) {
     return (
       <div style={styles.frame}>
-        <Status text="此浏览器无法播放这个格式，可以下载后用本机播放器打开。" />
+        <Status text={t('media.unsupported')} />
         {download !== undefined && (
-          <a style={styles.link} href={download} download={name}>下载 {metaLine}</a>
+          <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
         )}
       </div>
     )
@@ -185,15 +188,15 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       {(buffering || blocked) && (
         <p style={styles.notice}>
           {buffering
-            ? '当前环境未提供文件长度（桌面版转发会移除该响应头），正在载入完整文件以启用拖动…'
-            : `当前环境无法拖动进度条：文件${bytes === '' ? '' : `（${bytes}）`}超过本地缓冲上限 ${String(MAX_BUFFER_BYTES / 1024 / 1024)} MB，可下载后用本机播放器打开。`}
+            ? t('media.buffering')
+            : t('media.cannotSeek', { size: bytes === '' ? '' : `（${bytes}）`, limit: String(MAX_BUFFER_BYTES / 1024 / 1024) })}
         </p>
       )}
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
         {info !== '' && <span style={styles.name}>{info}</span>}
-        {download !== undefined && <a style={styles.link} href={download} download={name}>下载</a>}
-        <a style={styles.link} href={remote} target="_blank" rel="noreferrer">在新标签页打开</a>
+        {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
+        <a style={styles.link} href={remote} target="_blank" rel="noreferrer">{t('common.openInNewTab')}</a>
       </div>
     </div>
   )
@@ -294,7 +297,7 @@ export const videoPreview: PreviewModule = {
   binary: VIDEO_EXTENSIONS,
   load: 'renderer',
   wrap: false,
-  title: () => '视频',
+  title: () => t('media.video'),
   Body: VideoBody,
 }
 
@@ -305,6 +308,6 @@ export const audioPreview: PreviewModule = {
   binary: AUDIO_EXTENSIONS,
   load: 'renderer',
   wrap: false,
-  title: () => '音频',
+  title: () => t('media.audio'),
   Body: AudioBody,
 }

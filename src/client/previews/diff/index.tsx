@@ -1,4 +1,6 @@
-/** Unified diff / patch viewer with search. */
+﻿/** Unified diff / patch viewer with search. */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -31,6 +33,7 @@ const COLOR: Record<DiffLineKind, string> = {
 }
 
 export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
+  useLocale()
   const diff = useStreamedText(content, () => createDiffConsumer())
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
@@ -50,7 +53,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (diff === null) {
-    return <div style={PANE_FILL}>正在读取…</div>
+    return <div style={PANE_FILL}>{t('common.loading')}</div>
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {
@@ -62,7 +65,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
     <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
-          {diff.lines.length.toLocaleString('en-US')} 行
+          {t('diff.rows', { count: diff.lines.length.toLocaleString('en-US') })}
           {' · '}
           <span style={{ color: 'rgb(46, 160, 67)' }}>+{diff.added.toLocaleString('en-US')}</span>
           {' '}
@@ -80,7 +83,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           onFilter={setFilter}
         />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {diff.truncated ? '已截断' : ''}
+          {diff.truncated ? t('common.truncated') : ''}
         </span>
       </div>
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
@@ -130,6 +133,6 @@ export const diffPreview: PreviewModule = {
   extensions: ['diff', 'patch'],
   load: 'text-pages',
   wrap: false,
-  title: () => '差异视图',
+  title: () => t('diff.title'),
   Body: DiffBody,
 }
