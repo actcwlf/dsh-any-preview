@@ -17,7 +17,7 @@ export interface SearchBarProps {
   readonly children?: ReactNode
 }
 
-export function SearchBar({ value, onChange, matches, total, placeholder = '搜索…', children }: SearchBarProps) {
+export function SearchBar({ value, onChange, matches, total, placeholder = '搜索', children }: SearchBarProps) {
   return (
     <div style={rowStyle}>
       <input

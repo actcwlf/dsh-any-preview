@@ -105,9 +105,10 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [query])
 
   if (buffer === null || view === null) {
+    const empty = source.kind === 'text' && eof && text.length === 0
     return (
       <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
-        正在读取…
+        {empty ? '空文件' : '正在读取…'}
       </div>
     )
   }
@@ -120,9 +121,12 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const windowRows = filtered.rows.slice(first, last)
   const windowIndices = filtered.indices.slice(first, last)
 
+  // Only a real condition is worth a label here: the row budget. Stream
+  // progress is already visible in the row count, and a "reading" chip that
+  // never clears is noise.
   const status = buffer.truncated
     ? `已截断（上限 ${MAX_ROWS.toLocaleString('en-US')} 行）`
-    : buffer.complete ? '已读完' : '读取中…'
+    : ''
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }}>
@@ -141,7 +145,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           matches={total}
           total={view.body.length}
         />
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
+        {status !== '' && (
+          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
+        )}
       </div>
       <div
         ref={(element) => {

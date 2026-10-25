@@ -101,8 +101,10 @@ test('csv body renders a table', { skip: !available }, async () => {
   assert.equal((html.match(/<tr[ >]/g) ?? []).length - 1, 3, 'three data rows')
   assert.match(html, /Ada, Lovelace/)
   assert.match(html, /quoted &quot;inside&quot;/)
-  assert.match(html, /已读完/)
   assert.match(html, /3 行 × 3 列/)
+  // No permanent stream-progress chip: the bar carries only real conditions.
+  assert.doesNotMatch(html, /读取中/)
+  assert.doesNotMatch(html, /已读完/)
 })
 
 test('media bodies stream from the range route', { skip: !available }, async () => {
