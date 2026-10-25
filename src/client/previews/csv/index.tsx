@@ -1,5 +1,7 @@
-/** Streaming CSV/TSV table with windowed rows over the incremental pipeline. */
-import { useEffect, useRef, useState } from 'react'
+/** Streaming CSV/TSV table with windowed rows, search, over the incremental pipeline. */
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { SearchBar } from '../../kernel/SearchBar.tsx'
+import { filterRows } from '../../kernel/search.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
@@ -43,6 +45,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
+  const [query, setQuery] = useState('')
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -62,6 +65,26 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   const ready = buffer !== null
+  const rowCount = buffer?.rows.length ?? 0
+
+  // Normalizing the whole grid is O(rows); memoize it so a scroll tick only
+  // re-renders the window slice.
+  const view = useMemo(() => {
+    if (buffer === null) return null
+    const rows = buffer.rows
+    const header = rows[0] ?? []
+    const body = rows.slice(1)
+    const { cells, columns } = normalize([header, ...body])
+    return { header: cells[0] ?? [], body: cells.slice(1), columns }
+  }, [buffer, rowCount])
+
+  const filtered = useMemo(
+    () => (view === null
+      ? { rows: [], indices: [] }
+      : filterRows(view.body, query, row => row.join(' '))),
+    [view, query],
+  )
+
   useEffect(() => {
     if (!ready) return
     const element = scrollerRef.current
@@ -74,7 +97,14 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     return () => { observer.disconnect() }
   }, [ready])
 
-  if (buffer === null) {
+  // A new query changes the row set under the same scroll offset.
+  useEffect(() => {
+    const element = scrollerRef.current
+    if (element !== null) element.scrollTop = 0
+    setScrollTop(0)
+  }, [query])
+
+  if (buffer === null || view === null) {
     return (
       <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
         正在读取…
@@ -82,19 +112,13 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     )
   }
 
-  const rows = buffer.rows
-  const header = rows[0] ?? []
-  const body = rows.slice(1)
-  const { cells, columns } = normalize([header, ...body])
-  const headerCells = cells[0] ?? []
-  const bodyCells = cells.slice(1)
-
   // Only the rows the viewport can show are mounted; spacers keep the scrollbar
   // honest for the rest.
-  const total = bodyCells.length
+  const total = filtered.rows.length
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const last = Math.min(total, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
-  const windowRows = bodyCells.slice(first, last)
+  const windowRows = filtered.rows.slice(first, last)
+  const windowIndices = filtered.indices.slice(first, last)
 
   const status = buffer.truncated
     ? `已截断（上限 ${MAX_ROWS.toLocaleString('en-US')} 行）`
@@ -108,9 +132,15 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
         borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
       }}>
         <span>
-          {total.toLocaleString('en-US')} 行 × {columns} 列
+          {view.body.length.toLocaleString('en-US')} 行 × {view.columns} 列
           {' · '}分隔符 {DELIMITER_LABEL[delimiterRef.current] ?? delimiterRef.current}
         </span>
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          matches={total}
+          total={view.body.length}
+        />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
       </div>
       <div
@@ -125,7 +155,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           <thead>
             <tr>
               <th style={cornerStyle} />
-              {headerCells.map((value, column) => (
+              {view.header.map((value, column) => (
                 <th key={column} style={headerStyle}>{value || `列 ${column + 1}`}</th>
               ))}
             </tr>
@@ -133,23 +163,20 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           <tbody>
             {first > 0 && (
               <tr style={{ height: first * ROW_HEIGHT }}>
-                <td colSpan={columns + 1} style={spacerCell} />
+                <td colSpan={view.columns + 1} style={spacerCell} />
               </tr>
             )}
-            {windowRows.map((row, offset) => {
-              const index = first + offset
-              return (
-                <tr key={index} style={{ height: ROW_HEIGHT }}>
-                  <td style={indexStyle}>{index + 1}</td>
-                  {row.map((value, column) => (
-                    <td key={column} style={cellStyle}>{value}</td>
-                  ))}
-                </tr>
-              )
-            })}
+            {windowRows.map((row, offset) => (
+              <tr key={windowIndices[offset]} style={{ height: ROW_HEIGHT }}>
+                <td style={indexStyle}>{(windowIndices[offset] ?? 0) + 1}</td>
+                {row.map((value, column) => (
+                  <td key={column} style={cellStyle}>{value}</td>
+                ))}
+              </tr>
+            ))}
             {last < total && (
               <tr style={{ height: (total - last) * ROW_HEIGHT }}>
-                <td colSpan={columns + 1} style={spacerCell} />
+                <td colSpan={view.columns + 1} style={spacerCell} />
               </tr>
             )}
           </tbody>

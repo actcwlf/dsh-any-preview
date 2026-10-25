@@ -1,4 +1,7 @@
-/** Unified diff / patch viewer. */
+/** Unified diff / patch viewer with search. */
+import { useMemo, useState } from 'react'
+import { SearchBar } from '../../kernel/SearchBar.tsx'
+import { filterRows } from '../../kernel/search.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { createDiffConsumer } from './parse.ts'
@@ -24,6 +27,12 @@ const COLOR: Record<DiffLineKind, string> = {
 
 export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   const diff = useStreamedText(content, () => createDiffConsumer())
+  const [query, setQuery] = useState('')
+  const lines = diff?.lines ?? []
+  const filtered = useMemo(
+    () => filterRows(lines, query, line => line.text),
+    [lines, lines.length, query],
+  )
 
   if (diff === null) {
     return <div style={emptyStyle}>正在读取…</div>
@@ -39,15 +48,21 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           {' '}
           <span style={{ color: 'rgb(248, 81, 73)' }}>−{diff.removed.toLocaleString('en-US')}</span>
         </span>
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          matches={filtered.rows.length}
+          total={diff.lines.length}
+        />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
           {diff.truncated ? '已截断' : '差异视图'}
         </span>
       </div>
       <div ref={scrollportRef} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
-          {diff.lines.map((line, index) => (
+          {filtered.rows.map((line, offset) => (
             <div
-              key={index}
+              key={filtered.indices[offset]}
               style={{
                 display: 'flex',
                 gap: 10,
@@ -60,7 +75,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
               }}
             >
               <span style={{ flex: '0 0 auto', width: 48, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' }}>
-                {index + 1}
+                {(filtered.indices[offset] ?? 0) + 1}
               </span>
               <span style={{ flex: '1 1 auto' }}>{line.text === '' ? ' ' : line.text}</span>
             </div>

@@ -1,4 +1,7 @@
 /** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
+import { useMemo, useState } from 'react'
+import { SearchBar } from '../../kernel/SearchBar.tsx'
+import { filterRows } from '../../kernel/search.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { collectColumns, createJsonlConsumer, formatValue } from './parse.ts'
@@ -8,14 +11,21 @@ const DISPLAY_ROWS = 2_000
 
 export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   const jsonl = useStreamedText(content, () => createJsonlConsumer())
+  const [query, setQuery] = useState('')
+  const records = jsonl?.records ?? []
+  const filtered = useMemo(
+    () => filterRows(records, query, record => record.raw),
+    [records, records.length, query],
+  )
 
   if (jsonl === null) {
     return <div style={emptyStyle}>正在读取…</div>
   }
 
   const columns = collectColumns(jsonl.records)
-  const shown = jsonl.records.slice(0, DISPLAY_ROWS)
-  const hidden = jsonl.records.length - shown.length
+  const shown = filtered.rows.slice(0, DISPLAY_ROWS)
+  const shownIndices = filtered.indices.slice(0, DISPLAY_ROWS)
+  const hidden = filtered.rows.length - shown.length
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
@@ -27,6 +37,12 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             <span style={{ color: 'rgb(248, 81, 73)' }}> · {jsonl.invalid.toLocaleString('en-US')} 坏行</span>
           )}
         </span>
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          matches={filtered.rows.length}
+          total={jsonl.records.length}
+        />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
           {jsonl.truncated
             ? '已截断'
@@ -44,10 +60,10 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             </tr>
           </thead>
           <tbody>
-            {shown.map((record) => (
+            {shown.map((record, offset) => (
               record.error === undefined
                 ? (
-                    <tr key={record.line} style={{ height: 22 }}>
+                    <tr key={shownIndices[offset]} style={{ height: 22 }}>
                       <td style={indexStyle}>{record.line}</td>
                       {columns.map((column) => (
                         <td key={column} style={cellStyle}>{cellOf(record.value, column)}</td>
@@ -55,7 +71,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
                     </tr>
                   )
                 : (
-                    <tr key={record.line} style={{ height: 22, background: 'rgba(248, 81, 73, 0.14)' }}>
+                    <tr key={shownIndices[offset]} style={{ height: 22, background: 'rgba(248, 81, 73, 0.14)' }}>
                       <td style={indexStyle}>{record.line}</td>
                       <td colSpan={Math.max(1, columns.length)} style={{ ...cellStyle, color: 'rgb(248, 81, 73)' }}>
                         {record.raw}

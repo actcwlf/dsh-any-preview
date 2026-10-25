@@ -172,7 +172,7 @@ test('log body renders lines and a filter', { skip: !available }, async () => {
     resourceAddress: 'dsh-resource://file/session/s/run.log',
     wrap: false,
   }))
-  assert.match(html, /过滤/)
+  assert.match(html, /搜索/)
   assert.match(html, /跟随尾部/)
   assert.match(html, /3 行/)
   assert.match(html, /ERROR failed to bind/)
