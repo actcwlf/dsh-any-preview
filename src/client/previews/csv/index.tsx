@@ -1,16 +1,22 @@
-/** Streaming CSV/TSV table built on the shared incremental row pipeline. */
-import { useRef, useState } from 'react'
+/** Streaming CSV/TSV table with windowed rows over the incremental pipeline. */
+import { useEffect, useRef, useState } from 'react'
 import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { DELIMITER_LABEL, detectDelimiter } from './detect.ts'
 
-/** Rows rendered per page; the button adds another page. */
-const PAGE_ROWS = 500
-
 /** Row budget: beyond this the view stops accumulating and says so. */
 const MAX_ROWS = 20_000
+
+/** Fixed row height the windowing math relies on. */
+const ROW_HEIGHT = 22
+
+/** Rows rendered above and below the viewport to cover fast scrolling. */
+const OVERSCAN = 8
+
+/** Viewport height before the first measurement. */
+const FALLBACK_VIEWPORT = 480
 
 /** Widen ragged rows so the grid lines up under the header. */
 function normalize(rows: readonly (readonly string[])[]): {
@@ -34,7 +40,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const bufferRef = useRef<RowBuffer | null>(null)
   const delimiterRef = useRef<string>(',')
   const consumedRef = useRef(0)
-  const [limit, setLimit] = useState(PAGE_ROWS)
+  const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -53,6 +61,19 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     if (eof && !buffer.complete) buffer.finish()
   }
 
+  const ready = buffer !== null
+  useEffect(() => {
+    if (!ready) return
+    const element = scrollerRef.current
+    if (element === null) return
+    const measure = (): void => { setViewportHeight(element.clientHeight) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => { observer.disconnect() }
+  }, [ready])
+
   if (buffer === null) {
     return (
       <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
@@ -64,10 +85,16 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const rows = buffer.rows
   const header = rows[0] ?? []
   const body = rows.slice(1)
-  const visible = body.slice(0, limit)
-  const { cells, columns } = normalize([header, ...visible])
+  const { cells, columns } = normalize([header, ...body])
   const headerCells = cells[0] ?? []
   const bodyCells = cells.slice(1)
+
+  // Only the rows the viewport can show are mounted; spacers keep the scrollbar
+  // honest for the rest.
+  const total = bodyCells.length
+  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+  const last = Math.min(total, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
+  const windowRows = bodyCells.slice(first, last)
 
   const status = buffer.truncated
     ? `已截断（上限 ${MAX_ROWS.toLocaleString('en-US')} 行）`
@@ -81,12 +108,19 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
         borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
       }}>
         <span>
-          {body.length.toLocaleString('en-US')} 行 × {columns} 列
+          {total.toLocaleString('en-US')} 行 × {columns} 列
           {' · '}分隔符 {DELIMITER_LABEL[delimiterRef.current] ?? delimiterRef.current}
         </span>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
       </div>
-      <div ref={scrollportRef} style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div
+        ref={(element) => {
+          scrollerRef.current = element
+          scrollportRef?.(element)
+        }}
+        onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
+        style={{ flex: '1 1 auto', overflow: 'auto' }}
+      >
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr>
@@ -97,32 +131,30 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
             </tr>
           </thead>
           <tbody>
-            {bodyCells.map((row, index) => (
-              <tr key={index}>
-                <td style={indexStyle}>{index + 1}</td>
-                {row.map((value, column) => (
-                  <td key={column} style={cellStyle}>{value}</td>
-                ))}
+            {first > 0 && (
+              <tr style={{ height: first * ROW_HEIGHT }}>
+                <td colSpan={columns + 1} style={spacerCell} />
               </tr>
-            ))}
+            )}
+            {windowRows.map((row, offset) => {
+              const index = first + offset
+              return (
+                <tr key={index} style={{ height: ROW_HEIGHT }}>
+                  <td style={indexStyle}>{index + 1}</td>
+                  {row.map((value, column) => (
+                    <td key={column} style={cellStyle}>{value}</td>
+                  ))}
+                </tr>
+              )
+            })}
+            {last < total && (
+              <tr style={{ height: (total - last) * ROW_HEIGHT }}>
+                <td colSpan={columns + 1} style={spacerCell} />
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
-      {visible.length < body.length && (
-        <div style={{ flex: '0 0 auto', padding: '6px 12px', borderTop: '1px solid var(--dsw-alias-border-l2)' }}>
-          <button
-            type="button"
-            onClick={() => setLimit(current => current + PAGE_ROWS)}
-            style={{
-              font: 'inherit', fontSize: 12, cursor: 'pointer', padding: '2px 10px', borderRadius: 6,
-              color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-              border: '1px solid var(--dsw-alias-border-l2)',
-            }}
-          >
-            再加载 {PAGE_ROWS} 行（剩余 {(body.length - visible.length).toLocaleString('en-US')}）
-          </button>
-        </div>
-      )}
     </div>
   )
 }
@@ -145,8 +177,11 @@ const headerStyle = {
 
 const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
 
+const spacerCell = { padding: 0, border: 'none' } as const
+
 const indexStyle = {
-  padding: '3px 10px',
+  padding: '0 10px',
+  lineHeight: `${String(ROW_HEIGHT - 2)}px`,
   textAlign: 'right' as const,
   color: 'var(--dsw-alias-label-tertiary)',
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
@@ -157,7 +192,8 @@ const indexStyle = {
 }
 
 const cellStyle = {
-  padding: '3px 12px',
+  padding: '0 12px',
+  lineHeight: `${String(ROW_HEIGHT - 2)}px`,
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
 }

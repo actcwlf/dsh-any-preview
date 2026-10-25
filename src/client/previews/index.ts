@@ -5,6 +5,7 @@
 import type { PreviewModule } from '../kernel/types.ts'
 import { csvPreview } from './csv/index.tsx'
 import { diffPreview } from './diff/index.tsx'
+import { jsonlPreview } from './jsonl/index.tsx'
 import { logPreview } from './log/index.tsx'
 import { audioPreview, videoPreview } from './media/index.tsx'
 
@@ -13,6 +14,7 @@ export const PREVIEWS: readonly PreviewModule[] = [
   csvPreview,
   diffPreview,
   logPreview,
+  jsonlPreview,
   videoPreview,
   audioPreview,
 ]

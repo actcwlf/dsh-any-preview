@@ -66,6 +66,7 @@ test('client bundle registers every preview in the list', { skip: !available }, 
     'dsh-any-preview/csv',
     'dsh-any-preview/diff',
     'dsh-any-preview/log',
+    'dsh-any-preview/jsonl',
     'dsh-any-preview/video',
     'dsh-any-preview/audio',
   ])
@@ -95,7 +96,9 @@ test('csv body renders a table', { skip: !available }, async () => {
     resourceAddress: 'dsh-resource://file/session/s/sample.csv',
     wrap: false,
   }))
-  assert.equal((html.match(/<tr>/g) ?? []).length - 1, 3, 'three data rows')
+  // Data rows carry a height attribute, so match the tag prefix and drop the
+  // header row from the count.
+  assert.equal((html.match(/<tr[ >]/g) ?? []).length - 1, 3, 'three data rows')
   assert.match(html, /Ada, Lovelace/)
   assert.match(html, /quoted &quot;inside&quot;/)
   assert.match(html, /已读完/)
@@ -174,4 +177,20 @@ test('log body renders lines and a filter', { skip: !available }, async () => {
   assert.match(html, /3 行/)
   assert.match(html, /ERROR failed to bind/)
   assert.match(html, /rgb\(248, 81, 73\)/)
+})
+
+test('jsonl body renders records as a table and flags bad lines', { skip: !available }, async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/jsonl')
+  const text = ['{"id":1,"name":"a"}', '{"id":2,"name":"b"}', 'broken'].join('\n')
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text, eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/events.jsonl',
+    wrap: false,
+  }))
+  assert.match(html, /3 条记录/)
+  assert.match(html, /1 坏行/)
+  assert.match(html, />id</)
+  assert.match(html, />name</)
+  assert.match(html, /broken/)
 })

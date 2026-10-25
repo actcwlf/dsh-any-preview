@@ -45,7 +45,7 @@ jsonl  ndjson  log  diff  patch  ipynb  zip  ttf  otf  woff2  glb  gltf
 
 这三个都不引入依赖，且都能复用现有内核（分页、行索引、错误边界）。
 
-**状态：diff 与 log 已实现（含流式行切分与单元测试）；jsonl 待做；CSV 虚拟滚动仍未开始。**
+**状态：P2 全部完成（diff / log / jsonl），CSV 虚拟滚动同步落地。**
 
 ### P3 — 需要先做一个决定
 
