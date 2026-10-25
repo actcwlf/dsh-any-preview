@@ -10,6 +10,7 @@
 | 组件 | 位置 | 许可 | 义务 | 说明 |
 |---|---|---|---|---|
 | three.js | `lib/three-chunk.js` | MIT | 保留版权与许可声明 | 3D 预览，懒加载 chunk |
+| mux.js | `lib/mux-chunk.js` | Apache-2.0 | 附许可全文（第 4 条） | TS/M2TS 重封装，懒加载 chunk |
 | React / `@deepseek-ai/*` | 不随包分发 | — | — | 由 DSH 平台提供（模块表外部依赖） |
 
 其余代码为本项目自有。
