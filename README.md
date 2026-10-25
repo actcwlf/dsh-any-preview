@@ -23,6 +23,14 @@
 | 电子书 | `epub` | 容器 → OPF 书脊 → 分章渲染；图片转 data URI、书籍 CSS 按白名单作用域化、目录下拉 |
 | Notebook | `ipynb` | markdown 单元格渲染；代码单元格与文本/图片/HTML（消毒）/异常输出 |
 | reST | `rst` | 标题、列表、字面块、简单表与网格表、脚注、替换定义、`code-block`/`note`/`toctree` |
+| 模型权重 | `safetensors` | 头部张量表：dtype、形状、参数量，`__metadata__` 键值 |
+| 模型权重 | `gguf` | 版本、架构、量化分布、元数据与张量表（只读头部窗口） |
+| 数据库 | `sqlite` `sqlite3` `db` `db3` | **只读结构**：表 / 索引 / 视图 / 触发器及其 CREATE 语句 |
+
+> 最后三行是「元数据检查器」而不是内容渲染：文件可能有几十 GB，所以只读头部（权重）或
+> `sqlite_master` 所在的 b-tree 页（数据库），从不整包读取，也从不写入。
+> SQLite **不浏览表数据**——那会把它变成一个数据库浏览器，并且要处理溢出页、`WITHOUT ROWID`
+> 与 UTF-16 编码，出错方式是静默给出错误数据。
 
 > `.bib`、`.tex`、`.sty`、`.cls` 不接管：它们已由内置 Code 渲染器按 BibTeX / LaTeX 语法高亮。
 > EPUB 的 CSS 只保留元素选择器与安全属性（字号/行高/对齐/颜色等），`url()` 与类选择器一律丢弃，

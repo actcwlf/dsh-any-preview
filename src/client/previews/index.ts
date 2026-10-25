@@ -9,10 +9,13 @@ import { diffPreview } from './diff/index.tsx'
 import { emlPreview } from './eml/index.tsx'
 import { epubPreview } from './epub/index.tsx'
 import { fontPreview } from './font/index.tsx'
+import { ggufPreview } from './gguf/index.tsx'
 import { ipynbPreview } from './ipynb/index.tsx'
 import { jsonlPreview } from './jsonl/index.tsx'
 import { logPreview } from './log/index.tsx'
 import { rstPreview } from './rst/index.tsx'
+import { safeTensorsPreview } from './safetensors/index.tsx'
+import { sqlitePreview } from './sqlite/index.tsx'
 import { audioPreview, videoPreview } from './media/index.tsx'
 import { glbPreview, gltfPreview, objPreview, stlPreview } from './model/index.tsx'
 
@@ -24,9 +27,12 @@ export const PREVIEWS: readonly PreviewModule[] = [
   emlPreview,
   epubPreview,
   fontPreview,
+  ggufPreview,
   ipynbPreview,
   logPreview,
   rstPreview,
+  safeTensorsPreview,
+  sqlitePreview,
   jsonlPreview,
   videoPreview,
   audioPreview,
