@@ -14,15 +14,18 @@ import type { ThreeBundle } from '../../chunk/three.ts'
 /** Path the Host serves the chunk at. */
 const CHUNK_PATH = '/any-preview/asset/three-chunk.js'
 
+/** Host route that reports the loopback origin. */
+const BASE_PATH = '/api/any-preview/asset-base'
+
 let pending: Promise<ThreeBundle> | undefined
 
 /** Dynamic import through a runtime URL, so no bundler rewrites the specifier. */
 const importModule = new Function('u', 'return import(u)') as (url: string) => Promise<ThreeBundle>
 
-async function chunkUrl(): Promise<string> {
+export async function chunkUrl(): Promise<string> {
   // A browser page is already on the http origin that serves the route.
   if (typeof location !== 'undefined' && location.protocol.startsWith('http')) return CHUNK_PATH
-  const response = await fetch('/api/any-preview/media?base=1')
+  const response = await fetch(BASE_PATH)
   if (!response.ok) throw new Error('loopback asset route unavailable')
   const body = await response.json() as { base?: unknown }
   if (typeof body.base !== 'string' || body.base === '') {

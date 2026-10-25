@@ -179,10 +179,6 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
   // Mint a signed loopback URL for the page: the media element cannot send the
   // session cookie to 127.0.0.1 from a dsh-app:// page, so the URL is the
   // credential.
-  // Plain origin probe used by the module-loading experiment.
-  if (url.searchParams.get('base') === '1') {
-    return Response.json({ base: lanBaseUrl() }, { headers: BASE_HEADERS })
-  }
   if (url.searchParams.get('lan') === '1' && secret !== undefined) {
     const target = url.searchParams.get('path')
     if (target === null || target === '') return failure(400, 'missing path')
@@ -276,5 +272,26 @@ export function registerMediaRoute(ctx: MediaRouteContext, secret?: Uint8Array):
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',
     fetch: request => serveMedia(request, ctx.fs, secret),
+  })
+}
+
+/**
+ * Where the loopback asset route listens, so the client can address the lazy
+ * chunk. Separate from the media route because it is a different question
+ * ("where do I fetch plugin assets?") rather than a media request.
+ */
+export const ASSET_BASE_PATH = '/api/any-preview/asset-base'
+
+/**
+ * Answer with the loopback origin of the asset route.
+ * @param ctx - Host context carrying `connection`.
+ * @returns disposer for the route.
+ */
+export function registerAssetBaseRoute(ctx: MediaRouteContext): () => void {
+  return ctx.connection.fetch.register({
+    path: ASSET_BASE_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async () => Response.json({ base: lanBaseUrl() }, { headers: BASE_HEADERS }),
   })
 }
