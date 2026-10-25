@@ -65,6 +65,9 @@ emcc lzma/C/LzmaDec.c -O3 -flto \
 
 ## 许可证
 
+本仓库随包分发的第三方代码与候选组件的许可说明，统一放在 `licenses/`；
+引入解码器时请先阅读 `licenses/README.md` 的流程。
+
 - 若基于 LZMA SDK：公有领域（7-Zip 的 LZMA SDK 明确 public domain）；
 - 若基于 libarchive：BSD-2-Clause；
 - **不要**直接把 LGPL 的 `7zz` 整体编译进来——那会把分发义务带进插件。

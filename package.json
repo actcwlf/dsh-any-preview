@@ -26,7 +26,8 @@
     "lib/client.js",
     "lib/three-chunk.js",
     "lib/lzma.wasm",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "licenses"
   ],
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
