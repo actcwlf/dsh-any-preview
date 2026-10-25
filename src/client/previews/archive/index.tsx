@@ -207,11 +207,12 @@ async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 /** One member: rendered by its own format when we have one, else explained. */
-function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
+function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack }: {
   readonly entry: ArchiveEntry
   readonly url: string | undefined
   readonly resourceAddress: string
   readonly archivePath: string
+  readonly onOpened: (entry: ArchiveEntry) => void
   readonly onBack: () => void
 }) {
   const module = contentModuleFor(entry.name)
@@ -275,6 +276,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
         force,
       })
       setExisting(result.path)
+      onOpened(entry)
       const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
       setNotice(address !== undefined && openResourceAddress(address)
         ? `已解压并在主预览中打开：${result.path}`
@@ -302,6 +304,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     if (existing === undefined) return
     if (autoOpened.current === existing) return
     autoOpened.current = existing
+    onOpened(entry)
     openExisting()
   })
 
@@ -358,26 +361,8 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
           <button type="button" onClick={onBack} style={backStyle}>← 返回</button>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
-          {existing !== undefined && (
-            <span
-              title={existing}
-              style={{
-                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                fontSize: 11, color: 'var(--dsw-alias-label-tertiary)',
-              }}
-            >
-              → {existing}
-            </span>
-          )}
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
-          {existing !== undefined && (
-            <button type="button" onClick={() => { void extract(true) }} disabled={extracting} style={smallButtonStyle}>
-              {extracting ? '解压中…' : '重新解压'}
-            </button>
-          )}
-          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
-        </span>
+        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
       </div>
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}>
         {body}
@@ -393,7 +378,8 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const size = meta?.size ?? 0
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
-  const [cleanNotice, setCleanNotice] = useState<string | undefined>(undefined)
+  const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
+  const [barNotice, setBarNotice] = useState<string | undefined>(undefined)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const reported = useRef<string | undefined>(undefined)
@@ -450,9 +436,29 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
         action: 'clean',
         targetDir: defaultTargetDir(absolutePath),
       })
-      setCleanNotice(result.removed === 0 ? '没有需要清理的解压文件' : `已清理 ${String(result.removed)} 个解压文件`)
+      setBarNotice(result.removed === 0 ? '没有需要清理的解压文件' : `已清理 ${String(result.removed)} 个解压文件`)
     } catch (error) {
-      setCleanNotice(error instanceof Error ? error.message : '清理失败')
+      setBarNotice(error instanceof Error ? error.message : '清理失败')
+    }
+  }
+
+  // Re-extract the member opened last: once the file itself is previewed by the
+  // standard renderer, this is the only place left for that affordance.
+  const reextract = async (): Promise<void> => {
+    if (absolutePath === undefined || lastEntry === undefined) return
+    const dir = defaultTargetDir(absolutePath)
+    try {
+      const result = await postExtract<{ path: string }>({
+        archive: absolutePath,
+        entry: lastEntry.name,
+        targetDir: dir,
+        force: true,
+      })
+      const address = extractedAddress(resourceAddress, lastEntry.name, dir, dir)
+      const opened = address !== undefined && openResourceAddress(address)
+      setBarNotice(opened ? `已重新解压并打开 ${lastEntry.name}` : `已重新解压到 ${result.path}`)
+    } catch (error) {
+      setBarNotice(error instanceof Error ? error.message : '重新解压失败')
     }
   }
 
@@ -463,6 +469,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
         url={url}
         resourceAddress={resourceAddress}
         archivePath={absolutePath ?? ''}
+        onOpened={setLastEntry}
         onBack={() => setSelected(undefined)}
       />
     )
@@ -477,7 +484,12 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
           {entries.length >= MAX_ENTRIES && ' · 已达上限'}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)' }}>
-          <span>{cleanNotice ?? '点击条目预览内容'}</span>
+          <span>{barNotice ?? '点击条目预览内容'}</span>
+          {absolutePath !== undefined && lastEntry !== undefined && (
+            <button type="button" onClick={() => { void reextract() }} style={smallButtonStyle}>
+              重新解压 {lastEntry.name}
+            </button>
+          )}
           {absolutePath !== undefined && (
             <button type="button" onClick={() => { void clean() }} style={smallButtonStyle}>清理解压</button>
           )}
