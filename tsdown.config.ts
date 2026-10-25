@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Standalone build: a Node half for the Loader, plus the browser bundle.
  *
  * The client half is a closure factory, not a normal ESM module: the Harness
@@ -82,5 +82,22 @@ export default [
     sourcemap: false,
     deps: { alwaysBundle: [/^three(?:\/|$)/] },
     outputOptions: { entryFileNames: 'three-chunk.js' },
+  },
+  {
+    // The lazy MPEG-TS chunk: remuxes TS packets to fMP4 for MediaSource.
+    // Loaded only when a transport stream is opened.
+    name: `${ID}/mux-chunk`,
+    entry: { 'mux-chunk': 'src/chunk/mux.ts' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+    minify: true,
+    sourcemap: false,
+    deps: { alwaysBundle: [/^mux\.js(?:\/|$)/] },
+    outputOptions: { entryFileNames: 'mux-chunk.js' },
   },
 ]

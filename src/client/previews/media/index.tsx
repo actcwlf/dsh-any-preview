@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Media previews: native `<video>` / `<audio>` over the Host's byte-range route.
  *
  * `loading: 'renderer'` keeps the whole file out of the shared content
@@ -20,6 +20,7 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
+import { TsPlayer } from './ts-player.tsx'
 import { fileSize } from '../../kernel/zip.ts'
 import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
@@ -217,6 +218,10 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   }
 
   const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
+  // Transport streams carry H.264/AAC inside a container the browser cannot
+  // demux; remux them to fMP4 instead of asking the element to play them.
+  const suffix = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+  if ((suffix === 'ts' || suffix === 'm2ts') && activeSrc !== undefined) return <TsPlayer src={activeSrc} />
 
   if (remote === undefined) {
     return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />

@@ -10,6 +10,7 @@
 export const ASSET_MIME: Readonly<Record<string, string>> = {
   'three-chunk.js': 'text/javascript; charset=utf-8',
   'lzma.wasm': 'application/wasm',
+  'mux-chunk.js': 'text/javascript; charset=utf-8',
 }
 
 /** Path prefix the assets are served under. */

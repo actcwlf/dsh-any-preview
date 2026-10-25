@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Message dictionaries for this package.
  *
  * The Chinese dictionary is the key-set source of truth; the English one is
@@ -130,6 +130,10 @@ export const zh = {
   'media.loading': '正在载入媒体…',
   'media.unsupported': '此浏览器无法播放这个格式，可以下载后用本机播放器打开。',
   'media.streamFailed': '无法取得媒体流，请重试或下载后播放。',
+  'media.tsLoading': '正在重封装 TS 流…',
+  'media.tsTooLarge': 'TS 文件过大，无法在侧栏内重封装，请下载后播放。',
+  'media.tsNotPlayable': '这个 TS 文件里没有可播放的 H.264/AAC 轨道。',
+  'media.tsCodecUnsupported': '当前环境不支持该 TS 流的编码组合。',
   'media.downloadNamed': '下载 {name}',
   'media.buffering': '当前环境未提供文件长度（桌面版转发会移除该响应头），正在载入完整文件以启用拖动…',
   'media.cannotSeek': '当前环境无法拖动进度条：文件{size}超过本地缓冲上限 {limit} MB，可下载后用本机播放器打开。',
@@ -297,6 +301,10 @@ export const en: Record<MessageKey, string> = {
   'media.loading': 'Loading media…',
   'media.unsupported': 'This browser cannot play this format; download it and open it in a local player.',
   'media.streamFailed': 'The media stream could not be loaded; retry or download the file.',
+  'media.tsLoading': '正在重封装 TS 流…',
+  'media.tsTooLarge': 'TS 文件过大，无法在侧栏内重封装，请下载后播放。',
+  'media.tsNotPlayable': '这个 TS 文件里没有可播放的 H.264/AAC 轨道。',
+  'media.tsCodecUnsupported': '当前环境不支持该 TS 流的编码组合。',
   'media.downloadNamed': 'Download {name}',
   'media.buffering': 'The file length was withheld by this environment (the desktop proxy strips that header); loading the whole file so seeking works…',
   'media.cannotSeek': 'Seeking is unavailable here: the file{size} exceeds the {limit} MB local buffer limit; download it and open it in a local player.',

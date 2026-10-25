@@ -25,6 +25,7 @@
     "lib/index.js",
     "lib/client.js",
     "lib/three-chunk.js",
+    "lib/mux-chunk.js",
     "lib/lzma.wasm",
     "cordis.patch.yml",
     "licenses"
@@ -36,6 +37,7 @@
     "test": "node --test --test-isolation=none \"test/*.test.mjs\""
   },
   "devDependencies": {
+    "mux.js": "^7.1.0",
     "three": "^0.180.0",
     "typescript": "^6.0.3"
   }
