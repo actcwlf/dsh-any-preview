@@ -192,6 +192,20 @@ export function extractedAddress(
   return `${prefix}${sessionId}/${encodedDir}.dsh-any-preview/${encodeURIComponent(name)}`
 }
 
+/** One request to the extraction route; `action` selects extract, check or clean. */
+async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (response.status === 404) {
+    throw new Error('解压服务未加载：Host 半只在应用启动时加载，请重启应用后重试')
+  }
+  if (!response.ok) throw new Error((await response.text()) || `HTTP ${String(response.status)}`)
+  return await response.json() as T
+}
+
 /** One member: rendered by its own format when we have one, else explained. */
 function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
   readonly entry: ArchiveEntry
@@ -207,6 +221,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
   const [extracting, setExtracting] = useState(false)
   const [notice, setNotice] = useState<string | undefined>(undefined)
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  const [existing, setExisting] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (url === undefined) return
@@ -224,6 +239,15 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     return () => { alive = false }
   }, [url, entry, module])
 
+  // Look for a copy from an earlier visit, so reopening does not ask again.
+  useEffect(() => {
+    let alive = true
+    void postExtract<{ exists: boolean, path: string | null }>({ action: 'check', entry: entry.name, targetDir: dir })
+      .then((result) => { if (alive) setExisting(result.exists ? result.path ?? undefined : undefined) })
+      .catch(() => { /* route not loaded yet: the panel still offers extraction */ })
+    return () => { alive = false }
+  }, [entry.name, dir])
+
   const choose = async (): Promise<void> => {
     setFailure(undefined)
     try {
@@ -234,21 +258,18 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     }
   }
 
-  const extract = async (): Promise<void> => {
+  const extract = async (force = false): Promise<void> => {
     setExtracting(true)
     setFailure(undefined)
     setNotice(undefined)
     try {
-      const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ archive: archivePath, entry: entry.name, targetDir: dir }),
+      const result = await postExtract<{ path: string }>({
+        archive: archivePath,
+        entry: entry.name,
+        targetDir: dir,
+        force,
       })
-      if (response.status === 404) {
-        throw new Error('解压服务未加载：Host 半只在应用启动时加载，请重启应用后重试')
-      }
-      if (!response.ok) throw new Error((await response.text()) || `HTTP ${String(response.status)}`)
-      const result = await response.json() as { path: string }
+      setExisting(result.path)
       const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
       setNotice(address !== undefined && openResourceAddress(address)
         ? `已解压并在主预览中打开：${result.path}`
@@ -260,6 +281,15 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     }
   }
 
+  const openExisting = (): void => {
+    const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
+    if (address !== undefined && openResourceAddress(address)) {
+      setNotice('已在主预览中打开')
+      return
+    }
+    setNotice(`文件在 ${existing ?? dir}，可在文件树中打开`)
+  }
+
   const panel = (
     <div style={panelStyle}>
       <div style={{ color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 }}>
@@ -267,18 +297,34 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
           ? loaded.message
           : '此类型需解压后用主预览查看。'}
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          value={dir}
-          onChange={event => setDir(event.target.value)}
-          aria-label="解压目录"
-          style={pathInputStyle}
-        />
-        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
-        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
-          {extracting ? '解压中…' : '解压并打开'}
-        </button>
-      </div>
+      {existing !== undefined
+        ? (
+            <>
+              <div style={{ marginBottom: 8, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' }}>
+                已解压：{existing}
+              </div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button type="button" onClick={openExisting} style={smallButtonStyle}>在主预览打开</button>
+                <button type="button" onClick={() => { void extract(true) }} disabled={extracting} style={smallButtonStyle}>
+                  {extracting ? '解压中…' : '重新解压'}
+                </button>
+              </div>
+            </>
+          )
+        : (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                value={dir}
+                onChange={event => setDir(event.target.value)}
+                aria-label="解压目录"
+                style={pathInputStyle}
+              />
+              <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
+              <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
+                {extracting ? '解压中…' : '解压并打开'}
+              </button>
+            </div>
+          )}
       {notice !== undefined && <div style={{ marginTop: 8, color: 'var(--dsw-alias-label-secondary)' }}>{notice}</div>}
       {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
     </div>
@@ -322,6 +368,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const size = meta?.size ?? 0
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
+  const [cleanNotice, setCleanNotice] = useState<string | undefined>(undefined)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const reported = useRef<string | undefined>(undefined)
@@ -371,6 +418,19 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const files = entries.filter(entry => !entry.directory)
   const total = files.reduce((sum, entry) => sum + entry.size, 0)
 
+  const clean = async (): Promise<void> => {
+    if (absolutePath === undefined) return
+    try {
+      const result = await postExtract<{ removed: number }>({
+        action: 'clean',
+        targetDir: defaultTargetDir(absolutePath),
+      })
+      setCleanNotice(result.removed === 0 ? '没有需要清理的解压文件' : `已清理 ${String(result.removed)} 个解压文件`)
+    } catch (error) {
+      setCleanNotice(error instanceof Error ? error.message : '清理失败')
+    }
+  }
+
   if (selected !== undefined) {
     return (
       <EntryView
@@ -391,7 +451,12 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
           {' · '}解压后 {formatBytes(total)}
           {entries.length >= MAX_ENTRIES && ' · 已达上限'}
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>点击条目预览内容</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)' }}>
+          <span>{cleanNotice ?? '点击条目预览内容'}</span>
+          {absolutePath !== undefined && (
+            <button type="button" onClick={() => { void clean() }} style={smallButtonStyle}>清理解压</button>
+          )}
+        </span>
       </div>
       <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12 }}>

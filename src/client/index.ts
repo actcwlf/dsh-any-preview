@@ -8,7 +8,7 @@
  */
 import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
-import { setDirectoryPicker, setOpenResource, setRemoteLookup } from './runtime.ts'
+import { setDirectoryPicker, setOpenResource } from './runtime.ts'
 
 interface DocumentPreviewDefinition {
   readonly id: string
@@ -105,10 +105,12 @@ export function apply(ctx: ClientContext): void {
   }, 'sidebar injection')
 
   safe(() => {
-    ctx.inject?.(['remote'], (scope: never) => {
+    // The namespace must be named in the injection: reading
+    // `remote.directoryPicker` from a scope that injected only `remote` throws
+    // "cannot get property … without inject".
+    ctx.inject?.(['remote', 'remote.directoryPicker'], (scope: never) => {
       const remote = (scope as { remote: unknown }).remote
       safe(() => { bindPicker(remote) }, 'directory picker')
-      setRemoteLookup(() => remote)
     })
   }, 'remote injection')
 

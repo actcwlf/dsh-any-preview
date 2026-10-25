@@ -5,7 +5,7 @@
  * itself uses Node's fs, confined to the directory the caller names and to a
  * sanitized base name. Anything that would escape that directory is refused.
  */
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { zipEntryBytes } from '../client/previews/archive/parse.ts'
@@ -41,8 +41,12 @@ export interface ExtractRouteContext {
 }
 
 interface ExtractRequest {
-  readonly archive: string
-  readonly entry: string
+  /** `extract` (default), `check` for an existing copy, `clean` for the directory. */
+  readonly action?: 'extract' | 'check' | 'clean'
+  /** Rewrite even when an identical extraction is present. */
+  readonly force?: boolean
+  readonly archive?: string
+  readonly entry?: string
   readonly targetDir: string
 }
 
@@ -68,15 +72,46 @@ export async function extractEntryTo(
   archiveBytes: Uint8Array,
   entryName: string,
   targetDir: string,
+  force = false,
 ): Promise<string> {
   const data = await zipEntryBytes(archiveBytes, entryName, bytes => inflateRawSync(bytes))
   if (data.byteLength > MAX_ENTRY_BYTES) {
     throw new Error(`条目解压后 ${String(data.byteLength)} 字节，超过上限`)
   }
-  await mkdir(targetDir, { recursive: true })
   const path = join(targetDir, safeEntryName(entryName))
+  // Reuse an identical previous extraction: reopening an entry should not
+  // rewrite it, and the file stays openable by the standard preview.
+  if (!force) {
+    const existing = await stat(path).catch(() => undefined)
+    if (existing !== undefined && existing.isFile() && existing.size === data.byteLength) return path
+  }
+  await mkdir(targetDir, { recursive: true })
   await writeFile(path, data)
   return path
+}
+
+/** Whether a previous extraction of this member is still on disk. */
+export async function extractedPathOf(entryName: string, targetDir: string): Promise<string | undefined> {
+  const path = join(targetDir, safeEntryName(entryName))
+  const info = await stat(path).catch(() => undefined)
+  return info !== undefined && info.isFile() ? path : undefined
+}
+
+/**
+ * Remove an extraction directory. Only `.dsh-any-preview` directories are
+ * removable, so a mistyped path cannot delete a user directory.
+ * @param targetDir - the directory the client extracted into.
+ * @returns how many files were removed.
+ */
+export async function cleanExtractionDir(targetDir: string): Promise<number> {
+  if (basename(targetDir) !== '.dsh-any-preview') {
+    throw new Error('只能清理 .dsh-any-preview 目录')
+  }
+  const info = await stat(targetDir).catch(() => undefined)
+  if (info === undefined) return 0
+  const before = await readdir(targetDir).catch(() => [] as string[])
+  await rm(targetDir, { recursive: true, force: true })
+  return before.length
 }
 
 function failure(status: number, message: string): Response {
@@ -93,14 +128,27 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
   } catch {
     return failure(400, 'invalid json')
   }
-  const { archive, entry, targetDir } = body
-  if (typeof archive !== 'string' || typeof entry !== 'string' || typeof targetDir !== 'string') {
-    return failure(400, 'archive, entry and targetDir are required')
-  }
-  if (!isAbsolute(archive) || !isAbsolute(targetDir)) return failure(400, 'absolute paths required')
-  if (archive.includes('\0') || entry.includes('\0') || targetDir.includes('\0')) return failure(400, 'nul byte')
+  const { archive, entry, targetDir, action, force } = body
+  if (typeof targetDir !== 'string') return failure(400, 'targetDir is required')
+  if (!isAbsolute(targetDir)) return failure(400, 'absolute paths required')
+  if (targetDir.includes('\0')) return failure(400, 'nul byte')
+
+  const json = (value: unknown): Response =>
+    Response.json(value, { headers: { 'Cache-Control': 'private, no-store' } })
 
   try {
+    if (action === 'clean') return json({ removed: await cleanExtractionDir(targetDir) })
+
+    if (typeof entry !== 'string' || entry.includes('\0')) return failure(400, 'entry is required')
+
+    if (action === 'check') {
+      const path = await extractedPathOf(entry, targetDir)
+      return json({ exists: path !== undefined, path: path ?? null })
+    }
+
+    if (typeof archive !== 'string' || !isAbsolute(archive)) return failure(400, 'absolute archive path required')
+    if (archive.includes('\0')) return failure(400, 'nul byte')
+
     const target = await ctx.fs.resolve(archive, { signal: request.signal })
     const info = await ctx.fs.stat(target, request.signal)
     if (info === undefined) return failure(404, 'archive not found')
@@ -108,8 +156,8 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
     if ((info.size ?? 0) > MAX_ARCHIVE_BYTES) return failure(413, 'archive exceeds size limit')
 
     const bytes = await ctx.fs.readBytes(target, request.signal, MAX_ARCHIVE_BYTES)
-    const path = await extractEntryTo(bytes, entry, targetDir)
-    return Response.json({ path }, { headers: { 'Cache-Control': 'private, no-store' } })
+    const path = await extractEntryTo(bytes, entry, targetDir, force === true)
+    return json({ path })
   } catch (error) {
     return failure(500, error instanceof Error ? error.message : 'extract failed')
   }

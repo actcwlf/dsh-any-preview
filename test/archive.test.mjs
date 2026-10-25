@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/client/previews/archive/parse.ts'
-import { extractEntryTo, safeEntryName } from '../src/host/extract-route.ts'
+import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName } from '../src/host/extract-route.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
@@ -79,4 +79,23 @@ test('an entry extracts to disk with its content', { skip: !available }, async (
   const path = await extractEntryTo(archive, 'data.csv', dir)
   assert.equal(readFileSync(path, 'utf8'), 'a,b\n1,2')
   rmSync(dir, { recursive: true, force: true })
+})
+
+test('extraction is reusable, reportable and cleanable', { skip: !available }, async () => {
+  const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
+  const dir = `${root}/.dsh-any-preview`
+  const archive = new Uint8Array(readFileSync(ZIP))
+
+  const first = await extractEntryTo(archive, 'data.csv', dir)
+  const second = await extractEntryTo(archive, 'data.csv', dir)
+  assert.equal(first, second, 'a repeat extraction reuses the file')
+
+  assert.equal(await extractedPathOf('data.csv', dir), first)
+  assert.equal(await extractedPathOf('missing.txt', dir), undefined)
+
+  assert.equal(await cleanExtractionDir(dir), 1)
+  assert.equal(await extractedPathOf('data.csv', dir), undefined)
+  // Only a directory actually named `.dsh-any-preview` may be removed.
+  await assert.rejects(() => cleanExtractionDir(root))
+  rmSync(root, { recursive: true, force: true })
 })
