@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Media previews: native `<video>` / `<audio>` over the Host's byte-range route.
  *
  * `loading: 'renderer'` keeps the whole file out of the shared content
@@ -217,9 +217,6 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   }
 
   const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
-  // A dsh-app:// address cannot be opened as a new tab by the shell; the
-  // loopback URL is a plain http address it can hand to the OS.
-  const externalUrl = lanSrc !== '' ? lanSrc : remote
 
   if (remote === undefined) {
     return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
@@ -293,7 +290,6 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
         {info !== '' && <span style={styles.name}>{info}</span>}
         {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
-        <a style={styles.link} href={externalUrl} target="_blank" rel="noreferrer">{t('common.openInNewTab')}</a>
       </div>
     </div>
   )
