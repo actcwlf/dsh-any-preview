@@ -20,6 +20,7 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
+import { fileSize } from '../../kernel/zip.ts'
 import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
 const VIDEO_EXTENSIONS = [
@@ -51,13 +52,14 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [bufferedUrl, setBufferedUrl] = useState('')
   const [buffering, setBuffering] = useState(false)
   const [blocked, setBlocked] = useState(false)
+  const [size, setSize] = useState<number | undefined>(meta?.size)
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
 
   const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
   const name = typeof absolutePath === 'string' ? basenameOf(absolutePath) : ''
-  const bytes = formatBytes(meta?.size)
+  const bytes = formatBytes(size ?? meta?.size)
   const metaLine = bytes === '' ? name : `${name} · ${bytes}`
 
   useEffect(() => {
@@ -100,32 +102,40 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       probing.current = false
       if (!element.isConnected) return
       const end = element.seekable.length > 0 ? element.seekable.end(0) : 0
-      const decision = bufferingDecision(end, meta?.size)
-      if (decision === 'none') return
-      if (decision === 'blocked') {
-        setBlocked(true)
-        return
-      }
-      resumeAt.current = element.currentTime
-      setBuffering(true)
-      void fetch(remote)
-        .then((response) => {
-          if (!response.ok) throw new Error(`media fetch failed: ${String(response.status)}`)
-          return response.blob()
-        })
-        .then((blob) => {
-          if (blob.size > MAX_BUFFER_BYTES) {
-            setBlocked(true)
-            return
-          }
-          setBufferedUrl(URL.createObjectURL(blob))
-        })
-        .catch(() => {
+      void (async () => {
+        // The desktop file resource usually reports no size. Without one the
+        // buffering cap cannot apply, and any file — however large — would be
+        // pulled into memory. The route's Content-Range carries the real
+        // length, so ask for it before deciding.
+        const resolved = meta?.size ?? await fileSize(remote)
+        if (resolved !== undefined && resolved !== size) setSize(resolved)
+        const decision = bufferingDecision(end, resolved)
+        if (decision === 'none') return
+        if (decision === 'blocked') {
           setBlocked(true)
-        })
-        .finally(() => {
-          setBuffering(false)
-        })
+          return
+        }
+        resumeAt.current = element.currentTime
+        setBuffering(true)
+        void fetch(remote)
+          .then((response) => {
+            if (!response.ok) throw new Error(`media fetch failed: ${String(response.status)}`)
+            return response.blob()
+          })
+          .then((blob) => {
+            if (blob.size > MAX_BUFFER_BYTES) {
+              setBlocked(true)
+              return
+            }
+            setBufferedUrl(URL.createObjectURL(blob))
+          })
+          .catch(() => {
+            setBlocked(true)
+          })
+          .finally(() => {
+            setBuffering(false)
+          })
+      })()
     }, 300)
   }
 
