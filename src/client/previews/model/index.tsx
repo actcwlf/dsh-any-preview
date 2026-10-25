@@ -228,7 +228,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       renderer.forceContextLoss()
       renderer.domElement.remove()
     }
-  }, [url, extension, size])
+  }, [url, extension, size, chunkReady])
 
   return (
     <div style={PANE_ROOT}>
