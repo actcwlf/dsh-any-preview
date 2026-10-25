@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../../i18n.ts'
+import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
 import { loadMux } from '../../kernel/mux-loader.ts'
 
 /** Refuse to hold a transport stream much larger than this in memory. */
@@ -23,6 +24,10 @@ export function TsPlayer({ src }: TsPlayerProps) {
     let objectUrl = ''
     void (async () => {
       try {
+        if (!isChunkEnabled('mux')) {
+          setMessage(t('media.tsDisabled'))
+          return
+        }
         const [mux, response] = await Promise.all([loadMux(), fetch(src)])
         if (!response.ok) throw new Error(`ts fetch failed: ${String(response.status)}`)
         const bytes = new Uint8Array(await response.arrayBuffer())

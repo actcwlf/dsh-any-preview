@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 3D model preview: three.js renderer with orbit controls.
  *
  * `loading: 'renderer'` because a model needs the whole file; the bytes come
@@ -10,6 +10,7 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
+import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
 import { loadThree } from '../../kernel/three-loader.ts'
 import type { ThreeBundle } from '../../../chunk/three.ts'
 
@@ -113,6 +114,11 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     let alive = true
     // Gate on THREE itself: the assignments in .then happen before React
     // re-renders, so no state flag is needed and none can race.
+    if (!isChunkEnabled('three')) {
+      setStatus('error')
+      setDetail(t('model.disabled'))
+      return
+    }
     if (THREE === undefined) {
       void loadThree()
         .then((three) => {

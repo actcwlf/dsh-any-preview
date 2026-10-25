@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Client half: register every preview in `PREVIEWS`.
  *
  * Two registrations make one renderer: the metadata row in `documentPreviews`
@@ -10,6 +10,8 @@ import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
 import { setDirectoryPicker, setOpenResource } from './runtime.ts'
 import { checkClientContracts } from './contracts.ts'
+import { warmableChunks } from './kernel/chunk-policy.ts'
+import { loadMux } from './kernel/mux-loader.ts'
 import { loadThree } from './kernel/three-loader.ts'
 import { refreshLocale, setTranslator } from './i18n.ts'
 import { en, zh } from './locales.ts'
@@ -17,6 +19,12 @@ import { reportContractIssues } from '../shared/contracts.ts'
 
 /** Copy namespace this package's dictionaries register under. */
 const NS = 'anyPreview'
+
+/** Loaders for every chunk the policy can name. */
+const CHUNK_LOADERS: Readonly<Record<string, () => Promise<unknown>>> = {
+  three: loadThree,
+  mux: loadMux,
+}
 
 /** How the shell's locale service looks to this plugin. */
 interface LocaleService {
@@ -81,10 +89,16 @@ export function apply(ctx: ClientContext): void {
   // Turn a missing upstream capability into one diagnostic line instead of a
   // silently empty sidebar.
   reportContractIssues('client', checkClientContracts(ctx))
-  // Warm the 3D chunk while the page is idle: the startup bundle stays small
-  // and opening a model still shows no wait.
+  // Warm the chunks whose policy says warm (three by default) while the page
+  // is idle: the startup bundle stays small and opening a model shows no wait.
+    // A 'never' chunk is not warmed and its preview reports itself disabled.
   try {
-    const warm = (): void => { void loadThree().catch(() => {}) }
+    const warm = (): void => {
+      for (const id of warmableChunks()) {
+        const load = CHUNK_LOADERS[id]
+        if (load !== undefined) void load().catch(() => {})
+      }
+    }
     if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 })
     else setTimeout(warm, 1500)
   } catch {
