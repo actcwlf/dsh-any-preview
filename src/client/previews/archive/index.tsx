@@ -295,6 +295,16 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     setNotice(`文件在 ${existing ?? dir}，可在文件树中打开`)
   }
 
+  // An entry that was extracted before opens itself: the extra panel and the
+  // extra click were pure friction once the file already exists on disk.
+  const autoOpened = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (existing === undefined) return
+    if (autoOpened.current === existing) return
+    autoOpened.current = existing
+    openExisting()
+  })
+
   const panel = (
     <div style={panelStyle}>
       <div style={{ color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 }}>
@@ -302,35 +312,27 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
           ? loaded.message
           : '此类型需解压后用主预览查看。'}
       </div>
-      {existing !== undefined
-        ? (
-            <>
-              <div style={{ marginBottom: 8, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' }}>
-                已解压：{existing}
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" onClick={openExisting} style={smallButtonStyle}>在主预览打开</button>
-                <button type="button" onClick={() => { void extract(true) }} disabled={extracting} style={smallButtonStyle}>
-                  {extracting ? '解压中…' : '重新解压'}
-                </button>
-              </div>
-            </>
-          )
-        : (
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <input
-                value={dir}
-                onChange={event => setDir(event.target.value)}
-                aria-label="解压目录"
-                style={pathInputStyle}
-              />
-              <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
-              <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
-                {extracting ? '解压中…' : '解压并打开'}
-              </button>
-            </div>
-          )}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={dir}
+          onChange={event => setDir(event.target.value)}
+          aria-label="解压目录"
+          style={pathInputStyle}
+        />
+        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
+        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
+          {extracting ? '解压中…' : '解压并打开'}
+        </button>
+      </div>
       {notice !== undefined && <div style={{ marginTop: 8, color: 'var(--dsw-alias-label-secondary)' }}>{notice}</div>}
+      {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
+    </div>
+  )
+
+  const extractedNote = (
+    <div style={panelStyle}>
+      <div>{notice ?? '已在主预览中打开。'}</div>
+      <div style={{ marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' }}>{existing}</div>
       {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
     </div>
   )
@@ -339,7 +341,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
   if (loaded.status === 'loading') {
     body = <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>正在解压…</div>
   } else if (loaded.status === 'error') {
-    body = panel
+    body = existing !== undefined ? extractedNote : panel
   } else if (module !== undefined && module.load === 'bytes-complete' && loaded.bytes !== undefined) {
     body = <module.Body content={{ kind: 'bytes', data: loaded.bytes }} resourceAddress="" wrap={false} />
   } else if (module !== undefined && loaded.text !== undefined) {
@@ -347,17 +349,35 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
   } else if (loaded.text !== undefined) {
     body = <pre style={preStyle}>{loaded.text}</pre>
   } else {
-    body = panel
+    body = existing !== undefined ? extractedNote : panel
   }
 
   return (
     <div style={PANE_ROOT}>
       <div style={barStyle}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
           <button type="button" onClick={onBack} style={backStyle}>← 返回</button>
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
+          {existing !== undefined && (
+            <span
+              title={existing}
+              style={{
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                fontSize: 11, color: 'var(--dsw-alias-label-tertiary)',
+              }}
+            >
+              → {existing}
+            </span>
+          )}
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '0 0 auto' }}>
+          {existing !== undefined && (
+            <button type="button" onClick={() => { void extract(true) }} disabled={extracting} style={smallButtonStyle}>
+              {extracting ? '解压中…' : '重新解压'}
+            </button>
+          )}
+          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
+        </span>
       </div>
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}>
         {body}
