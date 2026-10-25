@@ -62,7 +62,8 @@ async function mount() {
 
 test('client bundle registers every preview in the list', { skip: !available }, async () => {
   const { definitions } = await mount()
-  assert.deepEqual(definitions.map(definition => definition.id), [
+  const ids = definitions.map(definition => definition.id)
+  for (const expected of [
     'dsh-any-preview/csv',
     'dsh-any-preview/diff',
     'dsh-any-preview/log',
@@ -73,7 +74,13 @@ test('client bundle registers every preview in the list', { skip: !available }, 
     'dsh-any-preview/gltf',
     'dsh-any-preview/obj',
     'dsh-any-preview/stl',
-  ])
+    'dsh-any-preview/font',
+    'dsh-any-preview/archive',
+    'dsh-any-preview/eml',
+  ]) {
+    assert.ok(ids.includes(expected), `missing ${expected}`)
+  }
+  assert.equal(new Set(ids).size, ids.length, 'ids are unique')
   for (const definition of definitions) {
     assert.equal(definition.priority, 'extension')
     assert.ok(definition.extensions.length > 0)

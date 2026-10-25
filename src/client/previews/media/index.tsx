@@ -71,6 +71,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const absolutePath = meta?.absolutePath
   const version = meta?.version
   const [failed, setFailed] = useState(false)
+  const [info, setInfo] = useState('')
   const [bufferedUrl, setBufferedUrl] = useState('')
   const [buffering, setBuffering] = useState(false)
   const [blocked, setBlocked] = useState(false)
@@ -101,6 +102,14 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
    */
   const onLoadedMetadata = (event: SyntheticEvent<HTMLMediaElement>): void => {
     const element = event.currentTarget
+    // Read the real metadata once the browser has it: duration in particular is
+    // the fastest way to tell a truncated file from a short one.
+    const facts: string[] = []
+    if (Number.isFinite(element.duration)) facts.push(`${element.duration.toFixed(1)} 秒`)
+    if (element instanceof HTMLVideoElement && element.videoWidth > 0) {
+      facts.push(`${String(element.videoWidth)}×${String(element.videoHeight)}`)
+    }
+    setInfo(facts.join(' · '))
     if (resumeAt.current !== null) {
       try {
         element.currentTime = resumeAt.current
@@ -210,6 +219,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       )}
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
+        {info !== '' && <span style={styles.name}>{info}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>下载</a>}
         <a style={styles.link} href={remote} target="_blank" rel="noreferrer">在新标签页打开</a>
       </div>
