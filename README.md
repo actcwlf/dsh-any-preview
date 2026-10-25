@@ -1,4 +1,4 @@
-# dsh-any-preview
+﻿# dsh-any-preview
 
 给 DSH 右侧栏的文件预览加渲染器。**当前实现见下表**；包内按「一个接口 + 一个注册数组」
 组织，新增格式只需加一个目录和一行注册。
@@ -159,6 +159,22 @@ node "D:\DSH\deepseek-harness\node_modules\tsdown\dist\run.mjs"
 
 ⚠️ 客户端 bundle 不能打包 React 或 `@deepseek-ai/*`——它们必须留在模块表里，否则会出现
 第二份运行时实例。
+
+## 启动与懒加载
+
+体积不是约束，**体感延迟**才是：three.js 约 600 KB，只在打开 3D 文件时才需要。
+
+| 产物 | 体积 |
+|---|---|
+| `lib/client.js` | 109 KB（gzip 33 KB） |
+| `lib/three-chunk.js` | 752 KB（gzip 189 KB） |
+
+- 启动只解析主包（约 8 ms，原来是 ~27 ms）；
+- 插件激活后用 `requestIdleCallback` 预热 chunk（3 秒兜底），打开 3D 时通常已在内存里；
+- `kernel/three-loader.ts` 只用**一个共享 promise**，预热与打开预览不会重复下载；
+- chunk 由回环路由 `/any-preview/asset/three-chunk.js` 提供（`text/javascript` + CORS），
+  `import()` 的说明符在运行时生成，打包器不会内联它；
+- 没有 `webServer` 的 profile 取不到 chunk，3D 预览会显示错误，其它格式不受影响。
 
 ## 测试
 
