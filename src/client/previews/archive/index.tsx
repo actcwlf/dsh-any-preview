@@ -252,13 +252,18 @@ function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
     setFailure(undefined)
     try {
       const chosen = await chooseDirectory(new AbortController().signal)
-      if (chosen !== undefined) setDir(chosen)
+      // Cancelling keeps the current directory: only a real choice replaces it.
+      if (chosen !== undefined && chosen.trim() !== '') setDir(chosen)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : '无法选择目录')
     }
   }
 
   const extract = async (force = false): Promise<void> => {
+    if (dir.trim() === '') {
+      setFailure('请先填写解压目录')
+      return
+    }
     setExtracting(true)
     setFailure(undefined)
     setNotice(undefined)

@@ -45,7 +45,12 @@ export function openResourceAddress(address: string): boolean {
  */
 export async function chooseDirectory(signal: AbortSignal): Promise<string | undefined> {
   if (pickDirectory === undefined) throw new Error('当前环境未提供目录选择器，请直接编辑路径')
-  return (await pickDirectory(signal)) ?? undefined
+  const chosen = await pickDirectory(signal)
+  // A cancelled chooser arrives as null, and some backends flatten that to an
+  // empty string; both mean "keep what was there", never "clear the field".
+  if (typeof chosen !== 'string') return undefined
+  const trimmed = chosen.trim()
+  return trimmed === '' ? undefined : trimmed
 }
 
 /** Whether the sidebar navigation handle is available. */
