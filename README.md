@@ -18,7 +18,7 @@
 | 媒体 | `mp4/mkv/…` `mp3/wav/…` | 原生播放；桌面版 Blob 兜底；时长/分辨率 |
 | 3D | `glb` `gltf` `obj` `stl` | three.js、轨道控制、包围盒取景 |
 | 字体 | `ttf` `otf` `woff` `woff2` | FontFace + 字形表 |
-| 压缩包 | `zip` `tar` `tar.gz` `tgz` | 中央目录 / 顺序头解析，**仅列出内容** |
+| 压缩包 | `zip` `tar` `tar.gz` `tgz` | 中央目录 / 顺序头解析；zip 条目可点开预览文本（store/deflate，≤2 MB） |
 | 邮件 | `eml` | 头部、正文、附件名（不提取附件） |
 
 内置渲染器已覆盖 office / excel / pdf / image / html / markdown / code，本包专注它没覆盖
