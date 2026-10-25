@@ -126,3 +126,40 @@ export function decodeText(bytes: Uint8Array): string | undefined {
     return undefined
   }
 }
+
+/**
+ * Locate one member's compressed payload inside a complete archive.
+ * @param archive - the whole archive.
+ * @param entry - a member from {@link parseZipDirectory}.
+ * @returns the still-compressed bytes (stored members are returned as-is).
+ */
+export function zipEntryPayload(archive: Uint8Array, entry: ArchiveEntry): Uint8Array {
+  const start = entry.offset + localDataStart(archive.subarray(entry.offset, entry.offset + 30))
+  return archive.subarray(start, start + entry.compressedSize)
+}
+
+/**
+ * Expand one zip member from a complete archive buffer.
+ * @param archive - the whole archive.
+ * @param name - exact member name.
+ * @param inflate - the platform's raw-deflate decoder (sync or async).
+ * @returns the member's bytes.
+ */
+export async function zipEntryBytes(
+  archive: Uint8Array,
+  name: string,
+  inflate: (bytes: Uint8Array) => Uint8Array | Promise<Uint8Array>,
+): Promise<Uint8Array> {
+  const eocd = findEocd(archive)
+  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
+  const range = zipDirectoryRange(archive, eocd)
+  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
+  const entry = parseZipDirectory(archive.subarray(range.offset, range.offset + range.size))
+    .find(candidate => candidate.name === name)
+  if (entry === undefined) throw new Error(`压缩包内没有 ${name}`)
+  if (entry.directory) throw new Error('这是一个目录，不是文件')
+  const payload = zipEntryPayload(archive, entry)
+  if (entry.method === 0) return payload
+  if (entry.method === 8) return inflate(payload)
+  throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
+}

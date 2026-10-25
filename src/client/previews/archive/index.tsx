@@ -6,9 +6,17 @@
  * Listing only — extracting an entry is a later step.
  */
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
+import { csvPreview } from '../csv/index.tsx'
+import { diffPreview } from '../diff/index.tsx'
+import { emlPreview } from '../eml/index.tsx'
+import { fontPreview } from '../font/index.tsx'
+import { jsonlPreview } from '../jsonl/index.tsx'
+import { logPreview } from '../log/index.tsx'
 import { MAX_ENTRIES, decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from './parse.ts'
 import type { ArchiveEntry } from './parse.ts'
 
@@ -126,7 +134,7 @@ const MAX_ENTRY_BYTES = 2 * 1024 * 1024
  * @param entry - member to expand.
  * @returns its decoded text.
  */
-async function extractZipEntry(url: string, entry: ArchiveEntry): Promise<string> {
+async function readEntryBytes(url: string, entry: ArchiveEntry): Promise<Uint8Array> {
   if (entry.size > MAX_ENTRY_BYTES) {
     throw new Error(`条目 ${formatBytes(entry.size)} 超过 ${formatBytes(MAX_ENTRY_BYTES)} 上限`)
   }
@@ -135,33 +143,158 @@ async function extractZipEntry(url: string, entry: ArchiveEntry): Promise<string
   const raw = entry.compressedSize === 0
     ? new Uint8Array()
     : await readRange(url, dataStart, dataStart + entry.compressedSize - 1)
-  let data = raw
-  if (entry.method === 8) data = await inflateRaw(raw)
-  else if (entry.method !== 0) throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
-  const text = decodeText(data)
-  if (text === undefined) throw new Error('二进制内容，无法作为文本预览')
-  return text
+  if (entry.method === 0) return raw
+  if (entry.method === 8) return inflateRaw(raw)
+  throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
 }
 
-/** One member's contents, with a way back to the list. */
-function EntryView({ entry, url, onBack }: {
+/** Formats this package renders from content alone, without a file address. */
+const CONTENT_MODULES: readonly PreviewModule[] = [
+  csvPreview, diffPreview, emlPreview, fontPreview, jsonlPreview, logPreview,
+]
+
+function contentModuleFor(name: string): PreviewModule | undefined {
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return undefined
+  const extension = name.slice(dot + 1).toLowerCase()
+  return CONTENT_MODULES.find(module => module.extensions.includes(extension))
+}
+
+/** Default extraction directory: a hidden folder beside the archive. */
+export function defaultTargetDir(archivePath: string): string {
+  const normalized = archivePath.replaceAll('\\', '/')
+  const cut = normalized.lastIndexOf('/')
+  return `${cut < 0 ? '.' : normalized.slice(0, cut)}/.dsh-any-preview`
+}
+
+/**
+ * Address of an extracted member, when the archive is a session file and the
+ * member landed in the default directory beside it. Anything else cannot be
+ * referenced by the file resource.
+ */
+export function extractedAddress(
+  resourceAddress: string,
+  entryName: string,
+  targetDir: string,
+  expectedDir: string,
+): string | undefined {
+  const prefix = 'dsh-resource://file/session/'
+  if (!resourceAddress.startsWith(prefix)) return undefined
+  if (targetDir.replaceAll('\\', '/') !== expectedDir) return undefined
+  const segments = resourceAddress.slice(prefix.length).split('/')
+  const sessionId = segments[0]
+  if (sessionId === undefined || sessionId === '') return undefined
+  const relative = segments.slice(1).map(decodeURIComponent).join('/')
+  const cut = relative.lastIndexOf('/')
+  const directory = cut < 0 ? '' : relative.slice(0, cut)
+  const name = entryName.replaceAll('\\', '/').split('/').pop() ?? entryName
+  const encodedDir = directory === '' ? '' : `${directory.split('/').map(encodeURIComponent).join('/')}/`
+  return `${prefix}${sessionId}/${encodedDir}.dsh-any-preview/${encodeURIComponent(name)}`
+}
+
+/** One member: rendered by its own format when we have one, else explained. */
+function EntryView({ entry, url, resourceAddress, archivePath, onBack }: {
   readonly entry: ArchiveEntry
   readonly url: string | undefined
+  readonly resourceAddress: string
+  readonly archivePath: string
   readonly onBack: () => void
 }) {
-  const [state, setState] = useState<{ status: 'loading' | 'ready' | 'error', text: string }>({ status: 'loading', text: '' })
+  const module = contentModuleFor(entry.name)
+  const defaultDir = defaultTargetDir(archivePath)
+  const [loaded, setLoaded] = useState<{ status: 'loading' | 'ready' | 'error', bytes?: Uint8Array, text?: string, message?: string }>({ status: 'loading' })
+  const [dir, setDir] = useState(defaultDir)
+  const [extracting, setExtracting] = useState(false)
+  const [notice, setNotice] = useState<string | undefined>(undefined)
+  const [failure, setFailure] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     if (url === undefined) return
     let alive = true
-    setState({ status: 'loading', text: '' })
-    void extractZipEntry(url, entry)
-      .then((text) => { if (alive) setState({ status: 'ready', text }) })
+    setLoaded({ status: 'loading' })
+    void readEntryBytes(url, entry)
+      .then((bytes) => {
+        if (!alive) return
+        const text = module?.load === 'bytes-complete' ? undefined : decodeText(bytes)
+        setLoaded({ status: 'ready', bytes, text })
+      })
       .catch((error: unknown) => {
-        if (alive) setState({ status: 'error', text: error instanceof Error ? error.message : '无法读取条目' })
+        if (alive) setLoaded({ status: 'error', message: error instanceof Error ? error.message : '无法读取条目' })
       })
     return () => { alive = false }
-  }, [url, entry])
+  }, [url, entry, module])
+
+  const choose = async (): Promise<void> => {
+    setFailure(undefined)
+    try {
+      const chosen = await chooseDirectory(new AbortController().signal)
+      if (chosen !== undefined) setDir(chosen)
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : '无法选择目录')
+    }
+  }
+
+  const extract = async (): Promise<void> => {
+    setExtracting(true)
+    setFailure(undefined)
+    setNotice(undefined)
+    try {
+      const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ archive: archivePath, entry: entry.name, targetDir: dir }),
+      })
+      if (!response.ok) throw new Error((await response.text()) || `HTTP ${String(response.status)}`)
+      const result = await response.json() as { path: string }
+      const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
+      setNotice(address !== undefined && openResourceAddress(address)
+        ? `已解压并在主预览中打开：${result.path}`
+        : `已解压到 ${result.path}，可在文件树中打开`)
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : '解压失败')
+    } finally {
+      setExtracting(false)
+    }
+  }
+
+  const panel = (
+    <div style={panelStyle}>
+      <div style={{ color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 }}>
+        {loaded.status === 'error'
+          ? loaded.message
+          : '此类型需解压后用主预览查看。'}
+      </div>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={dir}
+          onChange={event => setDir(event.target.value)}
+          aria-label="解压目录"
+          style={pathInputStyle}
+        />
+        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>选择…</button>
+        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
+          {extracting ? '解压中…' : '解压并打开'}
+        </button>
+      </div>
+      {notice !== undefined && <div style={{ marginTop: 8, color: 'var(--dsw-alias-label-secondary)' }}>{notice}</div>}
+      {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
+    </div>
+  )
+
+  let body: ReactNode
+  if (loaded.status === 'loading') {
+    body = <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>正在解压…</div>
+  } else if (loaded.status === 'error') {
+    body = panel
+  } else if (module !== undefined && module.load === 'bytes-complete' && loaded.bytes !== undefined) {
+    body = <module.Body content={{ kind: 'bytes', data: loaded.bytes }} resourceAddress="" wrap={false} />
+  } else if (module !== undefined && loaded.text !== undefined) {
+    body = <module.Body content={{ kind: 'text', text: loaded.text, eof: true }} resourceAddress="" wrap={false} />
+  } else if (loaded.text !== undefined) {
+    body = <pre style={preStyle}>{loaded.text}</pre>
+  } else {
+    body = panel
+  }
 
   return (
     <div style={PANE_ROOT}>
@@ -172,14 +305,8 @@ function EntryView({ entry, url, onBack }: {
         </span>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
       </div>
-      <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        {state.status === 'ready'
-          ? <pre style={preStyle}>{state.text}</pre>
-          : (
-              <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
-                {state.status === 'loading' ? '正在解压…' : state.text}
-              </div>
-            )}
+      <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}>
+        {body}
       </div>
     </div>
   )
@@ -242,7 +369,15 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const total = files.reduce((sum, entry) => sum + entry.size, 0)
 
   if (selected !== undefined) {
-    return <EntryView entry={selected} url={url} onBack={() => setSelected(undefined)} />
+    return (
+      <EntryView
+        entry={selected}
+        url={url}
+        resourceAddress={resourceAddress}
+        archivePath={absolutePath ?? ''}
+        onBack={() => setSelected(undefined)}
+      />
+    )
   }
 
   return (
@@ -323,6 +458,36 @@ const preStyle = {
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
   color: 'var(--dsw-alias-label-primary)',
+} as const
+
+const panelStyle = {
+  padding: '12px 14px',
+  fontSize: 12,
+  color: 'var(--dsw-alias-label-secondary)',
+} as const
+
+const pathInputStyle = {
+  font: 'inherit',
+  fontSize: 12,
+  padding: '2px 8px',
+  flex: '1 1 240px',
+  minWidth: 180,
+  borderRadius: 6,
+  color: 'var(--dsw-alias-label-primary)',
+  background: 'var(--dsw-alias-bg-layer-2)',
+  border: '1px solid var(--dsw-alias-border-l2)',
+} as const
+
+const smallButtonStyle = {
+  font: 'inherit',
+  fontSize: 12,
+  padding: '2px 10px',
+  borderRadius: 6,
+  cursor: 'pointer',
+  color: 'var(--dsw-alias-label-primary)',
+  background: 'var(--dsw-alias-bg-layer-2)',
+  border: '1px solid var(--dsw-alias-border-l2)',
+  flex: '0 0 auto',
 } as const
 
 const ARCHIVE_EXTENSIONS = ['zip', 'tar', 'tar.gz', 'tgz'] as const

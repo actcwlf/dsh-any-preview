@@ -22,6 +22,7 @@ interface DocumentPreviewDefinition {
 /** The slice of the client Cordis context this plugin touches. */
 interface ClientContext {
   effect(run: () => () => void, label?: string): unknown
+  inject?(deps: readonly string[], callback: (scope: never) => void): unknown
   readonly documentPreviews: { register(definition: DocumentPreviewDefinition): () => void }
   readonly slots: {
     inject(key: string, run: () => () => void): () => void
@@ -62,5 +63,15 @@ function registerPreview(ctx: ClientContext, module: PreviewModule): void {
 }
 
 export function apply(ctx: ClientContext): void {
+  // Optional capabilities. A profile without them still renders every preview;
+  // only the "open elsewhere" and "choose a directory" affordances are lost.
+  ctx.inject?.(['sidebarRight'], (scope: never) => {
+    const sidebar = (scope as { sidebarRight: { openResource(address: string): void } }).sidebarRight
+    setOpenResource(address => { sidebar.openResource(address) })
+  })
+  ctx.inject?.(['remote', 'remote.directoryPicker'], (scope: never) => {
+    const picker = (scope as { remote: { directoryPicker: { pick(signal: AbortSignal): Promise<string | null> } } }).remote.directoryPicker
+    setDirectoryPicker(signal => picker.pick(signal))
+  })
   for (const module of PREVIEWS) registerPreview(ctx, module)
 }

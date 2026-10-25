@@ -1,9 +1,10 @@
 /** Zip and tar parsing against the real fixtures in samples/. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/client/previews/archive/parse.ts'
+import { extractEntryTo, safeEntryName } from '../src/host/extract-route.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
@@ -63,4 +64,19 @@ test('a deflated member inflates back to its text', { skip: !available }, async 
 test('decodeText refuses binary payloads', () => {
   assert.equal(decodeText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01])), undefined)
   assert.equal(decodeText(new TextEncoder().encode('plain text')), 'plain text')
+})
+
+test('entry names cannot escape the target directory', () => {
+  assert.equal(safeEntryName('../../evil.sh'), 'evil.sh')
+  assert.equal(safeEntryName('a/b/c.txt'), 'c.txt')
+  assert.equal(safeEntryName('..'), '_')
+  assert.equal(safeEntryName(''), 'entry')
+})
+
+test('an entry extracts to disk with its content', { skip: !available }, async () => {
+  const dir = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
+  const archive = new Uint8Array(readFileSync(ZIP))
+  const path = await extractEntryTo(archive, 'data.csv', dir)
+  assert.equal(readFileSync(path, 'utf8'), 'a,b\n1,2')
+  rmSync(dir, { recursive: true, force: true })
 })
