@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Extract one archive member to disk so the standard preview can open it.
  *
  * The Host filesystem service reads bytes but has no binary write, so the write
@@ -9,6 +9,7 @@ import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { zipEntryBytes } from '../shared/zip/parse.ts'
+import type { RouteContext } from './contracts.ts'
 
 /** Refuse archives larger than this before loading them into memory. */
 const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
@@ -19,26 +20,8 @@ const MAX_ENTRY_BYTES = 128 * 1024 * 1024
 /** Path this route claims on the authenticated Fetch channel. */
 export const EXTRACT_ROUTE_PATH = '/api/any-preview/extract'
 
-/** The slice of the Host filesystem service this route uses. */
-interface HostFileSystem {
-  resolve(path: string, options: { signal: AbortSignal }): Promise<unknown>
-  stat(target: unknown, signal: AbortSignal): Promise<{ type?: string, size?: number } | undefined>
-  readBytes(target: unknown, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>
-}
-
-export interface ExtractRouteContext {
-  readonly fs: HostFileSystem
-  readonly connection: {
-    readonly fetch: {
-      register(route: {
-        path: string
-        methods: string[]
-        requestBody: 'buffered'
-        fetch(request: Request): Promise<Response>
-      }): () => void
-    }
-  }
-}
+/** The slice of the Host context this route touches. */
+export type ExtractRouteContext = RouteContext
 
 interface ExtractRequest {
   /** `extract` (default), `check` for an existing copy, `clean` for the directory. */

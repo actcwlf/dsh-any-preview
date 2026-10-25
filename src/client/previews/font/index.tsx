@@ -22,7 +22,9 @@ export function FontBody({ content }: PreviewBodyProps) {
     void (async () => {
       try {
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-        const loaded = new FontFace(FAMILY, buffer)
+        // `slice` over an ArrayBufferLike yields ArrayBuffer at runtime; the
+        // cast only pins the union back to the DOM signature.
+        const loaded = new FontFace(FAMILY, buffer as ArrayBuffer)
         await loaded.load()
         if (!alive) return
         document.fonts.add(loaded)

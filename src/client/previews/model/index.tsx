@@ -7,6 +7,10 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+
+/** three.js ships no typings in this package; these keep the signatures readable. */
+type Object3D = any
+type BufferGeometry = any
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
@@ -32,7 +36,7 @@ function extensionOf(path: string): string {
 }
 
 /** Build the scene object for one decoded file. */
-async function parseModel(extension: string, bytes: ArrayBuffer): Promise<THREE.Object3D> {
+async function parseModel(extension: string, bytes: ArrayBuffer): Promise<Object3D> {
   if (extension === 'glb' || extension === 'gltf') {
     const gltf = await new GLTFLoader().parseAsync(bytes, '')
     return gltf.scene
@@ -49,11 +53,11 @@ async function parseModel(extension: string, bytes: ArrayBuffer): Promise<THREE.
 }
 
 /** Count triangles so an oversized mesh can be refused after parsing. */
-function triangleCount(object: THREE.Object3D): number {
+function triangleCount(object: Object3D): number {
   let total = 0
   object.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
-    const geometry = child.geometry as THREE.BufferGeometry
+    const geometry = child.geometry as BufferGeometry
     const index = geometry.getIndex()
     const position = geometry.getAttribute('position')
     total += index !== null ? index.count / 3 : (position?.count ?? 0) / 3
@@ -62,14 +66,14 @@ function triangleCount(object: THREE.Object3D): number {
 }
 
 /** Release every GPU resource the object owns. */
-function disposeObject(root: THREE.Object3D): void {
+function disposeObject(root: Object3D): void {
   root.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry.dispose()
     const materials = Array.isArray(child.material) ? child.material : [child.material]
     for (const material of materials) {
-      for (const value of Object.values(material)) {
-        if (value instanceof THREE.Texture) value.dispose()
+      for (const value of Object.values(material as Record<string, unknown>)) {
+        if (value instanceof THREE.Texture) (value as { dispose(): void }).dispose()
       }
       material.dispose()
     }
@@ -133,7 +137,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       renderer.render(scene, camera)
     })
 
-    let model: THREE.Object3D | undefined
+    let model: Object3D | undefined
     const fail = (message: string): void => {
       if (!alive) return
       setStatus('error')

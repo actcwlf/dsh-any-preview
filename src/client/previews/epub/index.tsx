@@ -109,11 +109,15 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
 
   useEffect(() => {
     if (typeof absolutePath !== 'string') return
+    // Captured before the async body: narrowing does not survive into a closure.
+    const path = absolutePath
     let alive = true
     setStatus('loading')
     void (async () => {
       try {
-        const response = await fetch(fileUrl(absolutePath))
+        const url = fileUrl(path)
+        if (url === undefined) throw new Error('无法生成文件地址')
+        const response = await fetch(url)
         if (!response.ok) throw new Error(`读取失败（HTTP ${String(response.status)}）`)
         const buffer = await response.arrayBuffer()
         if (buffer.byteLength > MAX_BYTES) throw new Error('文件超过 64 MB 上限')

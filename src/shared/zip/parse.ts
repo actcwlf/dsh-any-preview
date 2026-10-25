@@ -109,7 +109,9 @@ export function localDataStart(header: Uint8Array): number {
 
 /** Inflate a raw deflate stream with the platform decoder. */
 export async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
+  // A Uint8Array view is a valid BlobPart; the cast keeps lib.dom's stricter
+  // ArrayBufferLike typing out of the call site.
+  const stream = new Blob([bytes as unknown as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 

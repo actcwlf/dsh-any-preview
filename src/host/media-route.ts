@@ -10,6 +10,7 @@
  * fence and browser authentication before this handler runs.
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
+import type { HostFileSystem, RouteContext } from './contracts.ts'
 
 /** Exact pathname claimed on the shared `/api` Fetch channel. */
 export const MEDIA_ROUTE_PATH = '/api/any-preview/media'
@@ -91,29 +92,8 @@ export function parseRange(header: string | null, size: number): { start: number
   return { start, end }
 }
 
-/** The slice of the Host filesystem service this route uses. */
-interface HostFileSystem {
-  processPathFromHostPath(path: string): string | undefined
-  processPath(target: unknown): string
-  resolve(path: string, options: { signal: AbortSignal }): Promise<unknown>
-  stat(target: unknown, signal: AbortSignal): Promise<{ type?: string, size?: number, displayPath?: string } | undefined>
-  readByteRange(target: unknown, range: { offset: number, length: number }, signal: AbortSignal): Promise<Uint8Array>
-}
-
 /** The slice of the Host context this route touches. */
-export interface MediaRouteContext {
-  readonly fs: HostFileSystem
-  readonly connection: {
-    readonly fetch: {
-      register(route: {
-        path: string
-        methods: string[]
-        requestBody: 'buffered'
-        fetch(request: Request): Promise<Response>
-      }): () => void
-    }
-  }
-}
+export type MediaRouteContext = RouteContext
 
 /**
  * Stream `[start, start + length)` without buffering the complete file.

@@ -102,7 +102,9 @@ async function listZip(url: string, sizeHint: number): Promise<ArchiveEntry[]> {
 
 /** Decompress a gzip stream with the platform's inflate. */
 async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  // A Uint8Array view is a valid BlobPart; the cast keeps lib.dom's stricter
+  // ArrayBufferLike typing out of the call site.
+  const stream = new Blob([bytes as unknown as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))
   return new Uint8Array(await new Response(stream).arrayBuffer())
 }
 
