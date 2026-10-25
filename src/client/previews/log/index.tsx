@@ -1,6 +1,7 @@
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
+import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -47,7 +48,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (log === null) {
-    return <div style={emptyStyle}>正在读取…</div>
+    return <div style={PANE_FILL}>正在读取…</div>
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {
@@ -56,7 +57,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
+    <div style={PANE_ROOT}>
       <div style={barStyle}>
         <SearchBar
           options={options}
@@ -109,11 +110,6 @@ const gutterStyle = {
   flex: '0 0 auto', width: 48, textAlign: 'right' as const,
   color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' as const,
 }
-
-const emptyStyle = {
-  height: '100%', display: 'grid', placeItems: 'center', fontSize: 12,
-  color: 'var(--dsw-alias-label-tertiary)',
-} as const
 
 /** What the client entry registers for this format. */
 export const logPreview: PreviewModule = {

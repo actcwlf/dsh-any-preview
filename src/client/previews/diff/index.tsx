@@ -1,6 +1,7 @@
 /** Unified diff / patch viewer with search. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
+import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -49,7 +50,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (diff === null) {
-    return <div style={emptyStyle}>正在读取…</div>
+    return <div style={PANE_FILL}>正在读取…</div>
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {
@@ -58,7 +59,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
+    <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
           {diff.lines.length.toLocaleString('en-US')} 行
@@ -119,10 +120,6 @@ const barStyle = {
   borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
-const emptyStyle = {
-  height: '100%', display: 'grid', placeItems: 'center', fontSize: 12,
-  color: 'var(--dsw-alias-label-tertiary)',
-} as const
 
 /** What the client entry registers for this format. */
 export const diffPreview: PreviewModule = {

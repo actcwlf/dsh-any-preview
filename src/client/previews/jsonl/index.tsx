@@ -1,6 +1,7 @@
 /** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
+import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -33,7 +34,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (jsonl === null) {
-    return <div style={emptyStyle}>正在读取…</div>
+    return <div style={PANE_FILL}>正在读取…</div>
   }
 
   const columns = collectColumns(jsonl.records)
@@ -45,7 +46,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
+    <div style={PANE_ROOT}>
       <div style={barStyle}>
         <span>
           {jsonl.records.length.toLocaleString('en-US')} 条记录
@@ -162,11 +163,6 @@ const cellStyle = {
   lineHeight: '20px',
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
-} as const
-
-const emptyStyle = {
-  height: '100%', display: 'grid', placeItems: 'center', fontSize: 12,
-  color: 'var(--dsw-alias-label-tertiary)',
 } as const
 
 /** What the client entry registers for this format. */

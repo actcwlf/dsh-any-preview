@@ -4,6 +4,7 @@ import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
+import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
@@ -130,7 +131,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   if (buffer === null || view === null) {
     const empty = source.kind === 'text' && eof && text.length === 0
     return (
-      <div style={{ height: '100%', display: 'grid', placeItems: 'center', fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
+      <div style={PANE_FILL}>
         {empty ? '空文件' : '正在读取…'}
       </div>
     )
@@ -147,7 +148,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     : ''
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)' }}>
+    <div style={PANE_ROOT}>
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
         padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
