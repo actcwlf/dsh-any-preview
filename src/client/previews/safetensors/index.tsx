@@ -1,5 +1,8 @@
-/** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
+﻿/** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
 import { useEffect, useState } from 'react'
+import { t } from '../../i18n.ts'
+import { useLocale } from '../../useLocale.ts'
+import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
@@ -14,6 +17,7 @@ import type { SafeTensorsHeader } from './parse.ts'
 const SHOWN_TENSORS = 500
 
 export function SafeTensorsBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  useLocale()
   const { absolutePath } = useDocument(content, resourceAddress, useResource)
   const [state, setState] = useState<{ status: 'loading' | 'ready' | 'error', header?: SafeTensorsHeader, detail?: string }>({ status: 'loading' })
 
@@ -24,25 +28,36 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
     void (async () => {
       try {
         const url = fileUrl(absolutePath)
-        if (url === undefined) throw new Error('无法生成文件地址')
+        if (url === undefined) throw new PreviewError('common.fileUrl')
         const length = readHeaderLength(await readRange(url, 0, 7))
-        if (length === undefined) throw new Error('文件过短，不是 SafeTensors')
+        if (length === undefined) throw new PreviewError('safetensors.tooShort')
         if (length === 0 || length > MAX_HEADER_BYTES) {
-          throw new Error(`头部长度 ${formatBytes(length)} 不合理（上限 ${formatBytes(MAX_HEADER_BYTES)}）`)
+          throw new PreviewError('safetensors.headerSize', {
+            size: formatBytes(length),
+            limit: formatBytes(MAX_HEADER_BYTES),
+          })
         }
         const raw = await readRange(url, 8, 8 + length - 1)
         const header = parseHeaderJson(new TextDecoder('utf-8', { fatal: false }).decode(raw), length)
         if (!alive) return
         setState({ status: 'ready', header })
       } catch (error) {
-        if (alive) setState({ status: 'error', detail: error instanceof Error ? error.message : '无法解析头部' })
+        if (!alive) return
+        const detail = error instanceof PreviewError
+          ? t(error.key, error.params)
+          : t('safetensors.parseFailed')
+        setState({ status: 'error', detail })
       }
     })()
     return () => { alive = false }
   }, [absolutePath])
 
   if (state.status !== 'ready' || state.header === undefined) {
-    return <div style={PANE_FILL}>{state.status === 'loading' ? '正在读取头部…' : `无法预览：${state.detail ?? ''}`}</div>
+    return (
+      <div style={PANE_FILL}>
+        {state.status === 'loading' ? t('safetensors.loading') : t('common.error', { detail: state.detail ?? '' })}
+      </div>
+    )
   }
 
   const header = state.header
@@ -51,22 +66,22 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
   return (
     <div style={PANE_ROOT}>
       <Summary fields={[
-        { label: '张量', value: header.tensors.length.toLocaleString('en-US') },
-        { label: '参数量', value: header.totalParams.toLocaleString('en-US') },
-        { label: '头部', value: formatBytes(header.headerBytes) },
-        ...header.dtypes.map(([dtype, count]) => ({ label: dtype, value: `${String(count)} 个` })),
+        { label: t('common.tensors'), value: header.tensors.length.toLocaleString('en-US') },
+        { label: t('common.params'), value: header.totalParams.toLocaleString('en-US') },
+        { label: t('common.header'), value: formatBytes(header.headerBytes) },
+        ...header.dtypes.map(([dtype, count]) => ({ label: dtype, value: t('count.units', { count }) })),
       ]} />
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '0 12px 16px' }}>
         {header.metadata.length > 0 && (
           <section style={{ marginTop: 10 }}>
-            <div style={sectionTitle}>元数据</div>
+            <div style={sectionTitle}>{t('common.metadata')}</div>
             <KeyValueTable entries={header.metadata} />
           </section>
         )}
         <section style={{ marginTop: 10 }}>
-          <div style={sectionTitle}>张量</div>
+          <div style={sectionTitle}>{t('common.tensors')}</div>
           <DataTable
-            columns={['名称', 'dtype', '形状', '参数量']}
+            columns={[t('common.name'), 'dtype', t('common.shape'), t('common.params')]}
             right={[3]}
             rows={shown.map(tensor => [
               tensor.name,
@@ -76,7 +91,7 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
             ])}
           />
           {header.tensors.length > shown.length && (
-            <Note>共 {header.tensors.length.toLocaleString('en-US')} 个张量，显示前 {shown.length} 个。</Note>
+            <Note>{t('tensors.count', { count: header.tensors.length, shown: shown.length })}</Note>
           )}
         </section>
       </div>

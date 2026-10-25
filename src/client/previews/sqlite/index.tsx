@@ -1,13 +1,17 @@
-/**
+﻿/**
  * SQLite schema viewer: the file header, then every `sqlite_master` row.
  * Table contents are intentionally out of scope.
  */
 import { useEffect, useState } from 'react'
+import { t } from '../../i18n.ts'
+import { useLocale } from '../../useLocale.ts'
+import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { Note, Summary } from '../../kernel/inspect.tsx'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import type { MessageKey } from '../../locales.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { readRange } from '../../kernel/zip.ts'
 import { collectSchema, isSqlite, parseSqliteHeader } from './parse.ts'
@@ -20,15 +24,28 @@ interface Loaded {
   readonly truncated: boolean
 }
 
+/** Display label per schema object type. */
+const TYPE_KEY: Readonly<Record<string, MessageKey>> = {
+  table: 'common.table',
+  index: 'common.index',
+  view: 'common.view',
+  trigger: 'common.trigger',
+}
+
+function typeLabel(type: string): string {
+  const key = TYPE_KEY[type]
+  return key === undefined ? type : t(key)
+}
+
 /**
  * Walk the b-tree pages that hold the schema.
  * @param url - file URL.
  */
 async function readSchema(url: string): Promise<Loaded> {
   const head = await readRange(url, 0, 99)
-  if (!isSqlite(head)) throw new Error('不是 SQLite 文件（缺少文件头魔数）')
+  if (!isSqlite(head)) throw new PreviewError('sqlite.notSqlite')
   const header = parseSqliteHeader(head)
-  if (header === undefined) throw new Error('文件头里的页大小无效')
+  if (header === undefined) throw new PreviewError('sqlite.badPageSize')
 
   const result = await collectSchema({
     header,
@@ -40,11 +57,8 @@ async function readSchema(url: string): Promise<Loaded> {
   return { header, objects: result.objects, pages: result.pages, truncated: result.truncated }
 }
 
-const TYPE_LABEL: Readonly<Record<string, string>> = {
-  table: '表', index: '索引', view: '视图', trigger: '触发器',
-}
-
 export function SqliteBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  useLocale()
   const { absolutePath } = useDocument(content, resourceAddress, useResource)
   const [state, setState] = useState<{ status: 'loading' | 'ready' | 'error', data?: Loaded, detail?: string }>({ status: 'loading' })
 
@@ -55,19 +69,27 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
     void (async () => {
       try {
         const url = fileUrl(absolutePath)
-        if (url === undefined) throw new Error('无法生成文件地址')
+        if (url === undefined) throw new PreviewError('common.fileUrl')
         const data = await readSchema(url)
         if (!alive) return
         setState({ status: 'ready', data })
       } catch (error) {
-        if (alive) setState({ status: 'error', detail: error instanceof Error ? error.message : '无法读取结构' })
+        if (!alive) return
+        const detail = error instanceof PreviewError
+          ? t(error.key, error.params)
+          : t('sqlite.readFailed')
+        setState({ status: 'error', detail })
       }
     })()
     return () => { alive = false }
   }, [absolutePath])
 
   if (state.status !== 'ready' || state.data === undefined) {
-    return <div style={PANE_FILL}>{state.status === 'loading' ? '正在读取结构…' : `无法预览：${state.detail ?? ''}`}</div>
+    return (
+      <div style={PANE_FILL}>
+        {state.status === 'loading' ? t('sqlite.loading') : t('common.error', { detail: state.detail ?? '' })}
+      </div>
+    )
   }
 
   const { header, objects, pages, truncated } = state.data
@@ -77,29 +99,29 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
   return (
     <div style={PANE_ROOT}>
       <Summary fields={[
-        { label: '页大小', value: formatBytes(header.pageSize) },
-        { label: '页数', value: header.pageCount.toLocaleString('en-US') },
-        { label: '编码', value: header.encoding },
-        ...[...counts.entries()].map(([type, count]) => ({ label: TYPE_LABEL[type] ?? type, value: String(count) })),
+        { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
+        { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },
+        { label: t('common.encoding'), value: header.encoding },
+        ...[...counts.entries()].map(([type, count]) => ({ label: typeLabel(type), value: String(count) })),
       ]} />
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 12px 20px' }}>
-        {objects.length === 0 && <Note>没有可显示的 schema 对象（可能是空库）。</Note>}
+        {objects.length === 0 && <Note>{t('sqlite.noObjects')}</Note>}
         {objects.map(object => (
           <section key={`${object.type}:${object.name}`} style={{ marginBottom: 12 }}>
             <div style={objectTitle}>
-              <span style={typeBadge}>{TYPE_LABEL[object.type] ?? object.type}</span>
+              <span style={typeBadge}>{typeLabel(object.type)}</span>
               <span>{object.name}</span>
               {object.table !== '' && object.table !== object.name && (
                 <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>· {object.table}</span>
               )}
             </div>
             {object.sql === ''
-              ? <Note>（由 SQLite 自动创建，没有 SQL 定义）</Note>
+              ? <Note>{t('sqlite.autoCreated')}</Note>
               : <pre style={sqlStyle}>{object.sql}</pre>}
           </section>
         ))}
         {truncated && (
-          <Note>已读取 {pages} 页、列出 {objects.length} 个对象后停止；这个库的结构异常庞大。</Note>
+          <Note>{t('sqlite.truncated', { pages, objects: objects.length })}</Note>
         )}
       </div>
     </div>

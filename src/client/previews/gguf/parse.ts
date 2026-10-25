@@ -1,10 +1,11 @@
-/**
+﻿/**
  * GGUF header reader (llama.cpp model files).
  *
  * The header is self-describing: magic, version, counts, a typed key/value
  * block, then one descriptor per tensor. Only that prefix is read — the tensor
  * payload of a real model is tens of gigabytes.
  */
+import { previewError } from '../../kernel/errors.ts'
 
 /** One metadata entry, already formatted for display. */
 export interface GgufKv {
@@ -54,7 +55,7 @@ interface ReadState {
 
 function need(bytes: Uint8Array, state: ReadState, count: number): void {
   if (state.offset + count > bytes.length) {
-    throw new Error('GGUF 头部在此处已超出已读取的字节，可能被截断')
+    throw previewError('gguf.truncated')
   }
 }
 
@@ -86,7 +87,7 @@ function u64(bytes: Uint8Array, state: ReadState): number {
   const low = view.getUint32(0, true)
   const high = view.getUint32(4, true)
   state.offset += 8
-  if (high > 0x1f_ffff) throw new Error('GGUF 头部含超出安全范围的 64 位整数')
+  if (high > 0x1f_ffff) throw previewError('gguf.integerRange')
   return high * 2 ** 32 + low
 }
 
@@ -96,7 +97,7 @@ function text(bytes: Uint8Array, length: number): string {
 
 function readString(bytes: Uint8Array, state: ReadState): string {
   const length = u64(bytes, state)
-  if (length > MAX_STRING) throw new Error('GGUF 字符串超出长度上限')
+  if (length > MAX_STRING) throw previewError('gguf.stringTooLong')
   need(bytes, state, length)
   const value = text(bytes.subarray(state.offset, state.offset + length), length)
   state.offset += length
@@ -163,7 +164,7 @@ function readValue(bytes: Uint8Array, state: ReadState, type: number): string {
       state.offset += 8
       return String(value)
     }
-    default: throw new Error(`未知的 GGUF 值类型 ${String(type)}`)
+    default: throw previewError('gguf.unknownType', { type: String(type) })
   }
 }
 
@@ -185,7 +186,7 @@ function skipValue(bytes: Uint8Array, state: ReadState, type: number): void {
       return
     }
     case 10: case 11: case 12: u64(bytes, state); return
-    default: throw new Error(`未知的 GGUF 值类型 ${String(type)}`)
+    default: throw previewError('gguf.unknownType', { type: String(type) })
   }
 }
 
@@ -208,10 +209,10 @@ export function looksLikeGguf(bytes: Uint8Array): boolean {
  * @throws when the magic, the version or the byte stream is not valid GGUF.
  */
 export function parseGguf(bytes: Uint8Array): GgufHeader {
-  if (!looksLikeGguf(bytes)) throw new Error('不是 GGUF 文件（缺少 GGUF 魔数）')
+  if (!looksLikeGguf(bytes)) throw previewError('gguf.notGguf')
   const state: ReadState = { offset: 4 }
   const version = u32(bytes, state)
-  if (version < 2 || version > 3) throw new Error(`不支持的 GGUF 版本 ${String(version)}`)
+  if (version < 2 || version > 3) throw previewError('gguf.unsupportedVersion', { version: String(version) })
   const tensorCount = u64(bytes, state)
   const kvCount = u64(bytes, state)
 

@@ -4,6 +4,7 @@
  *
  * Only the header is ever read; tensor data is not touched.
  */
+import { previewError } from '../../kernel/errors.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 
 /** One tensor entry from the header. */
@@ -57,7 +58,7 @@ function paramCount(shape: readonly number[]): number {
  */
 export function parseHeaderJson(text: string, headerBytes: number): SafeTensorsHeader {
   const parsed: unknown = JSON.parse(text)
-  if (typeof parsed !== 'object' || parsed === null) throw new Error('头部不是 JSON 对象')
+  if (typeof parsed !== 'object' || parsed === null) throw previewError('safetensors.badJson')
   const record = parsed as Record<string, unknown>
 
   const tensors: SafeTensor[] = []

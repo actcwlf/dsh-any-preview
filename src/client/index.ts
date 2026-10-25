@@ -10,7 +10,18 @@ import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
 import { setDirectoryPicker, setOpenResource } from './runtime.ts'
 import { checkClientContracts } from './contracts.ts'
+import { refreshLocale, setTranslator } from './i18n.ts'
+import { en, zh } from './locales.ts'
 import { reportContractIssues } from '../shared/contracts.ts'
+
+/** Copy namespace this package's dictionaries register under. */
+const NS = 'anyPreview'
+
+/** How the shell's locale service looks to this plugin. */
+interface LocaleService {
+  register(namespace: string, dictionaries: { zh: unknown, en: unknown }): unknown
+  bind(namespace: string): (key: string, params?: Readonly<Record<string, string | number>>) => string
+}
 
 interface DocumentPreviewDefinition {
   readonly id: string
@@ -84,6 +95,28 @@ export function apply(ctx: ClientContext): void {
       console.warn(`[dsh-any-preview] ${what} unavailable`, error)
     }
   }
+
+  // Locale. The built-in packages inject `locale` as a hard dependency because
+  // they ship with the app; a third-party plugin cannot — a profile without the
+  // service would never activate. So it is injected optionally and the bundled
+  // dictionaries answer whenever the service is absent.
+  safe(() => {
+    ctx.inject?.(['locale'], (scope: never) => {
+      const locale = (scope as { locale: LocaleService }).locale
+      safe(() => { locale.register(NS, { zh, en }) }, 'locale dictionaries')
+      safe(() => { setTranslator(locale.bind(NS)) }, 'locale binding')
+    })
+  }, 'locale injection')
+
+  // The shell sets <html lang> from the operator's preference; following it is
+  // what re-renders the bundled fallback when the language switches.
+  safe(() => {
+    if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
+    refreshLocale()
+    const observer = new MutationObserver(() => { refreshLocale() })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
+    ctx.effect(() => () => { observer.disconnect() }, 'any-preview: locale observer')
+  }, 'locale observer')
 
   const bindSidebar = (sidebar: unknown): void => {
     const api = sidebar as { openResource?(address: string): void } | undefined
