@@ -10,6 +10,8 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
+import { readRange } from '../../kernel/zip.ts'
+import { claimsFile } from '../dispatch.ts'
 import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
 import { loadThree } from '../../kernel/three-loader.ts'
 import type { ThreeBundle } from '../../../chunk/three.ts'
@@ -96,6 +98,8 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const [detail, setDetail] = useState('')
   const [triangles, setTriangles] = useState(0)
   const [chunkReady, setChunkReady] = useState(false)
+  // .obj names two formats; null means the head has not been read yet.
+  const [formatOk, setFormatOk] = useState<boolean | null>(null)
   const mountRef = useRef<HTMLDivElement | null>(null)
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
@@ -105,6 +109,22 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   useEffect(() => {
     const host = mountRef.current
     if (host === null || url === undefined) return
+      if (extension === 'obj' && formatOk === null) {
+        void (async () => {
+          try {
+            setFormatOk(claimsFile('obj', await readRange(url, 0, 1023)))
+          } catch {
+            setFormatOk(true)
+          }
+        })()
+        return
+      }
+      if (formatOk === false) {
+        setStatus('error')
+        setDetail(t('model.notWavefront'))
+        return
+      }
+
     if (size > MAX_BYTES) {
       setStatus('error')
       setDetail(t('model.tooLarge', { size: formatBytes(size), limit: formatBytes(MAX_BYTES) }))
@@ -234,7 +254,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       renderer.forceContextLoss()
       renderer.domElement.remove()
     }
-  }, [url, extension, size, chunkReady])
+  }, [url, extension, size, chunkReady, formatOk])
 
   return (
     <div style={PANE_ROOT}>
