@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 3D model preview: three.js renderer with orbit controls.
  *
  * `loading: 'renderer'` because a model needs the whole file; the bytes come
@@ -14,6 +14,7 @@ import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 
 /** Refuse models past this size: decoding costs several times the file size. */
@@ -76,22 +77,11 @@ function disposeObject(root: THREE.Object3D): void {
 }
 
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
-  const meta = useResource?.(resourceAddress)?.value
-  const absolutePath = meta?.absolutePath
-  const version = meta?.version
+  const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const [triangles, setTriangles] = useState(0)
   const mountRef = useRef<HTMLDivElement | null>(null)
-  const reported = useRef<string | undefined>(undefined)
-
-  // Tell the owner the renderer has what it needs, once per version.
-  useEffect(() => {
-    if (content.kind !== 'renderer' || version === undefined) return
-    if (reported.current === version) return
-    reported.current = version
-    content.loaded(version)
-  }, [content, version])
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const extension = typeof absolutePath === 'string' ? extensionOf(absolutePath) : ''

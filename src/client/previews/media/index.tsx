@@ -17,6 +17,7 @@ import type { SyntheticEvent } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
 import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
 const VIDEO_EXTENSIONS = [
@@ -36,28 +37,12 @@ function basenameOf(path: string): string {
 }
 
 
-/**
- * Tell the document owner the renderer has what it needs, once per version.
- * Without this the pane never leaves its loading state.
- */
-function useRendererLoaded(content: PreviewBodyProps['content'], version: string | undefined): void {
-  const reported = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (content.kind !== 'renderer' || version === undefined) return
-    if (reported.current === version) return
-    reported.current = version
-    content.loaded(version)
-  }, [content, version])
-}
-
 interface MediaBodyProps extends PreviewBodyProps {
   readonly kind: 'video' | 'audio'
 }
 
 function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyProps) {
-  const meta = useResource?.(resourceAddress)?.value
-  const absolutePath = meta?.absolutePath
-  const version = meta?.version
+  const { meta, absolutePath, version } = useDocument(content, resourceAddress, useResource)
   const [failed, setFailed] = useState(false)
   const [info, setInfo] = useState('')
   const [bufferedUrl, setBufferedUrl] = useState('')
@@ -65,7 +50,6 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [blocked, setBlocked] = useState(false)
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
-  useRendererLoaded(content, version)
 
   const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
