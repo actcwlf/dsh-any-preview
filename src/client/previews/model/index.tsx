@@ -10,15 +10,19 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
-import * as THREE from 'three'
+import { loadThree } from '../../kernel/three-loader.ts'
+import type { ThreeBundle } from '../../../chunk/three.ts'
+
+// Filled by `loadThree()` before any model code runs.
+let THREE: ThreeBundle['THREE']
+let OrbitControls: ThreeBundle['OrbitControls']
+let GLTFLoader: ThreeBundle['GLTFLoader']
+let OBJLoader: ThreeBundle['OBJLoader']
+let STLLoader: ThreeBundle['STLLoader']
 
 /** three.js ships no typings in this package; these keep the signatures readable. */
 type Object3D = any
 type BufferGeometry = any
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
-import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -90,6 +94,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const [triangles, setTriangles] = useState(0)
+  const [chunkReady, setChunkReady] = useState(false)
   const mountRef = useRef<HTMLDivElement | null>(null)
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
@@ -106,6 +111,24 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     }
 
     let alive = true
+    // Gate on THREE itself: the assignments in .then happen before React
+    // re-renders, so no state flag is needed and none can race.
+    if (THREE === undefined) {
+      void loadThree()
+        .then((three) => {
+          THREE = three.THREE
+          OrbitControls = three.OrbitControls
+          GLTFLoader = three.GLTFLoader
+          OBJLoader = three.OBJLoader
+          STLLoader = three.STLLoader
+          setChunkReady(true)
+        })
+        .catch((error: unknown) => {
+          setStatus('error')
+          setDetail(error instanceof Error ? error.message : String(error))
+        })
+      return
+    }
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x14161c)
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10_000)
@@ -151,6 +174,12 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
 
     void (async () => {
       try {
+        const three = await loadThree()
+        THREE = three.THREE
+        OrbitControls = three.OrbitControls
+        GLTFLoader = three.GLTFLoader
+        OBJLoader = three.OBJLoader
+        STLLoader = three.STLLoader
         const response = await fetch(url)
         if (!response.ok) throw new PreviewError('common.httpError', { status: response.status })
         const bytes = await response.arrayBuffer()
@@ -199,7 +228,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       renderer.forceContextLoss()
       renderer.domElement.remove()
     }
-  }, [url, extension, size])
+  }, [url, extension, size, chunkReady])
 
   return (
     <div style={PANE_ROOT}>

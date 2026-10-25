@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Standalone build: a Node half for the Loader, plus the browser bundle.
  *
  * The client half is a closure factory, not a normal ESM module: the Harness
@@ -65,5 +65,22 @@ export default [
       footer: 'return module.exports; } });',
       intro: 'var module = { exports: {} }; var exports = module.exports;',
     },
+  },
+  {
+    // The lazy three.js chunk: ESM, no closure wrapper, imported at runtime
+    // from the loopback asset route rather than bundled into the entry.
+    name: `${ID}/three-chunk`,
+    entry: { 'three-chunk': 'src/chunk/three.ts' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+    minify: true,
+    sourcemap: false,
+    deps: { alwaysBundle: [/^three(?:\/|$)/] },
+    outputOptions: { entryFileNames: 'three-chunk.js' },
   },
 ]

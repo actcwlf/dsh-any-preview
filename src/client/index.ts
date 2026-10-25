@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client half: register every preview in `PREVIEWS`.
  *
  * Two registrations make one renderer: the metadata row in `documentPreviews`
@@ -10,6 +10,7 @@ import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
 import { setDirectoryPicker, setOpenResource } from './runtime.ts'
 import { checkClientContracts } from './contracts.ts'
+import { loadThree } from './kernel/three-loader.ts'
 import { refreshLocale, setTranslator } from './i18n.ts'
 import { en, zh } from './locales.ts'
 import { reportContractIssues } from '../shared/contracts.ts'
@@ -80,6 +81,15 @@ export function apply(ctx: ClientContext): void {
   // Turn a missing upstream capability into one diagnostic line instead of a
   // silently empty sidebar.
   reportContractIssues('client', checkClientContracts(ctx))
+  // Warm the 3D chunk while the page is idle: the startup bundle stays small
+  // and opening a model still shows no wait.
+  try {
+    const warm = (): void => { void loadThree().catch(() => {}) }
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(warm, { timeout: 3000 })
+    else setTimeout(warm, 1500)
+  } catch {
+    // Warm-up is best effort.
+  }
 
   // Optional capabilities. A profile without them still renders every preview;
   // only the "open elsewhere" and "choose a directory" affordances are lost.

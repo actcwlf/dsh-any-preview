@@ -179,6 +179,10 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
   // Mint a signed loopback URL for the page: the media element cannot send the
   // session cookie to 127.0.0.1 from a dsh-app:// page, so the URL is the
   // credential.
+  // Plain origin probe used by the module-loading experiment.
+  if (url.searchParams.get('base') === '1') {
+    return Response.json({ base: lanBaseUrl() }, { headers: BASE_HEADERS })
+  }
   if (url.searchParams.get('lan') === '1' && secret !== undefined) {
     const target = url.searchParams.get('path')
     if (target === null || target === '') return failure(400, 'missing path')
