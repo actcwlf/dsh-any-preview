@@ -10,7 +10,7 @@
  * fence and browser authentication before this handler runs.
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
-import { LAN_ROUTE_PATH } from './lan-route.ts'
+import { LAN_ROUTE_PATH, lanBaseUrl } from './lan-route.ts'
 import { LAN_URL_TTL_MS, signLanPath } from './lan-url.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
@@ -186,7 +186,9 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
     const expiresAt = Date.now() + LAN_URL_TTL_MS
     const signature = signLanPath(secret, target, expiresAt)
     const query = `path=${encodeURIComponent(target)}&exp=${String(expiresAt)}&sig=${encodeURIComponent(signature)}`
-    return Response.json({ url: `${url.origin}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
+    const base = lanBaseUrl()
+    if (base === '') return failure(503, 'loopback route unavailable')
+    return Response.json({ url: `${base}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
   }
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')

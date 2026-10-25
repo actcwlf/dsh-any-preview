@@ -55,6 +55,8 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [size, setSize] = useState<number | undefined>(meta?.size)
   const [diag, setDiag] = useState('')
   const [lanSrc, setLanSrc] = useState('')
+  const [lanStatus, setLanStatus] = useState(0)
+  const [errCode, setErrCode] = useState(0)
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
 
@@ -77,7 +79,17 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
         if (!response.ok) return
         const body = await response.json() as { url?: unknown }
         if (typeof body.url !== 'string' || body.url === '') return
-        if (alive) setLanSrc(body.url)
+        if (!alive) return
+        setLanSrc(body.url)
+        // Probe the signed URL so a failure can report the status even when
+        // the media element itself only says "cannot play".
+        try {
+          const probeResponse = await fetch(body.url, { headers: { Range: 'bytes=0-1' } })
+          if (alive) setLanStatus(probeResponse.status)
+          await probeResponse.body?.cancel()
+        } catch {
+          if (alive) setLanStatus(-1)
+        }
       } catch {
         // Leave the proxied URL in place.
       }
@@ -188,6 +200,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     return (
       <div style={styles.frame}>
         <Status text={t('media.unsupported')} />
+        <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
         {download !== undefined && (
           <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
         )}
@@ -205,7 +218,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.video}
           onLoadedMetadata={onLoadedMetadata}
-          onError={() => setFailed(true)}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); setFailed(true) }}
         />
       )
     : (
@@ -216,7 +229,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.audio}
           onLoadedMetadata={onLoadedMetadata}
-          onError={() => setFailed(true)}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); setFailed(true) }}
         />
       )
 

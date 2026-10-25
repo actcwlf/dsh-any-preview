@@ -20,6 +20,20 @@ import { verifyLanPath } from './lan-url.ts'
 /** Path the loopback route claims. */
 export const LAN_ROUTE_PATH = '/any-preview/lan'
 
+/**
+ * Base URL of the loopback route, filled in when the route registers.
+ *
+ * The minting route cannot derive this from `request.url`: the authenticated
+ * carrier reaches the Host under an internal name (`dsh.internal`), which the
+ * page cannot resolve.
+ */
+let lanBase = ''
+
+/** @returns `http://127.0.0.1:<port>`, or an empty string before registration. */
+export function lanBaseUrl(): string {
+  return lanBase
+}
+
 /** Read window while streaming. */
 const CHUNK_BYTES = 1 << 20
 
@@ -30,6 +44,7 @@ interface LanContext extends RouteContext {
 
 /** The webserver service as this route uses it. */
 interface WebServerLike {
+  readonly port: number
   register(route: {
     kind: 'exact'
     path: string
@@ -51,6 +66,8 @@ export function registerLanRoute(ctx: LanContext, secret: Uint8Array): () => voi
   let dispose: (() => void) | undefined
   ctx.inject?.(['webServer'], (scope: never) => {
     const server = (scope as { webServer: WebServerLike }).webServer
+    // The renderer can only reach the server over loopback.
+    lanBase = `http://127.0.0.1:${String(server.port)}`
     dispose = server.register({
       kind: 'exact',
       path: LAN_ROUTE_PATH,
