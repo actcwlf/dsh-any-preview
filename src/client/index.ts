@@ -1,23 +1,21 @@
 /**
- * Client half: teach the Sidebar's document pane to render CSV/TSV as a table.
+ * Client half: register every preview in `PREVIEWS`.
  *
  * Two registrations make one renderer: the metadata row in `documentPreviews`
- * (which file extensions it claims, and how content is delivered), and the
- * keyed component in the `sidebar.right.tab.document` seat. `priority:
- * 'extension'` outranks the builtin plain-text fallback for these suffixes
- * while leaving every other format untouched.
+ * (which suffixes it claims and how content is delivered), and the keyed
+ * component in the `sidebar.right.tab.document` seat. Each format is registered
+ * independently so one broken declaration cannot take the package down.
  */
-import { CsvBody } from './CsvBody.tsx'
-
-/** Implementation identity, shared by the metadata row and the slot key. */
-const ID = 'dsh-any-preview'
+import type { PreviewModule } from './kernel/types.ts'
+import { PREVIEWS } from './previews/index.ts'
 
 interface DocumentPreviewDefinition {
   readonly id: string
   readonly extensions: readonly string[]
+  readonly binaryExtensions?: readonly string[]
   readonly priority?: 'builtin' | 'extension'
   readonly title: () => string
-  readonly loading: 'text-pages' | 'bytes-complete'
+  readonly loading: 'text-pages' | 'bytes-complete' | 'renderer'
   readonly wrap?: boolean
 }
 
@@ -34,18 +32,35 @@ interface ClientContext {
 // Wait for the document owner's registry and the slot system before applying.
 export const inject = ['slots', 'documentPreviews']
 
-export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.documentPreviews.register({
-    id: ID,
-    extensions: ['csv', 'tsv'],
-    priority: 'extension',
-    title: () => 'CSV 表格',
-    loading: 'text-pages',
-    wrap: false,
-  }), 'any-preview: csv metadata')
+/**
+ * Register one format's metadata and body.
+ * @param ctx - client root context.
+ * @param module - the format to register.
+ */
+function registerPreview(ctx: ClientContext, module: PreviewModule): void {
+  try {
+    const definition: DocumentPreviewDefinition = {
+      id: module.id,
+      extensions: module.extensions,
+      ...(module.binary !== undefined && module.binary.length > 0
+        ? { binaryExtensions: module.binary }
+        : {}),
+      priority: 'extension',
+      title: module.title,
+      loading: module.load,
+      ...(module.wrap === undefined ? {} : { wrap: module.wrap }),
+    }
+    ctx.effect(() => ctx.documentPreviews.register(definition), `${module.id}: metadata`)
+    ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
+      { name: 'sidebar.right.tab.document', key: module.id },
+      module.Body,
+    )), `${module.id}: body`)
+  } catch (error) {
+    // A malformed format loses only itself; the rest of the package stays live.
+    console.error(`[dsh-any-preview] cannot register ${module.id}`, error)
+  }
+}
 
-  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
-    { name: 'sidebar.right.tab.document', key: ID },
-    CsvBody,
-  )), 'any-preview: csv body')
+export function apply(ctx: ClientContext): void {
+  for (const module of PREVIEWS) registerPreview(ctx, module)
 }

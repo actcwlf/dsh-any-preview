@@ -27,6 +27,7 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "build": "tsdown"
+    "build": "tsdown",
+    "test": "node --test --test-isolation=none \"test/*.test.mjs\""
   }
 }

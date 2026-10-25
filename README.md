@@ -1,47 +1,73 @@
 # dsh-any-preview
 
-给 DSH 右侧栏的文件预览加渲染器。**当前只实现了 CSV / TSV 表格**，包名与扩展点结构按
-「通用文件预览器」来命名，后续可以按同样的模式挂载更多格式。
+给 DSH 右侧栏的文件预览加渲染器。**当前实现了 CSV / TSV 表格**；包内按「一个接口 +
+一个注册数组」组织，新增格式只需加一个目录和一行注册。
 
-官方内置的 `text` 预览把 CSV 当纯文本显示；本插件通过公开扩展点登记一个新的渲染器，
-`priority: 'extension'` 会压过内置的纯文本兜底，打开 `.csv` / `.tsv` 时默认呈现表格，
-同时仍可在预览工具栏切回纯文本。
+内置渲染器已覆盖 office / excel / pdf / image / html / markdown / code，本包专注它没覆盖
+或不擅长的部分：**流式大文件**，以及后续的音视频等重格式。详见
+[架构设计](./docs/architecture.md) 与 [媒体规划](./docs/media-preview.plan.md)。
+
+打开 `.csv` / `.tsv` 时，`priority: 'extension'` 压过内置的纯文本兜底，默认呈现流式表格；
+工具栏仍可切回内置的纯文本或表格视图。
 
 ## 结构
 
 ```
 dsh-any-preview/
-├── package.json        # dsh.client（浏览器半）+ dsh.bundle（组合包层）
-├── cordis.patch.yml    # insert 一行插件到 profile
-├── tsdown.config.ts    # 双产物构建：lib/index.js（host）+ lib/client.js（browser）
-├── sample.csv          # 测试用样例
-├── src/index.ts        # host 半：空实现，只为让 Loader 有 entry
+├── package.json         # dsh.client（浏览器半）+ dsh.bundle（组合包层）
+├── cordis.patch.yml     # insert 一行插件到 profile
+├── tsdown.config.ts     # 双产物构建：lib/index.js（host）+ lib/client.js（browser）
+├── sample.csv           # 测试用样例
+├── test/                # node --test：分块性质测试 + SSR 渲染测试
+├── src/index.ts         # host 半：空实现（媒体路由在 P1 加入）
 └── src/client/
-    ├── index.ts        # 登记 documentPreviews 元数据 + keyed slot 组件
-    ├── CsvBody.tsx     # 表格组件（表头吸顶、行号、分页加载）
-    └── parse.ts        # 分隔符探测 + RFC 4180 解析（引号、转义、跨行）
+    ├── index.ts         # 遍历 PREVIEWS 统一注册，逐模块 try/catch
+    ├── kernel/
+    │   ├── types.ts         # PreviewModule / DocumentContent / PreviewBodyProps
+    │   ├── source.ts        # 三种 content 模式 → 统一 PreviewSource
+    │   └── text-pipeline.ts # 增量行解析 + 有界行缓冲
+    └── previews/
+        ├── index.ts     # ★ PREVIEWS 数组：唯一的注册清单
+        └── csv/
+            ├── index.tsx  # 模块声明 + 表格主体
+            └── detect.ts  # 分隔符探测
 ```
 
-## 两个注册点
+## 注册机制
+
+每个格式实现同一个 `PreviewModule`：
 
 ```ts
-ctx.documentPreviews.register({
-  id: 'dsh-any-preview',
-  extensions: ['csv', 'tsv'],
-  priority: 'extension',      // 压过内置 builtin
-  title: () => 'CSV 表格',
-  loading: 'text-pages',      // owner 按行分页喂文本
-})
-
-ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(
-  { name: 'sidebar.right.tab.document', key: 'dsh-any-preview' },
-  CsvBody,
-))
+interface PreviewModule {
+  id: string                    // 同时是渲染器 id 与 document 槽的 key
+  extensions: string[]
+  binary?: string[]             // 这些后缀是二进制，禁止回退到纯文本
+  load: 'text-pages' | 'bytes-complete' | 'renderer'
+  wrap?: boolean
+  title: () => string
+  Body: ComponentType<PreviewBodyProps>
+}
 ```
 
-渲染器只消费 `content`（`{ kind: 'text', text, eof }`），不碰 Sidebar 的 store、pane
-或布局——所以它会自动出现在文件树、会话里的文件链接、以及 `read` 工具行打开的同一个
-`text` tab 里。
+`client/index.ts` 遍历 `PREVIEWS`，为每个模块注册两条：
+
+```ts
+ctx.documentPreviews.register({ id, extensions, binaryExtensions: binary,
+                                priority: 'extension', loading: load })
+ctx.slots.inject('sidebar.right.tab.document',
+  () => ctx.slots.register({ name: 'sidebar.right.tab.document', key: id }, Body))
+```
+
+**新增格式 = 新建 `previews/<name>/` + 在 `previews/index.ts` 加一行。**
+
+Body 不直接读 owner 的 `content`，而是经 `kernel/source.ts` 归一化，因此换加载模式
+不影响组件代码。
+
+## 大文件
+
+`text-pages` 是**累积**文本，每来一页只解析新增的后缀（`kernel/text-pipeline.ts`），
+避免整段重解析的 O(n²)；行缓冲有上限（默认 20 000 行），到顶后停止累积并提示「已截断」。
+虚拟滚动与按需切片在 P3 补上。
 
 ## 构建
 
@@ -59,6 +85,19 @@ node "D:\DSH\deepseek-harness\node_modules\tsdown\dist\run.mjs"
 
 ⚠️ 客户端 bundle 不能打包 React 或 `@deepseek-ai/*`——它们必须留在模块表里，否则会出现
 第二份运行时实例。
+
+## 测试
+
+```sh
+npm test
+```
+
+- `test/pipeline.test.mjs`：在所有可能的切分点上比对「分块解析」与「整串解析」，
+  覆盖引号跨块、CRLF 跨块、行预算与 `finish` 幂等
+- `test/render.test.mjs`：按浏览器方式加载 `lib/client.js`，用真实 React 做 SSR，
+  校验注册元数据与表格输出
+
+渲染测试需要 DSH checkout 提供 React，可用 `DSH_REPO` 覆盖默认路径。
 
 ## 安装 / 卸载
 
@@ -78,5 +117,6 @@ dsh plugin --profile desktop remove dsh-any-preview
 ## 已知限制
 
 - 只读渲染，不支持编辑或写回
-- 分页按行数（默认 500，可点按钮继续加载），不是虚拟滚动；超大文件请配合内置分页
+- 分页渲染（默认 500 行/页），尚未做到虚拟滚动；行缓冲上限 20 000 行
 - 列宽自动，不记忆用户拖拽
+- 未做 i18n，标题为中文常量
