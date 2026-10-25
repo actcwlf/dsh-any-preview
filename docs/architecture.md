@@ -156,7 +156,8 @@ media 只是两个 `PreviewModule`（`video` / `audio`），特殊之处在 Host
   - 路径经 `fs.processPathFromHostPath` + `processPath` 比对（官方 `present-open.ts` 模式），只放行 Host 真正映射的路径
   - `readByteRange` 1 MiB 分块进 `ReadableStream`，`signal` 中止即关流
   - `206` / `416` / `HEAD` / `Accept-Ranges` / `no-store` / `nosniff` / `download=1`
-- 解码失败 → `Fallback`，走 `unpreviewable` 槽
+- 解码失败 → 播放器内的降级卡片（说明 + 下载 + 在新标签页打开）；`unpreviewable` 槽留给
+  「没有任何渲染器认领该文件」的场景，不是运行时解码失败的落点
 
 主包因此多一条 Host 路由，但没有新增依赖：播放器是原生 `<video>` / `<audio>`。
 

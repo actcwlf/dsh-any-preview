@@ -156,7 +156,7 @@ GET/HEAD /api/any-preview/media?path=<绝对路径>[&download=1]
 | 点 | media 插件 | 本方案 |
 |---|---|---|
 | 路径校验 | 仅 `isAbsolute` | 走 `fs.processPathFromHostPath` + `processPath` 比对（官方 `present-open.ts` 模式），只放行 Host 真正映射的路径 |
-| 下载入口 | 播放器下方链接 | 注册 `sidebar.right.tab.document.actions`，进工具栏 |
+| 下载入口 | 播放器下方链接 | P1 先放播放器页脚；`document.actions` 工具栏动作留到 P2 |
 | 解码失败 | 播放器位置替换为文案 | 用 `document.unpreviewable` 槽给正式空态动作 |
 | 路由命名 | `/api/media` | `/api/any-preview/media`（避免与其他插件撞名） |
 
