@@ -111,6 +111,24 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     }
 
     let alive = true
+    // Gate on THREE itself: the assignments in .then happen before React
+    // re-renders, so no state flag is needed and none can race.
+    if (THREE === undefined) {
+      void loadThree()
+        .then((three) => {
+          THREE = three.THREE
+          OrbitControls = three.OrbitControls
+          GLTFLoader = three.GLTFLoader
+          OBJLoader = three.OBJLoader
+          STLLoader = three.STLLoader
+          setChunkReady(true)
+        })
+        .catch((error: unknown) => {
+          setStatus('error')
+          setDetail(error instanceof Error ? error.message : String(error))
+        })
+      return
+    }
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0x14161c)
     const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10_000)
