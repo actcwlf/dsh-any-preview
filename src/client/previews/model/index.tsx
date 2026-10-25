@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 3D model preview: three.js renderer with orbit controls.
  *
  * `loading: 'renderer'` because a model needs the whole file; the bytes come
@@ -12,6 +12,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { fileUrl } from '../../kernel/file-url.ts'
+import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 
@@ -22,18 +23,6 @@ const MAX_BYTES = 100 * 1024 * 1024
 const MAX_TRIANGLES = 3_000_000
 
 const VIEWER_EXTENSIONS = ['glb', 'gltf', 'obj', 'stl'] as const
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  const units = ['KB', 'MB', 'GB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]!}`
-}
 
 function extensionOf(path: string): string {
   const name = path.replaceAll('\\', '/')

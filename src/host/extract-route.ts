@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Extract one archive member to disk so the standard preview can open it.
  *
  * The Host filesystem service reads bytes but has no binary write, so the write
@@ -8,7 +8,7 @@
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
-import { zipEntryBytes } from '../client/previews/archive/parse.ts'
+import { zipEntryBytes } from '../shared/zip/parse.ts'
 
 /** Refuse archives larger than this before loading them into memory. */
 const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024

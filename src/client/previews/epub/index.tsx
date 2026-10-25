@@ -9,8 +9,9 @@ import type { Block } from '../../kernel/blocks.tsx'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { findEocd, inflateRaw, parseZipDirectory, zipDirectoryRange, zipEntryPayload } from '../archive/parse.ts'
-import type { ArchiveEntry } from '../archive/parse.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
+import { findEocd, inflateRaw, parseZipDirectory, zipDirectoryRange, zipEntryPayload } from '../../../shared/zip/parse.ts'
+import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { containerOpfPath, htmlToMarkdownText, imageMimeType, parseNav, parseNcx, parseOpf, resolveHref, scopeCss } from './parse.ts'
 import type { TocEntry } from './parse.ts'
 
@@ -98,23 +99,13 @@ async function chapterImages(
 }
 
 export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
-  const meta = useResource?.(resourceAddress)?.value
-  const absolutePath = meta?.absolutePath
-  const version = meta?.version
-  const reported = useRef<string | undefined>(undefined)
+  const { absolutePath } = useDocument(content, resourceAddress, useResource)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const [title, setTitle] = useState('')
   const [chapters, setChapters] = useState<EpubChapter[]>([])
   const [css, setCss] = useState('')
   const [current, setCurrent] = useState(0)
-
-  useEffect(() => {
-    if (content.kind !== 'renderer' || version === undefined) return
-    if (reported.current === version) return
-    reported.current = version
-    content.loaded(version)
-  }, [content, version])
 
   useEffect(() => {
     if (typeof absolutePath !== 'string') return

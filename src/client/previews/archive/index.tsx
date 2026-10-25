@@ -8,7 +8,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
+import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
 import { csvPreview } from '../csv/index.tsx'
@@ -17,26 +19,14 @@ import { emlPreview } from '../eml/index.tsx'
 import { fontPreview } from '../font/index.tsx'
 import { jsonlPreview } from '../jsonl/index.tsx'
 import { logPreview } from '../log/index.tsx'
-import { MAX_ENTRIES, decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from './parse.ts'
-import type { ArchiveEntry } from './parse.ts'
+import { MAX_ENTRIES, decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../../../shared/zip/parse.ts'
+import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 
 /** Anything read whole must fit this. */
 const MAX_WHOLE_BYTES = 64 * 1024 * 1024
 
 /** Enough tail to cover an archive comment plus the end-of-central-directory record. */
 const TAIL_BYTES = 66_000
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`
-  const units = ['KB', 'MB', 'GB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]!}`
-}
 
 /** Read an inclusive byte window, working whether or not the server honours Range. */
 async function readRange(url: string, start: number, end: number): Promise<Uint8Array> {
@@ -372,9 +362,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
 }
 
 export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
-  const meta = useResource?.(resourceAddress)?.value
-  const absolutePath = meta?.absolutePath
-  const version = meta?.version
+  const { meta, absolutePath, version } = useDocument(content, resourceAddress, useResource)
   const size = meta?.size ?? 0
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
@@ -382,16 +370,6 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const [barNotice, setBarNotice] = useState<string | undefined>(undefined)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
-  const reported = useRef<string | undefined>(undefined)
-
-  // The list is this renderer's content: report readiness so the pane leaves
-  // its loading state.
-  useEffect(() => {
-    if (content.kind !== 'renderer' || version === undefined) return
-    if (reported.current === version) return
-    reported.current = version
-    content.loaded(version)
-  }, [content, version])
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const name = typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() ?? '' : ''

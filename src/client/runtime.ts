@@ -52,8 +52,3 @@ export async function chooseDirectory(signal: AbortSignal): Promise<string | und
   const trimmed = chosen.trim()
   return trimmed === '' ? undefined : trimmed
 }
-
-/** Whether the sidebar navigation handle is available. */
-export function canOpenResources(): boolean {
-  return openResource !== undefined
-}

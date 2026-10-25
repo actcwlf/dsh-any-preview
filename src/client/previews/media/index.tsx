@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
+import { formatBytes } from '../../kernel/format.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
@@ -34,19 +35,6 @@ function basenameOf(path: string): string {
   return normalized.slice(normalized.lastIndexOf('/') + 1)
 }
 
-/** Human byte size for the footer. */
-function formatBytes(bytes: number | undefined): string {
-  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) return ''
-  if (bytes < 1024) return `${String(bytes)} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]!}`
-}
 
 /**
  * Tell the document owner the renderer has what it needs, once per version.

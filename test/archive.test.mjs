@@ -1,9 +1,9 @@
-/** Zip and tar parsing against the real fixtures in samples/. */
+﻿/** Zip and tar parsing against the real fixtures in samples/. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
-import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/client/previews/archive/parse.ts'
+import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/shared/zip/parse.ts'
 import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName } from '../src/host/extract-route.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
