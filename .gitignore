@@ -3,3 +3,12 @@ lib/
 *.log
 .DS_Store
 Thumbs.db
+# Manual GUI fixtures live outside the repo, but never commit media if one is
+# copied in for a quick check.
+samples/
+*.mp4
+*.webm
+*.mov
+*.mkv
+*.wav
+*.mp3
