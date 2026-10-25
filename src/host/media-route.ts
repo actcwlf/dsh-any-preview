@@ -245,12 +245,11 @@ export async function serveMedia(request: Request, fs: HostFileSystem): Promise<
     return new Response(null, { status: 200, headers })
   }
 
-  // A download keeps the ordinary complete-body status. Everything a media
-  // element may play answers `206`, including a request that carried no Range:
-  // the desktop proxy strips `Content-Length`, and `Content-Range` is the one
-  // header that still carries the total length after it. The bytes served are
-  // exactly the window being announced, so the partial status is truthful.
-  const partial = range !== undefined || !download
+  // A download and a plain GET both answer the complete body; only a Range
+  // request is partial. Answering a plain GET with 206 + Content-Range was
+  // measured to leave Chromium's `seekable` empty in the desktop shell, so
+  // announcing the length that way buys nothing.
+  const partial = range !== undefined
   const window = range === undefined ? { start: 0, end: size - 1 } : range
   const length = window.end - window.start + 1
   if (partial) {

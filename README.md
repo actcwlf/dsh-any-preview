@@ -114,9 +114,23 @@ dsh plugin --profile desktop remove dsh-any-preview
 ⚠️ 目录名必须和 `package.json` 的 `name` 一致。`dsh plugin add <相对目录>` 走 pnpm，
 目录名不一致时 pnpm 会用**目录名**做依赖别名，导致 `cannot resolve profile bundle` 报错。
 
+## 桌面版的媒体播放
+
+桌面版把界面跑在 `dsh-app://app/`，`/api` 请求经 `forwardWebRequest` 转发，而该转发会
+移除 `Content-Length`（Node 的 `fetch` 解码后长度已失真）。Chromium 因此把媒体当作
+「长度未知的流」，`video.seekable` 恒为 `[0, 0]`，进度条拖不动——**这与插件无关**，
+浏览器直连 `http://127.0.0.1:<port>` 时一切正常。
+
+插件内置兜底：检测到 `seekable` 为空时，把文件整段取成 Blob 再播，拖动随之恢复。
+上限 `MAX_BUFFER_BYTES`（64 MB），超限会显示说明，而不是留一条看起来坏掉的进度条。
+
+根治在上游：`apps/desktop/src/web-document.ts` 只应在响应被解码（存在
+`Content-Encoding`）时丢弃 `content-length`，未压缩的响应应保留。
+
 ## 已知限制
 
 - 只读渲染，不支持编辑或写回
 - 分页渲染（默认 500 行/页），尚未做到虚拟滚动；行缓冲上限 20 000 行
 - 列宽自动，不记忆用户拖拽
 - 未做 i18n，标题为中文常量
+- 桌面版里超过 64 MB 的媒体不能拖动进度条（受上面的代理限制，非插件可解）

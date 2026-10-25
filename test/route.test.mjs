@@ -39,10 +39,10 @@ function request(query, init = {}) {
 
 const CLIP = 'path=%2Fmedia%2Fclip.mp4'
 
-test('a plain GET answers partial so the total length survives header stripping', async () => {
+test('a plain GET answers the complete body', async () => {
   const response = await serveMedia(request(CLIP), fakeFs())
-  assert.equal(response.status, 206)
-  assert.equal(response.headers.get('content-range'), 'bytes 0-9/10')
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-range'), null)
   assert.equal(response.headers.get('content-length'), '10')
   assert.equal(response.headers.get('accept-ranges'), 'bytes')
   assert.equal(response.headers.get('content-type'), 'video/mp4')
@@ -74,7 +74,7 @@ test('an unsatisfiable range reports the total and no body', async () => {
 
 test('HEAD carries the headers without a body', async () => {
   const response = await serveMedia(request(CLIP, { method: 'HEAD' }), fakeFs())
-  assert.equal(response.status, 206)
+  assert.equal(response.status, 200)
   assert.equal(response.headers.get('content-length'), '10')
   assert.equal(await response.text(), '')
 })

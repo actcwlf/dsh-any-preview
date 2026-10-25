@@ -3,10 +3,19 @@
  *
  * `loading: 'renderer'` keeps the whole file out of the shared content
  * pipeline — the player streams from `/api/any-preview/media`, which answers
- * `206 Partial Content` so seeking works on a file of any size.
+ * `206 Partial Content` for real range requests.
+ *
+ * The desktop shell serves the page from `dsh-app://` and forwards `/api`
+ * through a proxy that withholds `Content-Length`. Chromium then treats the
+ * stream as length-unknown and reports `seekable` as `[0, 0]`, so the scrubber
+ * cannot move. When that is detected the body pulls the file into a Blob
+ * instead: seeking works again at the cost of memory, which is why it is
+ * bounded by a cap and explained in the UI rather than done silently.
  */
 import { useEffect, useRef, useState } from 'react'
+import type { SyntheticEvent } from 'react'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
 /** Route owned by this package's Host half. */
 const ROUTE = 'api/any-preview/media'
@@ -74,6 +83,11 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const absolutePath = meta?.absolutePath
   const version = meta?.version
   const [failed, setFailed] = useState(false)
+  const [bufferedUrl, setBufferedUrl] = useState('')
+  const [buffering, setBuffering] = useState(false)
+  const [blocked, setBlocked] = useState(false)
+  const resumeAt = useRef<number | null>(null)
+  const probing = useRef(false)
   useRendererLoaded(content, version)
 
   const remote = typeof absolutePath === 'string' ? mediaUrl(absolutePath) : undefined
@@ -85,6 +99,65 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   useEffect(() => {
     setFailed(false)
   }, [remote])
+
+  // An object URL owns a copy of the file; release it when it is replaced or
+  // the tab goes away.
+  useEffect(() => () => {
+    if (bufferedUrl !== '') URL.revokeObjectURL(bufferedUrl)
+  }, [bufferedUrl])
+
+  /**
+   * Restore seeking when the platform hides the byte length. Chromium reports
+   * an empty seekable range for a stream of unknown size, which is exactly what
+   * the desktop shell's forwarding proxy produces.
+   */
+  const onLoadedMetadata = (event: SyntheticEvent<HTMLMediaElement>): void => {
+    const element = event.currentTarget
+    if (resumeAt.current !== null) {
+      try {
+        element.currentTime = resumeAt.current
+      } catch {
+        // The source changed underneath; starting from zero is acceptable.
+      }
+      resumeAt.current = null
+      return
+    }
+    if (probing.current || remote === undefined) return
+    probing.current = true
+    window.setTimeout(() => {
+      probing.current = false
+      if (!element.isConnected) return
+      const end = element.seekable.length > 0 ? element.seekable.end(0) : 0
+      const decision = bufferingDecision(end, meta?.size)
+      if (decision === 'none') return
+      if (decision === 'blocked') {
+        setBlocked(true)
+        return
+      }
+      resumeAt.current = element.currentTime
+      setBuffering(true)
+      void fetch(remote)
+        .then((response) => {
+          if (!response.ok) throw new Error(`media fetch failed: ${String(response.status)}`)
+          return response.blob()
+        })
+        .then((blob) => {
+          if (blob.size > MAX_BUFFER_BYTES) {
+            setBlocked(true)
+            return
+          }
+          setBufferedUrl(URL.createObjectURL(blob))
+        })
+        .catch(() => {
+          setBlocked(true)
+        })
+        .finally(() => {
+          setBuffering(false)
+        })
+    }, 300)
+  }
+
+  const activeSrc = bufferedUrl === '' ? remote : bufferedUrl
 
   if (remote === undefined) {
     return <Status text={absolutePath === undefined ? '无法读取此文件的路径。' : '正在载入媒体…'} />
@@ -107,21 +180,23 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     ? (
         <video
           key={playerKey}
-          src={remote}
+          src={activeSrc}
           controls
           playsInline
           preload="metadata"
           style={styles.video}
+          onLoadedMetadata={onLoadedMetadata}
           onError={() => setFailed(true)}
         />
       )
     : (
         <audio
           key={playerKey}
-          src={remote}
+          src={activeSrc}
           controls
           preload="metadata"
           style={styles.audio}
+          onLoadedMetadata={onLoadedMetadata}
           onError={() => setFailed(true)}
         />
       )
@@ -138,6 +213,13 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
             )
           : player}
       </div>
+      {(buffering || blocked) && (
+        <p style={styles.notice}>
+          {buffering
+            ? '当前环境未提供文件长度（桌面版转发会移除该响应头），正在载入完整文件以启用拖动…'
+            : `当前环境无法拖动进度条：文件${bytes === '' ? '' : `（${bytes}）`}超过本地缓冲上限 ${String(MAX_BUFFER_BYTES / 1024 / 1024)} MB，可下载后用本机播放器打开。`}
+        </p>
+      )}
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>下载</a>}
@@ -218,6 +300,13 @@ const styles = {
   },
   name: { overflowWrap: 'anywhere', color: 'var(--dsw-alias-label-primary)' },
   link: { color: 'var(--dsw-alias-label-secondary)', textDecoration: 'underline' },
+  notice: {
+    margin: 0,
+    maxWidth: '40em',
+    textAlign: 'center',
+    lineHeight: 1.6,
+    color: 'var(--dsw-alias-label-tertiary)',
+  },
 } as const
 
 function VideoBody(props: PreviewBodyProps) {
