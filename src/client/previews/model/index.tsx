@@ -89,25 +89,6 @@ function disposeObject(root: Object3D): void {
 }
 
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
-  // Experiment: can this page import() a module served over loopback HTTP?
-  const [probe, setProbe] = useState('probe: idle')
-  useEffect(() => {
-    void (async () => {
-      try {
-        const response = await fetch('/api/any-preview/media?base=1')
-        const body = await response.json() as { base?: unknown }
-        if (typeof body.base !== 'string' || body.base === '') {
-          setProbe('probe: no loopback base')
-          return
-        }
-        const load = new Function('u', 'return import(u)') as (url: string) => Promise<{ ok?: number }>
-        const module = await load(`${body.base}/any-preview/probe.js`)
-        setProbe(`probe: import ok=${String(module.ok)}`)
-      } catch (error) {
-        setProbe(`probe: FAILED ${error instanceof Error ? error.message.slice(0, 90) : ''}`)
-      }
-    })()
-  }, [])
   useLocale()
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -236,7 +217,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         <span>
           {typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() : t('model.title')}
           {triangles > 0 && t('model.triangles', { count: triangles.toLocaleString('en-US') })}
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{probe}</span>
         </span>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('model.hint')}</span>
       </div>
