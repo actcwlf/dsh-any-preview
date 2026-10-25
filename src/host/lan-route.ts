@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Loopback HTTP route for media, addressed by a signed URL.
  *
  * Why it exists: the desktop shell serves the page from `dsh-app://app` and
@@ -19,6 +19,9 @@ import { verifyLanPath } from './lan-url.ts'
 
 /** Path the loopback route claims. */
 export const LAN_ROUTE_PATH = '/any-preview/lan'
+
+/** Fixed path of the module-loading probe. */
+export const PROBE_ROUTE_PATH = '/any-preview/probe.js'
 
 /**
  * Base URL of the loopback route, filled in when the route registers.
@@ -73,6 +76,22 @@ export function registerLanRoute(ctx: LanContext, secret: Uint8Array): () => voi
       path: LAN_ROUTE_PATH,
       handler: async (req, res) => { await handle(req, res, ctx, secret) },
     })
+    // Module-loading probe: can a dsh-app:// page import() a module served
+    // over loopback HTTP? The answer decides whether three can be split out.
+    const probeDispose = server.register({
+      kind: 'exact',
+      path: PROBE_ROUTE_PATH,
+      handler: (req, res) => {
+        res.writeHead(200, {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-store',
+        })
+        res.end('export const ok = 1;\nexport const kind = "module-probe";\n')
+      },
+    })
+    const disposePair = dispose
+    dispose = () => { disposePair?.(); probeDispose() }
   })
   return () => { dispose?.() }
 }
