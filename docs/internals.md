@@ -142,3 +142,48 @@ npm test
   校验每个格式的注册元数据与渲染输出
 
 渲染测试需要 DSH checkout 提供 React，可用 `DSH_REPO` 覆盖默认路径。
+
+## 歧义后缀的判别
+
+渲染器选择**只看路径**（`matchingDocumentPreviews` 不读内容），所以一旦认领扩展名，
+就会收到所有带这个后缀的文件。少数扩展名确实对应两种格式，这时用前 1 KB 判定。
+
+`src/client/previews/dispatch.ts`：
+
+```ts
+claimsFile(extension, head)   // 表里没有该后缀 → 直接信任，不探测
+```
+
+| 后缀 | 判别器 | 依据 |
+|---|---|---|
+| `obj` | `looksLikeWavefront` | 文本且含 `v/vt/vn/f/o/g/s/mtllib/usemtl` 语句；带 NUL 直接否 |
+| `ts` / `m2ts` | `looksLikeTransportStream` | `0x47` 同步字节：0/188/376（TS）或 4/196/388（M2TS） |
+
+约定：
+
+- **只在真有歧义时登记**——不登记就不会多一次读取；
+- 判别器是纯函数（不碰 React），便于单测；
+- body 拿到 `false` 时应给明确提示，而不是让它解析失败；
+- `ts` 目前**故意不认领**：多数 `.ts` 是 TypeScript，内置高亮代码预览比自绘纯文本更好。
+  判别器已就绪，等平台支持按内容选渲染器时接上即可。
+
+## chunk 加载策略
+
+chunk 的划分是构建期决定；**何时下载**是运行期策略，集中在
+`src/client/kernel/chunk-policy.ts`：
+
+| 值 | 行为 | 当前默认 |
+|---|---|---|
+| `warm` | 激活后空闲预热（`requestIdleCallback`，3 s 兜底） | `three` |
+| `click` | 只在该类文件被打开时加载 | `mux` |
+| `never` | 完全不加载，预览显示"已被禁用" | — |
+
+```ts
+chunkStrategy(id)       // 当前策略
+isChunkEnabled(id)      // never → false，body 据此降级
+setChunkStrategy(id, s) // 未来的配置入口；现在没有调用者
+warmableChunks()        // 需要预热的 id 列表
+```
+
+`client/index.ts` 按 `warmableChunks()` 遍历预热，`model` 与 `ts-player` 在加载前查
+`isChunkEnabled`，因此接入配置时只需循环调用 `setChunkStrategy`，不必改预览组件。
