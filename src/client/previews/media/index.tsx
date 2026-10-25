@@ -26,7 +26,10 @@ import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
 
 const VIDEO_EXTENSIONS = [
   'mp4', 'm4v', 'webm', 'ogv', 'mov', 'mkv', 'avi',
-  'mpg', 'mpeg', '3gp', '3g2', 'ts', 'm2ts',
+  'mpg', 'mpeg', '3gp', '3g2', 'm2ts',
+    // .ts is deliberately absent: most .ts files are TypeScript sources, and
+    // renderer selection is path-only, so claiming the extension would send code
+    // to a media player. The built-in text preview owns that extension.
 ] as const
 
 const AUDIO_EXTENSIONS = [

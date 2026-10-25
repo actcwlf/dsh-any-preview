@@ -1,4 +1,4 @@
-﻿# dsh-any-preview
+# dsh-any-preview
 
 给 DSH 右侧栏的文件预览加渲染器。**当前实现见下表**；包内按「一个接口 + 一个注册数组」
 组织，新增格式只需加一个目录和一行注册。
@@ -246,4 +246,5 @@ dsh plugin --profile desktop remove dsh-any-preview
 - i18n：界面文案已中英双语；解析层内部诊断（ZIP 守卫、邮件头标签等）仍为中文
 - 回环媒体路由依赖 `webServer`，缺失该服务的 profile 会退回代理路径（受 Blob 上限约束）
 - 加密压缩包、ZIP64、7z / rar 仍未支持
+- `.ts` 按源码处理（由内置代码预览接管）：多数 `.ts` 文件是 TypeScript，而渲染器选择只看路径；MPEG-TS 请用 `.m2ts` 或改扩展名
 
