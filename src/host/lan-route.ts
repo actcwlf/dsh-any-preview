@@ -13,7 +13,8 @@
 import { once } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { basename } from 'node:path'
-import { stat } from 'node:fs/promises'
+import { stat, readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import type { RouteContext } from './contracts.ts'
 import { verifyLanPath } from './lan-url.ts'
 
@@ -90,8 +91,15 @@ export function registerLanRoute(ctx: LanContext, secret: Uint8Array): () => voi
         res.end('export const ok = 1;\nexport const kind = "module-probe";\n')
       },
     })
+    // The lazy three.js chunk: a fixed package file, no user input, so it needs
+    // no signature. Size is not the constraint; startup time is.
+    const chunkDispose = server.register({
+      kind: 'exact',
+      path: '/any-preview/asset/three-chunk.js',
+      handler: (req, res) => { void serveChunk(res) },
+    })
     const disposePair = dispose
-    dispose = () => { disposePair?.(); probeDispose() }
+    dispose = () => { disposePair?.(); probeDispose(); chunkDispose() }
   })
   return () => { dispose?.() }
 }
@@ -177,6 +185,27 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext
     if (bytes.length === 0) break
   }
   res.end()
+}
+
+/**
+ * Serve the packaged 3D chunk from `lib/`.
+ * @param res - response to write.
+ */
+async function serveChunk(res: ServerResponse): Promise<void> {
+  try {
+    const file = fileURLToPath(new URL('./three-chunk.js', import.meta.url))
+    const bytes = await readFile(file)
+    res.writeHead(200, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+      'Content-Length': String(bytes.length),
+    })
+    res.end(bytes)
+  } catch {
+    res.writeHead(404, { 'Access-Control-Allow-Origin': '*' })
+    res.end()
+  }
 }
 
 /**

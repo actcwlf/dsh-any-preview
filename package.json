@@ -24,6 +24,7 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
+    "lib/three-chunk.js",
     "cordis.patch.yml"
   ],
   "scripts": {

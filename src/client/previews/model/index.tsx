@@ -10,15 +10,19 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
-import * as THREE from 'three'
+import { loadThree } from '../../kernel/three-loader.ts'
+import type { ThreeBundle } from '../../../chunk/three.ts'
+
+// Filled by `loadThree()` before any model code runs.
+let THREE: ThreeBundle['THREE']
+let OrbitControls: ThreeBundle['OrbitControls']
+let GLTFLoader: ThreeBundle['GLTFLoader']
+let OBJLoader: ThreeBundle['OBJLoader']
+let STLLoader: ThreeBundle['STLLoader']
 
 /** three.js ships no typings in this package; these keep the signatures readable. */
 type Object3D = any
 type BufferGeometry = any
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
-import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -170,6 +174,12 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
 
     void (async () => {
       try {
+        const three = await loadThree()
+        THREE = three.THREE
+        OrbitControls = three.OrbitControls
+        GLTFLoader = three.GLTFLoader
+        OBJLoader = three.OBJLoader
+        STLLoader = three.STLLoader
         const response = await fetch(url)
         if (!response.ok) throw new PreviewError('common.httpError', { status: response.status })
         const bytes = await response.arrayBuffer()

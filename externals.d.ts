@@ -49,6 +49,9 @@ declare module 'node:fs/promises'
 declare module 'node:path'
 declare module 'node:zlib'
 declare module 'node:crypto'
+declare module 'node:url' {
+  export function fileURLToPath(url: URL | string): string
+}
 declare module 'node:http' {
   export interface IncomingMessage {
     readonly url?: string
@@ -63,3 +66,5 @@ declare module 'node:http' {
 }
 declare module 'node:events'
 declare const Buffer: any
+
+declare function requestIdleCallback(callback: () => void, options?: { timeout?: number }): number
