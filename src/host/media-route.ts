@@ -192,7 +192,7 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
  * @param fs - Host filesystem service.
  * @returns the response.
  */
-async function serve(request: Request, fs: HostFileSystem): Promise<Response> {
+export async function serveMedia(request: Request, fs: HostFileSystem): Promise<Response> {
   const url = new URL(request.url)
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')
@@ -222,13 +222,14 @@ async function serve(request: Request, fs: HostFileSystem): Promise<Response> {
   const size = info.size ?? 0
   const type = mediaTypeOf(info.displayPath ?? path)
   const range = parseRange(request.headers.get('range'), size)
+  const download = url.searchParams.get('download') === '1'
 
   const headers: Record<string, string> = {
     ...BASE_HEADERS,
     'Accept-Ranges': 'bytes',
     'Content-Type': type,
   }
-  if (url.searchParams.get('download') === '1') {
+  if (download) {
     const name = basename(info.displayPath ?? path)
     const safe = name.replace(/["\\\r\n]/gu, '_')
     headers['Content-Disposition'] = `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(name)}`
@@ -239,15 +240,26 @@ async function serve(request: Request, fs: HostFileSystem): Promise<Response> {
     return new Response(null, { status: 416, headers })
   }
 
+  if (size === 0) {
+    headers['Content-Length'] = '0'
+    return new Response(null, { status: 200, headers })
+  }
+
+  // A download keeps the ordinary complete-body status. Everything a media
+  // element may play answers `206`, including a request that carried no Range:
+  // the desktop proxy strips `Content-Length`, and `Content-Range` is the one
+  // header that still carries the total length after it. The bytes served are
+  // exactly the window being announced, so the partial status is truthful.
+  const partial = range !== undefined || !download
   const window = range === undefined ? { start: 0, end: size - 1 } : range
-  const length = size === 0 ? 0 : window.end - window.start + 1
-  if (range !== undefined) {
+  const length = window.end - window.start + 1
+  if (partial) {
     headers['Content-Range'] = `bytes ${String(window.start)}-${String(window.end)}/${String(size)}`
   }
   headers['Content-Length'] = String(length)
 
-  const status = range === undefined ? 200 : 206
-  if (request.method === 'HEAD' || length === 0) {
+  const status = partial ? 206 : 200
+  if (request.method === 'HEAD') {
     return new Response(null, { status, headers })
   }
   return new Response(streamBytes(fs, target, window.start, length, request.signal), { status, headers })
@@ -262,6 +274,6 @@ export function registerMediaRoute(ctx: MediaRouteContext): () => void {
     path: MEDIA_ROUTE_PATH,
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',
-    fetch: request => serve(request, ctx.fs),
+    fetch: request => serveMedia(request, ctx.fs),
   })
 }
