@@ -1,7 +1,11 @@
 /** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
-import { filterRows } from '../../kernel/search.ts'
+import { scrollToRow } from '../../kernel/scroll.ts'
+import { DEFAULT_SEARCH } from '../../kernel/search.ts'
+import type { SearchOptions } from '../../kernel/search.ts'
+import { useSearch } from '../../kernel/useSearch.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { collectColumns, createJsonlConsumer, formatValue } from './parse.ts'
@@ -11,21 +15,34 @@ const DISPLAY_ROWS = 2_000
 
 export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   const jsonl = useStreamedText(content, () => createJsonlConsumer())
-  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
+  const [filter, setFilter] = useState(false)
+  const scroller = useRef<HTMLDivElement | null>(null)
   const records = jsonl?.records ?? []
-  const filtered = useMemo(
-    () => filterRows(records, query, record => record.raw),
-    [records, records.length, query],
-  )
+  const texts = useMemo(() => records.map(record => record.raw), [records, records.length])
+  const found = useSearch(texts, options)
+
+  const visible = useMemo(() => {
+    if (!filter || found.pattern === undefined) return records.map((record, index) => ({ record, index }))
+    return found.matches.map(index => ({ record: records[index]!, index }))
+  }, [records, records.length, filter, found.pattern, found.matches])
+
+  useEffect(() => {
+    if (found.activeRow === undefined) return
+    scrollToRow(scroller.current, found.activeRow)
+  }, [found.activeRow])
 
   if (jsonl === null) {
     return <div style={emptyStyle}>正在读取…</div>
   }
 
   const columns = collectColumns(jsonl.records)
-  const shown = filtered.rows.slice(0, DISPLAY_ROWS)
-  const shownIndices = filtered.indices.slice(0, DISPLAY_ROWS)
-  const hidden = filtered.rows.length - shown.length
+  const shown = visible.slice(0, DISPLAY_ROWS)
+  const hidden = visible.length - shown.length
+  const setScroller = (element: HTMLDivElement | null): void => {
+    scroller.current = element
+    scrollportRef?.(element)
+  }
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
@@ -38,10 +55,15 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
           )}
         </span>
         <SearchBar
-          value={query}
-          onChange={setQuery}
-          matches={filtered.rows.length}
+          options={options}
+          onChange={setOptions}
+          matches={found.matches.length}
+          index={found.index}
           total={jsonl.records.length}
+          onPrev={found.prev}
+          onNext={found.next}
+          filter={filter}
+          onFilter={setFilter}
         />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
           {jsonl.truncated
@@ -49,7 +71,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             : hidden > 0 ? `仅显示前 ${DISPLAY_ROWS.toLocaleString('en-US')} 条` : ''}
         </span>
       </div>
-      <div ref={scrollportRef} style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr>
@@ -60,21 +82,23 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             </tr>
           </thead>
           <tbody>
-            {shown.map((record, offset) => (
+            {shown.map(({ record, index }) => (
               record.error === undefined
                 ? (
-                    <tr key={shownIndices[offset]} style={{ height: 22 }}>
+                    <tr key={index} data-row-index={index} style={{ height: 22 }}>
                       <td style={indexStyle}>{record.line}</td>
                       {columns.map((column) => (
-                        <td key={column} style={cellStyle}>{cellOf(record.value, column)}</td>
+                        <td key={column} style={cellStyle}>
+                          <Marked text={cellOf(record.value, column)} pattern={found.pattern} />
+                        </td>
                       ))}
                     </tr>
                   )
                 : (
-                    <tr key={shownIndices[offset]} style={{ height: 22, background: 'rgba(248, 81, 73, 0.14)' }}>
+                    <tr key={index} data-row-index={index} style={{ height: 22, background: 'rgba(248, 81, 73, 0.14)' }}>
                       <td style={indexStyle}>{record.line}</td>
                       <td colSpan={Math.max(1, columns.length)} style={{ ...cellStyle, color: 'rgb(248, 81, 73)' }}>
-                        {record.raw}
+                        <Marked text={record.raw} pattern={found.pattern} />
                       </td>
                     </tr>
                   )

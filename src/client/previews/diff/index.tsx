@@ -1,7 +1,11 @@
 /** Unified diff / patch viewer with search. */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
-import { filterRows } from '../../kernel/search.ts'
+import { scrollToRow } from '../../kernel/scroll.ts'
+import { DEFAULT_SEARCH } from '../../kernel/search.ts'
+import type { SearchOptions } from '../../kernel/search.ts'
+import { useSearch } from '../../kernel/useSearch.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { createDiffConsumer } from './parse.ts'
@@ -27,15 +31,30 @@ const COLOR: Record<DiffLineKind, string> = {
 
 export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   const diff = useStreamedText(content, () => createDiffConsumer())
-  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
+  const [filter, setFilter] = useState(false)
+  const scroller = useRef<HTMLDivElement | null>(null)
   const lines = diff?.lines ?? []
-  const filtered = useMemo(
-    () => filterRows(lines, query, line => line.text),
-    [lines, lines.length, query],
-  )
+  const texts = useMemo(() => lines.map(line => line.text), [lines, lines.length])
+  const found = useSearch(texts, options)
+
+  const visible = useMemo(() => {
+    if (!filter || found.pattern === undefined) return lines.map((line, index) => ({ line, index }))
+    return found.matches.map(index => ({ line: lines[index]!, index }))
+  }, [lines, lines.length, filter, found.pattern, found.matches])
+
+  useEffect(() => {
+    if (found.activeRow === undefined) return
+    scrollToRow(scroller.current, found.activeRow)
+  }, [found.activeRow])
 
   if (diff === null) {
     return <div style={emptyStyle}>正在读取…</div>
+  }
+
+  const setScroller = (element: HTMLDivElement | null): void => {
+    scroller.current = element
+    scrollportRef?.(element)
   }
 
   return (
@@ -49,20 +68,26 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           <span style={{ color: 'rgb(248, 81, 73)' }}>−{diff.removed.toLocaleString('en-US')}</span>
         </span>
         <SearchBar
-          value={query}
-          onChange={setQuery}
-          matches={filtered.rows.length}
+          options={options}
+          onChange={setOptions}
+          matches={found.matches.length}
+          index={found.index}
           total={diff.lines.length}
+          onPrev={found.prev}
+          onNext={found.next}
+          filter={filter}
+          onFilter={setFilter}
         />
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {diff.truncated ? '已截断' : '差异视图'}
+          {diff.truncated ? '已截断' : ''}
         </span>
       </div>
-      <div ref={scrollportRef} style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
-          {filtered.rows.map((line, offset) => (
+          {visible.map(({ line, index }) => (
             <div
-              key={filtered.indices[offset]}
+              key={index}
+              data-row-index={index}
               style={{
                 display: 'flex',
                 gap: 10,
@@ -75,9 +100,11 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
               }}
             >
               <span style={{ flex: '0 0 auto', width: 48, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' }}>
-                {(filtered.indices[offset] ?? 0) + 1}
+                {index + 1}
               </span>
-              <span style={{ flex: '1 1 auto' }}>{line.text === '' ? ' ' : line.text}</span>
+              <span style={{ flex: '1 1 auto' }}>
+                <Marked text={line.text === '' ? ' ' : line.text} pattern={found.pattern} />
+              </span>
             </div>
           ))}
         </div>

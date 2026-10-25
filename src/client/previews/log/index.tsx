@@ -1,7 +1,11 @@
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
-import { filterRows } from '../../kernel/search.ts'
+import { scrollToRow } from '../../kernel/scroll.ts'
+import { DEFAULT_SEARCH } from '../../kernel/search.ts'
+import type { SearchOptions } from '../../kernel/search.ts'
+import { useSearch } from '../../kernel/useSearch.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { createLogConsumer, levelOf } from './parse.ts'
@@ -17,22 +21,30 @@ const LEVEL_COLOR: Record<LogLevel, string> = {
 
 export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   const log = useStreamedText(content, () => createLogConsumer())
-  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
+  const [filter, setFilter] = useState(false)
   const [follow, setFollow] = useState(true)
   const scroller = useRef<HTMLDivElement | null>(null)
   const lines = log?.lines ?? []
-  const filtered = useMemo(
-    () => filterRows(lines, query, line => line),
-    [lines, lines.length, query],
-  )
+  const found = useSearch(lines, options)
   const lineCount = lines.length
   const complete = log?.complete ?? false
 
+  const visible = useMemo(() => {
+    if (!filter || found.pattern === undefined) return lines.map((line, index) => ({ line, index }))
+    return found.matches.map(index => ({ line: lines[index]!, index }))
+  }, [lines, lines.length, filter, found.pattern, found.matches])
+
   useEffect(() => {
-    if (!follow || !complete) return
+    if (!follow || !complete || found.pattern !== undefined) return
     const element = scroller.current
     if (element !== null) element.scrollTop = element.scrollHeight
-  }, [follow, complete, lineCount, query])
+  }, [follow, complete, lineCount, found.pattern])
+
+  useEffect(() => {
+    if (found.activeRow === undefined) return
+    scrollToRow(scroller.current, found.activeRow)
+  }, [found.activeRow])
 
   if (log === null) {
     return <div style={emptyStyle}>正在读取…</div>
@@ -47,10 +59,15 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--dsw-alias-bg-base)' }}>
       <div style={barStyle}>
         <SearchBar
-          value={query}
-          onChange={setQuery}
-          matches={filtered.rows.length}
+          options={options}
+          onChange={setOptions}
+          matches={found.matches.length}
+          index={found.index}
           total={log.lines.length}
+          onPrev={found.prev}
+          onNext={found.next}
+          filter={filter}
+          onFilter={setFilter}
         >
           <label style={labelStyle}>
             <input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} />
@@ -63,10 +80,12 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
       </div>
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
-          {filtered.rows.map((line, offset) => (
-            <div key={filtered.indices[offset]} style={{ display: 'flex', gap: 10, padding: '0 12px', whiteSpace: 'pre' }}>
-              <span style={gutterStyle}>{(filtered.indices[offset] ?? 0) + 1}</span>
-              <span style={{ color: LEVEL_COLOR[levelOf(line)] }}>{line === '' ? ' ' : line}</span>
+          {visible.map(({ line, index }) => (
+            <div key={index} data-row-index={index} style={{ display: 'flex', gap: 10, padding: '0 12px', whiteSpace: 'pre' }}>
+              <span style={gutterStyle}>{index + 1}</span>
+              <span style={{ color: LEVEL_COLOR[levelOf(line)] }}>
+                <Marked text={line === '' ? ' ' : line} pattern={found.pattern} />
+              </span>
             </div>
           ))}
         </div>

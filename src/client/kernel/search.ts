@@ -1,45 +1,89 @@
-/** Substring search over preview rows, shared by every text-based format. */
+/** Query compilation, match ranges and row selection shared by every preview. */
 
-/** Rows plus the original index each came from. */
-export interface FilteredRows<T> {
-  readonly rows: readonly T[]
-  readonly indices: readonly number[]
+/** How the current query should be interpreted. */
+export interface SearchOptions {
+  readonly query: string
+  readonly regex: boolean
+  readonly caseSensitive: boolean
+}
+
+/** Neutral search state. */
+export const DEFAULT_SEARCH: SearchOptions = { query: '', regex: false, caseSensitive: false }
+
+/** One matched span within a text. */
+export interface MatchRange {
+  readonly start: number
+  readonly end: number
 }
 
 /**
- * Case-fold a query once, so per-row comparison stays cheap.
- * @param query - raw user input.
- * @returns the normalized needle.
+ * Escape a literal so it can be embedded in a RegExp.
+ * @param value - literal text.
+ * @returns the escaped pattern source.
  */
-export function normalizeQuery(query: string): string {
-  return query.trim().toLowerCase()
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
- * Keep the rows whose text contains the query, remembering their positions.
- * An empty query keeps everything, so callers need no special case.
- * @param rows - source rows in display order.
- * @param query - raw user input.
- * @param textOf - the searchable text of one row.
- * @returns the surviving rows and their original indices.
+ * Compile the query once per change.
+ * @param options - query, regex mode and case sensitivity.
+ * @returns the pattern, or undefined when the query is empty or invalid.
  */
-export function filterRows<T>(
-  rows: readonly T[],
-  query: string,
-  textOf: (row: T) => string,
-): FilteredRows<T> {
-  const needle = normalizeQuery(query)
-  if (needle === '') {
-    return { rows, indices: rows.map((_row, index) => index) }
+export function compileSearch(options: SearchOptions): RegExp | undefined {
+  const query = options.query.trim()
+  if (query === '') return undefined
+  const flags = options.caseSensitive ? 'gu' : 'giu'
+  try {
+    return new RegExp(options.regex ? query : escapeRegExp(query), flags)
+  } catch {
+    // An in-progress regex is a normal state while typing; treat it as no query.
+    return undefined
   }
-  const keptRows: T[] = []
-  const keptIndices: number[] = []
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index]!
-    if (textOf(row).toLowerCase().includes(needle)) {
-      keptRows.push(row)
-      keptIndices.push(index)
+}
+
+/**
+ * Find every non-overlapping match in one text.
+ * @param text - the searchable text.
+ * @param pattern - compiled query (its `lastIndex` is managed here).
+ * @param limit - maximum ranges to return for one text.
+ * @returns the matched spans in order.
+ */
+export function matchRanges(text: string, pattern: RegExp, limit = 200): MatchRange[] {
+  const ranges: MatchRange[] = []
+  pattern.lastIndex = 0
+  let match: RegExpExecArray | null
+  while (ranges.length < limit && (match = pattern.exec(text)) !== null) {
+    if (match[0].length === 0) {
+      // A zero-width match would loop forever; step past it.
+      pattern.lastIndex += 1
+      continue
     }
+    ranges.push({ start: match.index, end: match.index + match[0].length })
   }
-  return { rows: keptRows, indices: keptIndices }
+  return ranges
+}
+
+/**
+ * Whether one text matches, without collecting ranges.
+ * @param text - the searchable text.
+ * @param pattern - compiled query.
+ * @returns true when the pattern occurs.
+ */
+export function hasMatch(text: string, pattern: RegExp): boolean {
+  return matchRanges(text, pattern, 1).length > 0
+}
+
+/**
+ * Indices of the texts that match.
+ * @param texts - searchable text per row.
+ * @param pattern - compiled query.
+ * @returns the matching row indices in order.
+ */
+export function matchingIndices(texts: readonly string[], pattern: RegExp): number[] {
+  const indices: number[] = []
+  for (let index = 0; index < texts.length; index += 1) {
+    if (hasMatch(texts[index]!, pattern)) indices.push(index)
+  }
+  return indices
 }

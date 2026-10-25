@@ -1,43 +1,63 @@
-/** Row filtering shared by every preview's search field. */
+/** Query compilation, match ranges and row selection. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { filterRows, normalizeQuery } from '../src/client/kernel/search.ts'
+import {
+  compileSearch,
+  escapeRegExp,
+  hasMatch,
+  matchRanges,
+  matchingIndices,
+} from '../src/client/kernel/search.ts'
 
-const ROWS = ['alpha one', 'beta two', 'Gamma three']
+const options = (query, extra = {}) => ({ query, regex: false, caseSensitive: false, ...extra })
 
-test('an empty query keeps every row and its index', () => {
-  const result = filterRows(ROWS, '', row => row)
-  assert.deepEqual(result.rows, ROWS)
-  assert.deepEqual(result.indices, [0, 1, 2])
+test('an empty query compiles to nothing', () => {
+  assert.equal(compileSearch(options('')), undefined)
+  assert.equal(compileSearch(options('   ')), undefined)
 })
 
-test('a query keeps only matching rows, with original indices', () => {
-  const result = filterRows(ROWS, 'two', row => row)
-  assert.deepEqual(result.rows, ['beta two'])
-  assert.deepEqual(result.indices, [1])
+test('literal mode escapes regex metacharacters', () => {
+  assert.equal(escapeRegExp('a.b*c'), 'a\\.b\\*c')
+  const pattern = compileSearch(options('a.b'))
+  assert.ok(pattern)
+  assert.equal(hasMatch('xa.by', pattern), true)
+  assert.equal(hasMatch('axby', pattern), false)
 })
 
-test('matching is case-insensitive in both directions', () => {
-  assert.deepEqual(filterRows(ROWS, 'GAMMA', row => row).indices, [2])
-  assert.deepEqual(filterRows(['UPPER'], 'upper', row => row).indices, [0])
+test('regex mode compiles the query as written', () => {
+  const pattern = compileSearch(options('a+', { regex: true }))
+  assert.ok(pattern)
+  assert.equal(hasMatch('aaa', pattern), true)
 })
 
-test('the query is trimmed before matching', () => {
-  assert.deepEqual(filterRows(ROWS, '  beta  ', row => row).indices, [1])
-  assert.deepEqual(filterRows(ROWS, '   ', row => row).indices, [0, 1, 2])
+test('an invalid regex is treated as no query', () => {
+  assert.equal(compileSearch(options('([', { regex: true })), undefined)
 })
 
-test('no match yields no rows', () => {
-  const result = filterRows(ROWS, 'zzz', row => row)
-  assert.deepEqual(result.rows, [])
-  assert.deepEqual(result.indices, [])
+test('case sensitivity follows the toggle', () => {
+  assert.equal(hasMatch('ABC', compileSearch(options('abc'))), true)
+  assert.equal(hasMatch('ABC', compileSearch(options('abc', { caseSensitive: true }))), false)
 })
 
-test('the searchable text is supplied per row', () => {
-  const rows = [{ a: 'x', b: 'needle' }, { a: 'needle', b: 'y' }]
-  assert.deepEqual(filterRows(rows, 'needle', row => `${row.a} ${row.b}`).indices, [0, 1])
+test('every non-overlapping match is returned in order', () => {
+  const pattern = compileSearch(options('an'))
+  assert.deepEqual(matchRanges('an an an', pattern), [
+    { start: 0, end: 2 }, { start: 3, end: 5 }, { start: 6, end: 8 },
+  ])
 })
 
-test('normalizeQuery lowercases and trims', () => {
-  assert.equal(normalizeQuery('  MiXeD  '), 'mixed')
+test('matches do not overlap', () => {
+  const pattern = compileSearch(options('aa'))
+  assert.deepEqual(matchRanges('aaaa', pattern), [{ start: 0, end: 2 }, { start: 2, end: 4 }])
+})
+
+test('a zero-width pattern terminates instead of looping', () => {
+  const pattern = compileSearch(options('x*', { regex: true }))
+  assert.deepEqual(matchRanges('abc', pattern), [])
+})
+
+test('row selection reports the matching indices', () => {
+  const pattern = compileSearch(options('beta'))
+  assert.deepEqual(matchingIndices(['alpha', 'beta', 'gamma', 'beta again'], pattern), [1, 3])
+  assert.deepEqual(matchingIndices(['alpha'], pattern), [])
 })

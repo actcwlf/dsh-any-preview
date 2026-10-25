@@ -162,7 +162,8 @@ test('diff body renders a classified patch', { skip: !available }, async () => {
   assert.match(html, /\+1/)
   assert.match(html, /−1/)
   assert.match(html, /@@ -1,2 \+1,3 @@/)
-  assert.match(html, /差异视图/)
+  assert.match(html, /区分大小写/)
+  assert.match(html, /上一个匹配/)
 })
 
 test('log body renders lines and a filter', { skip: !available }, async () => {

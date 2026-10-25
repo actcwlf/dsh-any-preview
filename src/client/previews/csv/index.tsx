@@ -1,11 +1,14 @@
-/** Streaming CSV/TSV table with windowed rows, search, over the incremental pipeline. */
+/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
-import { filterRows } from '../../kernel/search.ts'
+import { DEFAULT_SEARCH } from '../../kernel/search.ts'
+import type { SearchOptions } from '../../kernel/search.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { useSearch } from '../../kernel/useSearch.ts'
 import { DELIMITER_LABEL, detectDelimiter } from './detect.ts'
 
 /** Row budget: beyond this the view stops accumulating and says so. */
@@ -45,7 +48,8 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
-  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
+  const [filter, setFilter] = useState(false)
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -78,12 +82,17 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     return { header: cells[0] ?? [], body: cells.slice(1), columns }
   }, [buffer, rowCount])
 
-  const filtered = useMemo(
-    () => (view === null
-      ? { rows: [], indices: [] }
-      : filterRows(view.body, query, row => row.join(' '))),
-    [view, query],
+  const texts = useMemo(
+    () => (view === null ? [] : view.body.map(row => row.join(' '))),
+    [view],
   )
+  const found = useSearch(texts, options)
+
+  const visibleIndices = useMemo(() => {
+    if (view === null) return []
+    if (!filter || found.pattern === undefined) return view.body.map((_row, index) => index)
+    return found.matches
+  }, [view, filter, found.pattern, found.matches])
 
   useEffect(() => {
     if (!ready) return
@@ -97,12 +106,26 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     return () => { observer.disconnect() }
   }, [ready])
 
-  // A new query changes the row set under the same scroll offset.
+  // Filtering changes the row set under the same scroll offset.
   useEffect(() => {
+    if (!filter) return
     const element = scrollerRef.current
-    if (element !== null) element.scrollTop = 0
+    if (element === null) return
+    element.scrollTop = 0
     setScrollTop(0)
-  }, [query])
+  }, [filter, found.matches])
+
+  // Reveal the navigated match by its position in the visible set.
+  useEffect(() => {
+    const row = found.activeRow
+    const element = scrollerRef.current
+    if (row === undefined || element === null) return
+    const position = filter ? visibleIndices.indexOf(row) : row
+    if (position < 0) return
+    const top = Math.max(0, position * ROW_HEIGHT - element.clientHeight / 2)
+    element.scrollTop = top
+    setScrollTop(top)
+  }, [found.activeRow, filter, visibleIndices])
 
   if (buffer === null || view === null) {
     const empty = source.kind === 'text' && eof && text.length === 0
@@ -113,17 +136,12 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     )
   }
 
-  // Only the rows the viewport can show are mounted; spacers keep the scrollbar
-  // honest for the rest.
-  const total = filtered.rows.length
+  const total = visibleIndices.length
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
   const last = Math.min(total, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
-  const windowRows = filtered.rows.slice(first, last)
-  const windowIndices = filtered.indices.slice(first, last)
+  const windowIndices = visibleIndices.slice(first, last)
 
-  // Only a real condition is worth a label here: the row budget. Stream
-  // progress is already visible in the row count, and a "reading" chip that
-  // never clears is noise.
+  // Only a real condition is worth a label here: the row budget.
   const status = buffer.truncated
     ? `已截断（上限 ${MAX_ROWS.toLocaleString('en-US')} 行）`
     : ''
@@ -140,10 +158,15 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           {' · '}分隔符 {DELIMITER_LABEL[delimiterRef.current] ?? delimiterRef.current}
         </span>
         <SearchBar
-          value={query}
-          onChange={setQuery}
-          matches={total}
+          options={options}
+          onChange={setOptions}
+          matches={found.matches.length}
+          index={found.index}
           total={view.body.length}
+          onPrev={found.prev}
+          onNext={found.next}
+          filter={filter}
+          onFilter={setFilter}
         />
         {status !== '' && (
           <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
@@ -172,11 +195,13 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
                 <td colSpan={view.columns + 1} style={spacerCell} />
               </tr>
             )}
-            {windowRows.map((row, offset) => (
-              <tr key={windowIndices[offset]} style={{ height: ROW_HEIGHT }}>
-                <td style={indexStyle}>{(windowIndices[offset] ?? 0) + 1}</td>
-                {row.map((value, column) => (
-                  <td key={column} style={cellStyle}>{value}</td>
+            {windowIndices.map((rowIndex) => (
+              <tr key={rowIndex} data-row-index={rowIndex} style={{ height: ROW_HEIGHT }}>
+                <td style={indexStyle}>{rowIndex + 1}</td>
+                {(view.body[rowIndex] ?? []).map((value, column) => (
+                  <td key={column} style={cellStyle}>
+                    <Marked text={value} pattern={found.pattern} />
+                  </td>
                 ))}
               </tr>
             ))}
