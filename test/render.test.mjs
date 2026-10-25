@@ -93,6 +93,24 @@ test('client bundle registers every preview in the list', { skip: !available }, 
   assert.equal(csv.binaryExtensions, undefined)
 })
 
+test('apply survives hostile optional capabilities', { skip: !available }, async () => {
+  const entry = await loadEntry()
+  const repoRequire = createRequire(anchor)
+  const mod = entry.factory(specifier => repoRequire(specifier))
+  const definitions = []
+  const ctx = {
+    effect: run => (run(), () => {}),
+    documentPreviews: { register: definition => (definitions.push(definition), () => {}) },
+    slots: { inject: (_key, run) => (run(), () => {}), register: () => () => {} },
+    // The desktop shell turns a failed client entry into a fatal boot error, so
+    // an unrouted namespace must never escape apply().
+    get: () => new Proxy({}, { get() { throw new Error('namespace not routed') } }),
+    inject: () => { throw new Error('inject exploded') },
+  }
+  assert.doesNotThrow(() => mod.apply(ctx))
+  assert.ok(definitions.length >= 10, 'every preview still registers')
+})
+
 test('csv body renders a table', { skip: !available }, async () => {
   const { seats } = await mount()
   const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')

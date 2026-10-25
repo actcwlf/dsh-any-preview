@@ -66,10 +66,18 @@ function registerPreview(ctx: ClientContext, module: PreviewModule): void {
 export function apply(ctx: ClientContext): void {
   // Optional capabilities. A profile without them still renders every preview;
   // only the "open elsewhere" and "choose a directory" affordances are lost.
-  // Each is resolved twice: immediately when already active, and again through
-  // a deferred injection for services that come up after this plugin.
-  const get = (name: string): unknown =>
-    (ctx as { get?(key: string, strict?: boolean): unknown }).get?.(name, false)
+  //
+  // Every step below is wrapped: the desktop shell treats a client entry that
+  // fails to activate as a fatal boot error, so apply must never throw. In
+  // particular, reading a property off the remote proxy resolves a namespace
+  // and can throw when that namespace is not routed yet.
+  const safe = (run: () => void, what: string): void => {
+    try {
+      run()
+    } catch (error) {
+      console.warn(`[dsh-any-preview] ${what} unavailable`, error)
+    }
+  }
 
   const bindSidebar = (sidebar: unknown): void => {
     const api = sidebar as { openResource?(address: string): void } | undefined
@@ -78,18 +86,31 @@ export function apply(ctx: ClientContext): void {
     }
   }
   const bindPicker = (remote: unknown): void => {
-    const api = (remote as { directoryPicker?: { pick(lifetime: AbortSignal): Promise<string | null> } } | undefined)
-      ?.directoryPicker
-    if (api !== undefined) setDirectoryPicker(signal => api.pick(signal))
+    const holder = remote as { directoryPicker?: { pick(lifetime: AbortSignal): Promise<string | null> } } | undefined
+    const picker = holder?.directoryPicker
+    if (picker !== undefined) setDirectoryPicker(signal => picker.pick(signal))
   }
 
-  if (get('sidebarRight') !== undefined) bindSidebar(get('sidebarRight'))
-  if (get('remote') !== undefined) bindPicker(get('remote'))
+  // `sidebarRight` is an ordinary service and safe to read immediately; the
+  // remote proxy is not, so it is only reached through a deferred injection.
+  safe(() => {
+    const sidebar = (ctx as { get?(key: string, strict?: boolean): unknown }).get?.('sidebarRight', false)
+    if (sidebar !== undefined) bindSidebar(sidebar)
+  }, 'sidebar binding')
 
-  ctx.inject?.(['sidebarRight'], (scope: never) => { bindSidebar((scope as { sidebarRight: unknown }).sidebarRight) })
-  ctx.inject?.(['remote', 'remote.directoryPicker'], (scope: never) => {
-    bindPicker((scope as { remote: unknown }).remote)
-    setRemoteLookup(() => (scope as { remote: unknown }).remote)
-  })
+  safe(() => {
+    ctx.inject?.(['sidebarRight'], (scope: never) => {
+      safe(() => { bindSidebar((scope as { sidebarRight: unknown }).sidebarRight) }, 'sidebar binding')
+    })
+  }, 'sidebar injection')
+
+  safe(() => {
+    ctx.inject?.(['remote'], (scope: never) => {
+      const remote = (scope as { remote: unknown }).remote
+      safe(() => { bindPicker(remote) }, 'directory picker')
+      setRemoteLookup(() => remote)
+    })
+  }, 'remote injection')
+
   for (const module of PREVIEWS) registerPreview(ctx, module)
 }
