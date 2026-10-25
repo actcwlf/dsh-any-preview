@@ -94,6 +94,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const [triangles, setTriangles] = useState(0)
+  const [chunkReady, setChunkReady] = useState(false)
   const mountRef = useRef<HTMLDivElement | null>(null)
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
