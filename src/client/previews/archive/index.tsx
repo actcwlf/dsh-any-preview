@@ -19,126 +19,9 @@ import { emlPreview } from '../eml/index.tsx'
 import { fontPreview } from '../font/index.tsx'
 import { jsonlPreview } from '../jsonl/index.tsx'
 import { logPreview } from '../log/index.tsx'
-import { MAX_ENTRIES, decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../../../shared/zip/parse.ts'
+import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
-
-/** Anything read whole must fit this. */
-const MAX_WHOLE_BYTES = 64 * 1024 * 1024
-
-/** Enough tail to cover an archive comment plus the end-of-central-directory record. */
-const TAIL_BYTES = 66_000
-
-/** Read an inclusive byte window, working whether or not the server honours Range. */
-async function readRange(url: string, start: number, end: number): Promise<Uint8Array> {
-  const response = await fetch(url, { headers: { Range: `bytes=${String(start)}-${String(end)}` } })
-  if (response.status === 206) return new Uint8Array(await response.arrayBuffer())
-  if (response.status === 200) {
-    // The server ignored Range and sent everything.
-    const whole = new Uint8Array(await response.arrayBuffer())
-    return whole.subarray(start, Math.min(whole.length, end + 1))
-  }
-  throw new Error(`读取失败（HTTP ${String(response.status)}）`)
-}
-
-/**
- * Total size from a one-byte range. `Content-Range` carries it and, unlike
- * `Content-Length`, survives the desktop shell's forwarding proxy.
- */
-async function fileSize(url: string): Promise<number | undefined> {
-  const response = await fetch(url, { headers: { Range: 'bytes=0-0' } })
-  if (response.status !== 206) {
-    await response.body?.cancel()
-    return undefined
-  }
-  const match = /\/(\d+)$/u.exec(response.headers.get('content-range') ?? '')
-  await response.body?.cancel()
-  return match === null ? undefined : Number(match[1])
-}
-
-function readAll(url: string): Promise<Uint8Array> {
-  return fetch(url).then(async (response) => {
-    if (response.status !== 200 && response.status !== 206) {
-      throw new Error(`读取失败（HTTP ${String(response.status)}）`)
-    }
-    return new Uint8Array(await response.arrayBuffer())
-  })
-}
-
-/** Parse the directory out of a complete archive buffer. */
-function listZipFromBuffer(bytes: Uint8Array): ArchiveEntry[] {
-  const eocd = findEocd(bytes)
-  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
-  const range = zipDirectoryRange(bytes, eocd)
-  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
-  if (range.size === 0) return []
-  return parseZipDirectory(bytes.subarray(range.offset, range.offset + range.size))
-}
-
-async function listZip(url: string, sizeHint: number): Promise<ArchiveEntry[]> {
-  const size = sizeHint > 0 ? sizeHint : await fileSize(url)
-
-  if (size === undefined || size <= 0) {
-    const whole = await readAll(url)
-    if (whole.length > MAX_WHOLE_BYTES) {
-      throw new Error(`压缩包 ${formatBytes(whole.length)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
-    }
-    return listZipFromBuffer(whole)
-  }
-
-  const tailStart = Math.max(0, size - TAIL_BYTES)
-  const tail = await readRange(url, tailStart, size - 1)
-  const eocd = findEocd(tail)
-  if (eocd < 0) throw new Error('未找到 ZIP 中央目录')
-  const range = zipDirectoryRange(tail, eocd)
-  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
-  if (range.size === 0) return []
-
-  const inTail = range.offset >= tailStart && range.offset + range.size <= tailStart + tail.length
-  const directory = inTail
-    ? tail.subarray(range.offset - tailStart, range.offset - tailStart + range.size)
-    : await readRange(url, range.offset, range.offset + range.size - 1)
-  return parseZipDirectory(directory)
-}
-
-/** Decompress a gzip stream with the platform's inflate. */
-async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
-  // A Uint8Array view is a valid BlobPart; the cast keeps lib.dom's stricter
-  // ArrayBufferLike typing out of the call site.
-  const stream = new Blob([bytes as unknown as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))
-  return new Uint8Array(await new Response(stream).arrayBuffer())
-}
-
-async function listTar(url: string, size: number, gzipped: boolean): Promise<ArchiveEntry[]> {
-  if (size > MAX_WHOLE_BYTES) {
-    throw new Error(`压缩包 ${formatBytes(size)} 超过 ${formatBytes(MAX_WHOLE_BYTES)} 上限`)
-  }
-  const bytes = await readAll(url)
-  const raw = gzipped || (bytes[0] === 0x1f && bytes[1] === 0x8b) ? await gunzip(bytes) : bytes
-  return parseTar(raw)
-}
-
-/** Largest member expanded inline; bigger payloads stay on disk. */
-const MAX_ENTRY_BYTES = 2 * 1024 * 1024
-
-/**
- * Read one stored or deflated member into text.
- * @param url - the archive's file URL.
- * @param entry - member to expand.
- * @returns its decoded text.
- */
-async function readEntryBytes(url: string, entry: ArchiveEntry): Promise<Uint8Array> {
-  if (entry.size > MAX_ENTRY_BYTES) {
-    throw new Error(`条目 ${formatBytes(entry.size)} 超过 ${formatBytes(MAX_ENTRY_BYTES)} 上限`)
-  }
-  const header = await readRange(url, entry.offset, entry.offset + 29)
-  const dataStart = entry.offset + localDataStart(header)
-  const raw = entry.compressedSize === 0
-    ? new Uint8Array()
-    : await readRange(url, dataStart, dataStart + entry.compressedSize - 1)
-  if (entry.method === 0) return raw
-  if (entry.method === 8) return inflateRaw(raw)
-  throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
-}
+import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
 
 /** Formats this package renders from content alone, without a file address. */
 const CONTENT_MODULES: readonly PreviewModule[] = [
@@ -220,7 +103,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
     if (url === undefined) return
     let alive = true
     setLoaded({ status: 'loading' })
-    void readEntryBytes(url, entry)
+    void readEntryBytesFromUrl(url, entry)
       .then((bytes) => {
         if (!alive) return
         const text = module?.load === 'bytes-complete' ? undefined : decodeText(bytes)
@@ -384,8 +267,8 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
     void (async () => {
       try {
         const list = lower.endsWith('.zip')
-          ? await listZip(url, size)
-          : await listTar(url, size, lower.endsWith('.tgz') || lower.endsWith('.tar.gz'))
+          ? await listZipEntries(url, size)
+          : await listTarEntries(url, size)
         if (!alive) return
         setEntries(list)
         setStatus('ready')

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * EPUB viewer: the book is a zip, so the container is read with the archive
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
@@ -10,7 +10,7 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
-import { findEocd, inflateRaw, parseZipDirectory, zipDirectoryRange, zipEntryPayload } from '../../../shared/zip/parse.ts'
+import { entryBytes, findEntry, listEntriesFromBuffer, normalizeEntryName, readEntryText } from '../../kernel/zip.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { containerOpfPath, htmlToMarkdownText, imageMimeType, parseNav, parseNcx, parseOpf, resolveHref, scopeCss } from './parse.ts'
 import type { TocEntry } from './parse.ts'
@@ -30,38 +30,9 @@ export interface EpubChapter {
   readonly blocks: readonly Block[]
 }
 
-function normalize(name: string): string {
-  return name.replaceAll('\\', '/').replace(/^\.\//u, '').toLowerCase()
-}
-
 function dirOf(name: string): string {
   const cut = name.lastIndexOf('/')
   return cut < 0 ? '' : name.slice(0, cut)
-}
-
-function listEntries(archive: Uint8Array): ArchiveEntry[] {
-  const eocd = findEocd(archive)
-  if (eocd < 0) throw new Error('不是有效的 EPUB（缺少 ZIP 中央目录）')
-  const range = zipDirectoryRange(archive, eocd)
-  if (range === undefined) throw new Error('暂不支持 ZIP64 格式')
-  return parseZipDirectory(archive.subarray(range.offset, range.offset + range.size))
-}
-
-async function entryBytes(archive: Uint8Array, entry: ArchiveEntry): Promise<Uint8Array> {
-  const payload = zipEntryPayload(archive, entry)
-  return entry.method === 8 ? inflateRaw(payload) : payload
-}
-
-function findEntry(entries: readonly ArchiveEntry[], name: string): ArchiveEntry | undefined {
-  const wanted = normalize(name)
-  return entries.find(entry => normalize(entry.name) === wanted)
-}
-
-async function readText(archive: Uint8Array, entries: readonly ArchiveEntry[], name: string): Promise<string | undefined> {
-  const entry = findEntry(entries, name)
-  if (entry === undefined) return undefined
-  const bytes = await entryBytes(archive, entry)
-  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -122,31 +93,31 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
         const buffer = await response.arrayBuffer()
         if (buffer.byteLength > MAX_BYTES) throw new Error('文件超过 64 MB 上限')
         const archive = new Uint8Array(buffer)
-        const entries = listEntries(archive)
+        const entries = listEntriesFromBuffer(archive)
 
-        const container = await readText(archive, entries, 'META-INF/container.xml')
+        const container = await readEntryText(archive, entries, 'META-INF/container.xml')
         if (container === undefined) throw new Error('缺少 META-INF/container.xml')
         const opfPath = containerOpfPath(container)
         if (opfPath === undefined) throw new Error('container.xml 里没有 rootfile')
-        const opf = await readText(archive, entries, opfPath)
+        const opf = await readEntryText(archive, entries, opfPath)
         if (opf === undefined) throw new Error(`找不到包文档 ${opfPath}`)
         const packaged = parseOpf(opf, opfPath)
 
         let toc: TocEntry[] = []
         if (packaged.nav !== undefined) {
-          toc = parseNav((await readText(archive, entries, packaged.nav)) ?? '', dirOf(packaged.nav))
+          toc = parseNav((await readEntryText(archive, entries, packaged.nav)) ?? '', dirOf(packaged.nav))
         } else if (packaged.ncx !== undefined) {
-          toc = parseNcx((await readText(archive, entries, packaged.ncx)) ?? '', dirOf(packaged.ncx))
+          toc = parseNcx((await readEntryText(archive, entries, packaged.ncx)) ?? '', dirOf(packaged.ncx))
         }
         const titleOf = (name: string): string =>
-          toc.find(entry => normalize(entry.href) === normalize(name))?.title
+          toc.find(entry => normalizeEntryName(entry.href) === normalizeEntryName(name))?.title
           ?? name.replaceAll('\\', '/').split('/').pop()
           ?? name
 
         const loaded: EpubChapter[] = []
         const inlineCss: string[] = []
         for (const name of packaged.spine.slice(0, MAX_CHAPTERS)) {
-          const html = await readText(archive, entries, name)
+          const html = await readEntryText(archive, entries, name)
           if (html === undefined) continue
           for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/giu)) inlineCss.push(style[1] ?? '')
           const resolveImage = await chapterImages(archive, entries, name, html)
@@ -154,7 +125,7 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
         }
 
         let linked = ''
-        for (const href of packaged.stylesheets) linked += (await readText(archive, entries, href)) ?? ''
+        for (const href of packaged.stylesheets) linked += (await readEntryText(archive, entries, href)) ?? ''
         const scoped = scopeCss(`${linked}\n${inlineCss.join('\n')}`, SCOPE)
 
         if (!alive) return
