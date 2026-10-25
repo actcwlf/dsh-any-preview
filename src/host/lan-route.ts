@@ -211,7 +211,7 @@ function mediaTypeOf(name: string): string {
 
 const TYPES: Readonly<Record<string, string>> = {
   mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm',
-  ogv: 'video/ogg', mkv: 'video/x-matroska', avi: 'video/x-msvideo', mpg: 'video/mpeg',
+ogv: 'video/ogg', mkv: 'video/webm', avi: 'video/x-msvideo', mpg: 'video/mpeg',
   mpeg: 'video/mpeg', '3gp': 'video/3gpp', '3g2': 'video/3gpp2', ts: 'video/mp2t', m2ts: 'video/mp2t',
   mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav',
   flac: 'audio/flac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', weba: 'audio/webm',

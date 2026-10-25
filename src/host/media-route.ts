@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Authenticated byte-range route for media previews.
  *
  * `/api/file` answers the complete body and ignores `Range`, with a byte cap
@@ -27,7 +27,10 @@ const MEDIA_TYPES: Readonly<Record<string, string>> = {
   mov: 'video/quicktime',
   webm: 'video/webm',
   ogv: 'video/ogg',
-  mkv: 'video/x-matroska',
+  // WebM is a Matroska subset and Chromium's matroska demuxer accepts both,
+  // so an .mkv carrying VP8/VP9/AV1 + Opus/Vorbis plays when labelled webm.
+  // H.264 in an .mkv is still rejected by the element; the pane then says so.
+  mkv: 'video/webm',
   avi: 'video/x-msvideo',
   mpg: 'video/mpeg',
   mpeg: 'video/mpeg',
