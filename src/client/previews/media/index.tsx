@@ -14,11 +14,9 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
+import { fileUrl } from '../../kernel/file-url.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { MAX_BUFFER_BYTES, bufferingDecision } from './decision.ts'
-
-/** Route owned by this package's Host half. */
-const ROUTE = 'api/any-preview/media'
 
 const VIDEO_EXTENSIONS = [
   'mp4', 'm4v', 'webm', 'ogv', 'mov', 'mkv', 'avi',
@@ -29,16 +27,6 @@ const AUDIO_EXTENSIONS = [
   'mp3', 'm4a', 'm4b', 'aac', 'wav', 'flac', 'ogg', 'oga',
   'opus', 'weba', 'aiff', 'aif', 'wma', 'mid', 'midi',
 ] as const
-
-/** Build the authenticated route URL for one absolute path. */
-function mediaUrl(path: string, download = false): string | undefined {
-  try {
-    const suffix = download ? '&download=1' : ''
-    return new URL(`${ROUTE}?path=${encodeURIComponent(path)}${suffix}`, document.baseURI).href
-  } catch {
-    return undefined
-  }
-}
 
 /** Final path segment for display, accepting either separator. */
 function basenameOf(path: string): string {
@@ -90,8 +78,8 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const probing = useRef(false)
   useRendererLoaded(content, version)
 
-  const remote = typeof absolutePath === 'string' ? mediaUrl(absolutePath) : undefined
-  const download = typeof absolutePath === 'string' ? mediaUrl(absolutePath, true) : undefined
+  const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
+  const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
   const name = typeof absolutePath === 'string' ? basenameOf(absolutePath) : ''
   const bytes = formatBytes(meta?.size)
   const metaLine = bytes === '' ? name : `${name} · ${bytes}`
