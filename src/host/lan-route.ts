@@ -80,7 +80,6 @@ export function registerLanRoute(ctx: LanContext, secret: Uint8Array): () => voi
 async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext, secret: Uint8Array): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://127.0.0.1')
   const path = url.searchParams.get('path') ?? ''
-  const expiresAt = Number(url.searchParams.get('exp') ?? '0')
   const signature = url.searchParams.get('sig') ?? ''
 
   // A cross-site media element still needs the response to be readable.
@@ -97,7 +96,7 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext
     res.end()
     return
   }
-  if (!verifyLanPath(secret, path, expiresAt, signature)) {
+  if (!verifyLanPath(secret, path, signature)) {
     header(res, 403, { ...cors, 'Content-Type': 'text/plain; charset=utf-8' })
     res.end('invalid or expired signature')
     return

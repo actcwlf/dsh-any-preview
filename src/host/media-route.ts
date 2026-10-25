@@ -11,7 +11,7 @@
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
 import { LAN_ROUTE_PATH, lanBaseUrl } from './lan-route.ts'
-import { LAN_URL_TTL_MS, signLanPath } from './lan-url.ts'
+import { signLanPath } from './lan-url.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
 /** Exact pathname claimed on the shared `/api` Fetch channel. */
@@ -183,9 +183,11 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
     const target = url.searchParams.get('path')
     if (target === null || target === '') return failure(400, 'missing path')
     if (!isAbsolute(target)) return failure(400, 'absolute path required')
-    const expiresAt = Date.now() + LAN_URL_TTL_MS
-    const signature = signLanPath(secret, target, expiresAt)
-    const query = `path=${encodeURIComponent(target)}&exp=${String(expiresAt)}&sig=${encodeURIComponent(signature)}`
+    // No expiry on purpose: a playing element keeps issuing Range requests, so a
+    // time-bounded URL would cut long playback off. The signature binds this one
+    // path to the process secret instead.
+    const signature = signLanPath(secret, target)
+    const query = `path=${encodeURIComponent(target)}&sig=${encodeURIComponent(signature)}`
     const base = lanBaseUrl()
     if (base === '') return failure(503, 'loopback route unavailable')
     return Response.json({ url: `${base}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
