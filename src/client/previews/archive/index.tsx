@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { MAX_ENTRIES, findEocd, parseTar, parseZipDirectory, zipDirectoryRange } from './parse.ts'
+import { MAX_ENTRIES, decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from './parse.ts'
 import type { ArchiveEntry } from './parse.ts'
 
 /** Anything read whole must fit this. */
@@ -117,12 +117,81 @@ async function listTar(url: string, size: number, gzipped: boolean): Promise<Arc
   return parseTar(raw)
 }
 
+/** Largest member expanded inline; bigger payloads stay on disk. */
+const MAX_ENTRY_BYTES = 2 * 1024 * 1024
+
+/**
+ * Read one stored or deflated member into text.
+ * @param url - the archive's file URL.
+ * @param entry - member to expand.
+ * @returns its decoded text.
+ */
+async function extractZipEntry(url: string, entry: ArchiveEntry): Promise<string> {
+  if (entry.size > MAX_ENTRY_BYTES) {
+    throw new Error(`条目 ${formatBytes(entry.size)} 超过 ${formatBytes(MAX_ENTRY_BYTES)} 上限`)
+  }
+  const header = await readRange(url, entry.offset, entry.offset + 29)
+  const dataStart = entry.offset + localDataStart(header)
+  const raw = entry.compressedSize === 0
+    ? new Uint8Array()
+    : await readRange(url, dataStart, dataStart + entry.compressedSize - 1)
+  let data = raw
+  if (entry.method === 8) data = await inflateRaw(raw)
+  else if (entry.method !== 0) throw new Error(`暂不支持压缩方法 ${String(entry.method)}`)
+  const text = decodeText(data)
+  if (text === undefined) throw new Error('二进制内容，无法作为文本预览')
+  return text
+}
+
+/** One member's contents, with a way back to the list. */
+function EntryView({ entry, url, onBack }: {
+  readonly entry: ArchiveEntry
+  readonly url: string | undefined
+  readonly onBack: () => void
+}) {
+  const [state, setState] = useState<{ status: 'loading' | 'ready' | 'error', text: string }>({ status: 'loading', text: '' })
+
+  useEffect(() => {
+    if (url === undefined) return
+    let alive = true
+    setState({ status: 'loading', text: '' })
+    void extractZipEntry(url, entry)
+      .then((text) => { if (alive) setState({ status: 'ready', text }) })
+      .catch((error: unknown) => {
+        if (alive) setState({ status: 'error', text: error instanceof Error ? error.message : '无法读取条目' })
+      })
+    return () => { alive = false }
+  }, [url, entry])
+
+  return (
+    <div style={PANE_ROOT}>
+      <div style={barStyle}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <button type="button" onClick={onBack} style={backStyle}>← 返回</button>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
+        </span>
+        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
+      </div>
+      <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
+        {state.status === 'ready'
+          ? <pre style={preStyle}>{state.text}</pre>
+          : (
+              <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>
+                {state.status === 'loading' ? '正在解压…' : state.text}
+              </div>
+            )}
+      </div>
+    </div>
+  )
+}
+
 export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   const meta = useResource?.(resourceAddress)?.value
   const absolutePath = meta?.absolutePath
   const version = meta?.version
   const size = meta?.size ?? 0
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
+  const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
   const reported = useRef<string | undefined>(undefined)
@@ -172,6 +241,10 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const files = entries.filter(entry => !entry.directory)
   const total = files.reduce((sum, entry) => sum + entry.size, 0)
 
+  if (selected !== undefined) {
+    return <EntryView entry={selected} url={url} onBack={() => setSelected(undefined)} />
+  }
+
   return (
     <div style={PANE_ROOT}>
       <div style={barStyle}>
@@ -180,7 +253,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
           {' · '}解压后 {formatBytes(total)}
           {entries.length >= MAX_ENTRIES && ' · 已达上限'}
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>仅列出内容</span>
+        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>点击条目预览内容</span>
       </div>
       <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12 }}>
@@ -192,7 +265,11 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
           </thead>
           <tbody>
             {entries.map((entry, index) => (
-              <tr key={index}>
+              <tr
+                key={index}
+                onClick={entry.directory ? undefined : () => setSelected(entry)}
+                style={{ cursor: entry.directory ? 'default' : 'pointer' }}
+              >
                 <td style={{ ...cellStyle, color: entry.directory ? 'var(--dsw-alias-label-secondary)' : 'var(--dsw-alias-label-primary)' }}>
                   {entry.name}
                 </td>
@@ -229,6 +306,23 @@ const cellStyle = {
   padding: '4px 12px',
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
   whiteSpace: 'nowrap' as const,
+} as const
+
+const backStyle = {
+  font: 'inherit', fontSize: 12, padding: '1px 8px', borderRadius: 4, cursor: 'pointer',
+  color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
+  border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+} as const
+
+const preStyle = {
+  margin: 0,
+  padding: '10px 14px',
+  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)',
+  fontSize: 12,
+  lineHeight: 1.6,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  color: 'var(--dsw-alias-label-primary)',
 } as const
 
 const ARCHIVE_EXTENSIONS = ['zip', 'tar', 'tar.gz', 'tgz'] as const

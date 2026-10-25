@@ -3,8 +3,15 @@
 /** One listed archive member. */
 export interface ArchiveEntry {
   readonly name: string
+  /** Uncompressed size in bytes. */
   readonly size: number
   readonly directory: boolean
+  /** Zip compression method; 0 (stored) for tar members. */
+  readonly method: number
+  /** Bytes of compressed payload; equals {@link size} for stored members. */
+  readonly compressedSize: number
+  /** Offset of the local header (zip) or of the data (tar). */
+  readonly offset: number
 }
 
 /** Cap on listed entries. */
@@ -49,12 +56,15 @@ export function parseZipDirectory(directory: Uint8Array): ArchiveEntry[] {
   let at = 0
   while (at + 46 <= directory.length && entries.length < MAX_ENTRIES) {
     if (u32(directory, at) !== 0x02014b50) break
+    const method = u16(directory, at + 10)
+    const compressedSize = u32(directory, at + 20)
     const nameLength = u16(directory, at + 28)
     const extraLength = u16(directory, at + 30)
     const commentLength = u16(directory, at + 32)
     const size = u32(directory, at + 24)
+    const offset = u32(directory, at + 42)
     const name = new TextDecoder('utf-8').decode(directory.subarray(at + 46, at + 46 + nameLength))
-    entries.push({ name, size, directory: name.endsWith('/') })
+    entries.push({ name, size, directory: name.endsWith('/'), method, compressedSize, offset })
     at += 46 + nameLength + extraLength + commentLength
   }
   return entries
@@ -74,8 +84,45 @@ export function parseTar(bytes: Uint8Array): ArchiveEntry[] {
     const sizeField = decoder.decode(header.subarray(124, 136)).replace(/[\0 ]+$/u, '').trim()
     const size = Number.parseInt(sizeField, 8) || 0
     const type = String.fromCharCode(header[156] ?? 0)
-    entries.push({ name, size, directory: type === '5' || name.endsWith('/') })
+    entries.push({
+      name,
+      size,
+      directory: type === '5' || name.endsWith('/'),
+      method: 0,
+      compressedSize: size,
+      offset: at + 512,
+    })
     at += 512 + Math.ceil(size / 512) * 512
   }
   return entries
+}
+
+/**
+ * Offset of the payload inside a zip local file header.
+ * @param header - the first 30 or more bytes at the entry's `offset`.
+ * @returns bytes from the header start to the first payload byte.
+ */
+export function localDataStart(header: Uint8Array): number {
+  if (u32(header, 0) !== 0x04034b50) throw new Error('不是 ZIP 局部文件头')
+  return 30 + u16(header, 26) + u16(header, 28)
+}
+
+/** Inflate a raw deflate stream with the platform decoder. */
+export async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+/**
+ * Decode bytes as UTF-8 text, refusing content that is obviously binary.
+ * @param bytes - candidate payload.
+ * @returns the decoded text, or undefined when it is not text.
+ */
+export function decodeText(bytes: Uint8Array): string | undefined {
+  if (bytes.subarray(0, Math.min(bytes.length, 8_192)).includes(0)) return undefined
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return undefined
+  }
 }

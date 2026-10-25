@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
-import { findEocd, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/client/previews/archive/parse.ts'
+import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/client/previews/archive/parse.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
@@ -45,4 +45,22 @@ test('a tar header reports its size in octal', { skip: !available }, () => {
   const csv = entries.find(entry => entry.name.endsWith('data.csv'))
   assert.equal(csv?.size, 7)
   assert.equal(csv?.directory, false)
+})
+
+test('a deflated member inflates back to its text', { skip: !available }, async () => {
+  const bytes = new Uint8Array(readFileSync(ZIP))
+  const eocd = findEocd(bytes)
+  const range = zipDirectoryRange(bytes, eocd)
+  const entries = parseZipDirectory(bytes.subarray(range.offset, range.offset + range.size))
+  const csv = entries.find(entry => entry.name === 'data.csv')
+  assert.ok(csv !== undefined, 'data.csv listed')
+  const dataStart = csv.offset + localDataStart(bytes.subarray(csv.offset, csv.offset + 30))
+  const compressed = bytes.subarray(dataStart, dataStart + csv.compressedSize)
+  const data = csv.method === 8 ? await inflateRaw(compressed) : compressed
+  assert.equal(decodeText(data), 'a,b\n1,2')
+})
+
+test('decodeText refuses binary payloads', () => {
+  assert.equal(decodeText(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01])), undefined)
+  assert.equal(decodeText(new TextEncoder().encode('plain text')), 'plain text')
 })
