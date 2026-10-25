@@ -40,6 +40,29 @@ function basenameOf(path: string): string {
 }
 
 
+/** Temporary diagnostics in the footer; off for release. */
+const MEDIA_DEBUG = false
+
+/**
+ * Which transport the desktop uses.
+ *
+ * `false` (today): the shell's forwarding proxy withholds `Content-Length`, so
+ * a proxied media response reports no seekable range. The desktop therefore
+ * addresses the same bytes over the signed loopback route, which Chromium's
+ * http media loader seeks in. If that route is unavailable or fails, the pane
+ * falls back to the proxied URL and buffers the file locally to restore
+ * seeking.
+ *
+ * `true` (once DSH preserves `Content-Length`): the proxied URL seeks natively
+ * and the loopback route is bypassed entirely — no minting, no extra server
+ * route. The Blob fallback stays in place either way, so an older shell still
+ * gets a working scrubber.
+ *
+ * This is a code switch on purpose: the transport is a property of the shell
+ * version, and flipping one constant is clearer than probing every open.
+ */
+const TRUST_CONTENT_LENGTH = false
+
 interface MediaBodyProps extends PreviewBodyProps {
   readonly kind: 'video' | 'audio'
 }
@@ -53,14 +76,54 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [buffering, setBuffering] = useState(false)
   const [blocked, setBlocked] = useState(false)
   const [size, setSize] = useState<number | undefined>(meta?.size)
+  const [diag, setDiag] = useState('')
+  const [lanSrc, setLanSrc] = useState('')
+  const [lanStatus, setLanStatus] = useState(0)
+  const [errCode, setErrCode] = useState(0)
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
+  const fellBack = useRef(false)
 
   const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
   const name = typeof absolutePath === 'string' ? basenameOf(absolutePath) : ''
   const bytes = formatBytes(size ?? meta?.size)
   const metaLine = bytes === '' ? name : `${name} · ${bytes}`
+
+  // Desktop only: the page is served from dsh-app://, whose proxy withholds
+  // Content-Length and makes the element report no seekable range. A browser
+  // page already seeks natively, so it keeps the same-origin URL.
+  useEffect(() => {
+    if (remote === undefined) return
+    // Content-Length mode: the proxied URL is the transport, nothing to mint.
+    if (TRUST_CONTENT_LENGTH) return
+    if (typeof location === 'undefined' || !location.protocol.startsWith('dsh-app')) return
+    let alive = true
+    void (async () => {
+      try {
+        const probe = new URL(remote)
+        probe.searchParams.set('lan', '1')
+        const response = await fetch(probe)
+        if (!response.ok) return
+        const body = await response.json() as { url?: unknown }
+        if (typeof body.url !== 'string' || body.url === '') return
+        if (!alive) return
+        setLanSrc(body.url)
+        // Probe the signed URL so a failure can report the status even when
+        // the media element itself only says "cannot play".
+        try {
+          const probeResponse = await fetch(body.url, { headers: { Range: 'bytes=0-1' } })
+          if (alive) setLanStatus(probeResponse.status)
+          await probeResponse.body?.cancel()
+        } catch {
+          if (alive) setLanStatus(-1)
+        }
+      } catch {
+        // Leave the proxied URL in place.
+      }
+    })()
+    return () => { alive = false }
+  }, [remote])
 
   useEffect(() => {
     setFailed(false)
@@ -103,6 +166,20 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       if (!element.isConnected) return
       const end = element.seekable.length > 0 ? element.seekable.end(0) : 0
       void (async () => {
+        // Diagnostic: what the element believes, next to whether the loopback
+        // HTTP URL answers at all.
+        const duration = Number.isFinite(element.duration) ? element.duration.toFixed(2) : '?'
+        let lanStatus = 0
+        if (lanSrc !== '') {
+          try {
+            const response = await fetch(lanSrc, { headers: { Range: 'bytes=0-1' } })
+            lanStatus = response.status
+            await response.body?.cancel()
+          } catch {
+            lanStatus = -1
+          }
+        }
+        setDiag(`seekable=${end.toFixed(2)} dur=${duration} lan=${lanStatus}`)
         // The desktop file resource usually reports no size. Without one the
         // buffering cap cannot apply, and any file — however large — would be
         // pulled into memory. The route's Content-Range carries the real
@@ -139,7 +216,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     }, 300)
   }
 
-  const activeSrc = bufferedUrl === '' ? remote : bufferedUrl
+  const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
 
   if (remote === undefined) {
     return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
@@ -148,9 +225,15 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const playerKey = `${remote}|${content.kind === 'renderer' ? String(content.revision) : '0'}|${version ?? ''}`
 
   if (failed) {
+    // 4 is MEDIA_ERR_SRC_NOT_SUPPORTED: the bytes arrived but nothing could
+    // decode them. Anything else means the stream itself was not obtainable.
+    const message = errCode === 4 ? t('media.unsupported') : t('media.streamFailed')
     return (
       <div style={styles.frame}>
-        <Status text={t('media.unsupported')} />
+        <Status text={message} />
+        {MEDIA_DEBUG && (
+          <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
+        )}
         {download !== undefined && (
           <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
         )}
@@ -168,7 +251,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.video}
           onLoadedMetadata={onLoadedMetadata}
-          onError={() => setFailed(true)}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); if (lanSrc !== '' && !fellBack.current) { fellBack.current = true; setLanSrc(''); return } setFailed(true) }}
         />
       )
     : (
@@ -179,7 +262,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.audio}
           onLoadedMetadata={onLoadedMetadata}
-          onError={() => setFailed(true)}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); if (lanSrc !== '' && !fellBack.current) { fellBack.current = true; setLanSrc(''); return } setFailed(true) }}
         />
       )
 
@@ -205,6 +288,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
         {info !== '' && <span style={styles.name}>{info}</span>}
+        {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
         <a style={styles.link} href={remote} target="_blank" rel="noreferrer">{t('common.openInNewTab')}</a>
       </div>

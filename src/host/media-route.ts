@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Authenticated byte-range route for media previews.
  *
  * `/api/file` answers the complete body and ignores `Range`, with a byte cap
@@ -10,6 +10,8 @@
  * fence and browser authentication before this handler runs.
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
+import { LAN_ROUTE_PATH, lanBaseUrl } from './lan-route.ts'
+import { signLanPath } from './lan-url.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
 /** Exact pathname claimed on the shared `/api` Fetch channel. */
@@ -172,8 +174,24 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
  * @param fs - Host filesystem service.
  * @returns the response.
  */
-export async function serveMedia(request: Request, fs: HostFileSystem): Promise<Response> {
+export async function serveMedia(request: Request, fs: HostFileSystem, secret?: Uint8Array): Promise<Response> {
   const url = new URL(request.url)
+  // Mint a signed loopback URL for the page: the media element cannot send the
+  // session cookie to 127.0.0.1 from a dsh-app:// page, so the URL is the
+  // credential.
+  if (url.searchParams.get('lan') === '1' && secret !== undefined) {
+    const target = url.searchParams.get('path')
+    if (target === null || target === '') return failure(400, 'missing path')
+    if (!isAbsolute(target)) return failure(400, 'absolute path required')
+    // No expiry on purpose: a playing element keeps issuing Range requests, so a
+    // time-bounded URL would cut long playback off. The signature binds this one
+    // path to the process secret instead.
+    const signature = signLanPath(secret, target)
+    const query = `path=${encodeURIComponent(target)}&sig=${encodeURIComponent(signature)}`
+    const base = lanBaseUrl()
+    if (base === '') return failure(503, 'loopback route unavailable')
+    return Response.json({ url: `${base}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
+  }
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')
   if (path.includes('\0') || !isAbsolute(path)) return failure(400, 'absolute path required')
@@ -248,11 +266,11 @@ export async function serveMedia(request: Request, fs: HostFileSystem): Promise<
  * Claim the media route for the plugin lifetime.
  * @param ctx - Host context carrying `connection` and `fs`.
  */
-export function registerMediaRoute(ctx: MediaRouteContext): () => void {
+export function registerMediaRoute(ctx: MediaRouteContext, secret?: Uint8Array): () => void {
   return ctx.connection.fetch.register({
     path: MEDIA_ROUTE_PATH,
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',
-    fetch: request => serveMedia(request, ctx.fs),
+    fetch: request => serveMedia(request, ctx.fs, secret),
   })
 }
