@@ -40,6 +40,9 @@ function basenameOf(path: string): string {
 }
 
 
+/** Temporary diagnostics in the footer; off for release. */
+const MEDIA_DEBUG = false
+
 interface MediaBodyProps extends PreviewBodyProps {
   readonly kind: 'video' | 'audio'
 }
@@ -59,6 +62,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const [errCode, setErrCode] = useState(0)
   const resumeAt = useRef<number | null>(null)
   const probing = useRef(false)
+  const fellBack = useRef(false)
 
   const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
@@ -66,10 +70,12 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const bytes = formatBytes(size ?? meta?.size)
   const metaLine = bytes === '' ? name : `${name} · ${bytes}`
 
-  // Experiment: ask the Host for its loopback origin, then address the same
-  // bytes over real HTTP so Chromium uses its http media loader.
+  // Desktop only: the page is served from dsh-app://, whose proxy withholds
+  // Content-Length and makes the element report no seekable range. A browser
+  // page already seeks natively, so it keeps the same-origin URL.
   useEffect(() => {
     if (remote === undefined) return
+    if (typeof location === 'undefined' || !location.protocol.startsWith('dsh-app')) return
     let alive = true
     void (async () => {
       try {
@@ -197,10 +203,15 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const playerKey = `${remote}|${content.kind === 'renderer' ? String(content.revision) : '0'}|${version ?? ''}`
 
   if (failed) {
+    // 4 is MEDIA_ERR_SRC_NOT_SUPPORTED: the bytes arrived but nothing could
+    // decode them. Anything else means the stream itself was not obtainable.
+    const message = errCode === 4 ? t('media.unsupported') : t('media.streamFailed')
     return (
       <div style={styles.frame}>
-        <Status text={t('media.unsupported')} />
-        <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
+        <Status text={message} />
+        {MEDIA_DEBUG && (
+          <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
+        )}
         {download !== undefined && (
           <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
         )}
@@ -218,7 +229,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.video}
           onLoadedMetadata={onLoadedMetadata}
-          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); setFailed(true) }}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); if (lanSrc !== '' && !fellBack.current) { fellBack.current = true; setLanSrc(''); return } setFailed(true) }}
         />
       )
     : (
@@ -229,7 +240,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
           preload="metadata"
           style={styles.audio}
           onLoadedMetadata={onLoadedMetadata}
-          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); setFailed(true) }}
+          onError={event => { setErrCode(event.currentTarget.error?.code ?? -1); if (lanSrc !== '' && !fellBack.current) { fellBack.current = true; setLanSrc(''); return } setFailed(true) }}
         />
       )
 
@@ -255,7 +266,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       <div style={styles.footer}>
         {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
         {info !== '' && <span style={styles.name}>{info}</span>}
-        {diag !== '' && <span style={styles.name}>{diag}</span>}
+        {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
         {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
         <a style={styles.link} href={remote} target="_blank" rel="noreferrer">{t('common.openInNewTab')}</a>
       </div>

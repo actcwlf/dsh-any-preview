@@ -84,7 +84,8 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext
 
   // A cross-site media element still needs the response to be readable.
   const cors: Record<string, string> = {
-    'Access-Control-Allow-Origin': 'dsh-app://app',
+    // Echo only the shell's own origin; other callers get no CORS grant.
+    'Access-Control-Allow-Origin': allowedOrigin(req),
     'Access-Control-Allow-Private-Network': 'true',
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'private, no-store',
@@ -119,6 +120,11 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext
   }
 
   const type = mediaTypeOf(basename(path))
+  if (!(basename(path).slice(basename(path).lastIndexOf('.') + 1).toLowerCase() in TYPES)) {
+    header(res, 415, cors)
+    res.end()
+    return
+  }
   const rawRange = req.headers.range
   const rangeHeader = typeof rawRange === 'string' ? rawRange : undefined
   const match = rangeHeader === undefined ? null : /^bytes=(\d*)-(\d*)$/u.exec(rangeHeader.trim())
@@ -152,6 +158,16 @@ async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext
     if (bytes.length === 0) break
   }
   res.end()
+}
+
+/**
+ * CORS grant for the shell's own origin only.
+ * @param req - incoming request.
+ * @returns the origin to echo, or an empty string for no grant.
+ */
+function allowedOrigin(req: IncomingMessage): string {
+  const origin = req.headers.origin
+  return origin === 'dsh-app://app' ? origin : ''
 }
 
 /** Media type by suffix, matching the `/api` route. */
