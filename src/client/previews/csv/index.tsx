@@ -4,7 +4,7 @@ import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
@@ -196,16 +196,23 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
                 <td colSpan={view.columns + 1} style={spacerCell} />
               </tr>
             )}
-            {windowIndices.map((rowIndex) => (
-              <tr key={rowIndex} data-row-index={rowIndex} style={{ height: ROW_HEIGHT }}>
-                <td style={indexStyle}>{rowIndex + 1}</td>
-                {(view.body[rowIndex] ?? []).map((value, column) => (
-                  <td key={column} style={cellStyle}>
-                    <Marked text={value} pattern={found.pattern} />
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {windowIndices.map((rowIndex) => {
+              const active = rowIndex === found.activeRow
+              return (
+                <tr
+                  key={rowIndex}
+                  data-row-index={rowIndex}
+                  style={{ height: ROW_HEIGHT, background: active ? ACTIVE_ROW : undefined }}
+                >
+                  <td style={active ? { ...indexStyle, background: ACTIVE_ROW } : indexStyle}>{rowIndex + 1}</td>
+                  {(view.body[rowIndex] ?? []).map((value, column) => (
+                    <td key={column} style={cellStyle}>
+                      <Marked text={value} pattern={found.pattern} emphasis={active} />
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
             {last < total && (
               <tr style={{ height: (total - last) * ROW_HEIGHT }}>
                 <td colSpan={view.columns + 1} style={spacerCell} />

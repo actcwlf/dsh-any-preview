@@ -98,13 +98,16 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
                 fontWeight: line.kind === 'file' ? 600 : 400,
                 fontStyle: line.kind === 'note' ? 'italic' : 'normal',
                 whiteSpace: 'pre',
+                // Keep the add/remove tint readable; the bar and the marks carry
+                // the navigation instead of a competing background.
+                boxShadow: index === found.activeRow ? 'inset 3px 0 0 rgb(255, 196, 0)' : undefined,
               }}
             >
               <span style={{ flex: '0 0 auto', width: 48, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' }}>
                 {index + 1}
               </span>
               <span style={{ flex: '1 1 auto' }}>
-                <Marked text={line.text === '' ? ' ' : line.text} pattern={found.pattern} />
+                <Marked text={line.text === '' ? ' ' : line.text} pattern={found.pattern} emphasis={index === found.activeRow} />
               </span>
             </div>
           ))}

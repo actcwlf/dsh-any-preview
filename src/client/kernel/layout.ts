@@ -19,8 +19,7 @@ export const PANE_ROOT: CSSProperties = {
 }
 
 /** A centred placeholder that fills the same box. */
-export const PANE_FILL: CSSProperties = {
-  position: 'absolute',
+export const PANE_FILL: CSSProperties = {  position: 'absolute',
   inset: 0,
   display: 'grid',
   placeItems: 'center',
@@ -28,3 +27,6 @@ export const PANE_FILL: CSSProperties = {
   color: 'var(--dsw-alias-label-tertiary)',
   background: 'var(--dsw-alias-bg-base)',
 }
+
+/** Background tint for the row the search navigation points at. */
+export const ACTIVE_ROW = 'rgba(255, 196, 0, 0.14)'

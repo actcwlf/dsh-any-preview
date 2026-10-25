@@ -1,7 +1,7 @@
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -82,10 +82,20 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
-            <div key={index} data-row-index={index} style={{ display: 'flex', gap: 10, padding: '0 12px', whiteSpace: 'pre' }}>
+            <div
+              key={index}
+              data-row-index={index}
+              style={{
+                display: 'flex',
+                gap: 10,
+                padding: '0 12px',
+                whiteSpace: 'pre',
+                background: index === found.activeRow ? ACTIVE_ROW : undefined,
+              }}
+            >
               <span style={gutterStyle}>{index + 1}</span>
               <span style={{ color: LEVEL_COLOR[levelOf(line)] }}>
-                <Marked text={line === '' ? ' ' : line} pattern={found.pattern} />
+                <Marked text={line === '' ? ' ' : line} pattern={found.pattern} emphasis={index === found.activeRow} />
               </span>
             </div>
           ))}

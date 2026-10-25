@@ -1,7 +1,7 @@
 /** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -83,27 +83,33 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             </tr>
           </thead>
           <tbody>
-            {shown.map(({ record, index }) => (
-              record.error === undefined
+            {shown.map(({ record, index }) => {
+              const active = index === found.activeRow
+              const rowStyle = {
+                height: 22,
+                background: active ? ACTIVE_ROW : record.error === undefined ? undefined : 'rgba(248, 81, 73, 0.14)',
+                boxShadow: active ? 'inset 3px 0 0 rgb(255, 196, 0)' : undefined,
+              } as const
+              return record.error === undefined
                 ? (
-                    <tr key={index} data-row-index={index} style={{ height: 22 }}>
+                    <tr key={index} data-row-index={index} style={rowStyle}>
                       <td style={indexStyle}>{record.line}</td>
                       {columns.map((column) => (
                         <td key={column} style={cellStyle}>
-                          <Marked text={cellOf(record.value, column)} pattern={found.pattern} />
+                          <Marked text={cellOf(record.value, column)} pattern={found.pattern} emphasis={active} />
                         </td>
                       ))}
                     </tr>
                   )
                 : (
-                    <tr key={index} data-row-index={index} style={{ height: 22, background: 'rgba(248, 81, 73, 0.14)' }}>
+                    <tr key={index} data-row-index={index} style={rowStyle}>
                       <td style={indexStyle}>{record.line}</td>
                       <td colSpan={Math.max(1, columns.length)} style={{ ...cellStyle, color: 'rgb(248, 81, 73)' }}>
-                        <Marked text={record.raw} pattern={found.pattern} />
+                        <Marked text={record.raw} pattern={found.pattern} emphasis={active} />
                       </td>
                     </tr>
                   )
-            ))}
+            })}
           </tbody>
         </table>
       </div>
