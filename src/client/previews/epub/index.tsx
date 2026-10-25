@@ -3,6 +3,7 @@
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
  */
+import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import type { Block } from '../../kernel/blocks.tsx'
@@ -16,10 +17,10 @@ import { containerOpfPath, htmlToMarkdownText, imageMimeType, parseNav, parseNcx
 import type { TocEntry } from './parse.ts'
 
 /** Books are read whole; larger ones are refused rather than buffered. */
-const MAX_BYTES = 64 * 1024 * 1024
+const MAX_BYTES = LIMITS.epubBook
 
 /** A book with more chapters than this is truncated rather than frozen. */
-const MAX_CHAPTERS = 200
+const MAX_CHAPTERS = LIMITS.epubChapters
 
 /** Container class the book's stylesheet is scoped to. */
 const SCOPE = 'dsh-epub-body'

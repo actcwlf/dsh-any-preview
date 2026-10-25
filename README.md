@@ -3,9 +3,18 @@
 给 DSH 右侧栏的文件预览加渲染器。**当前实现见下表**；包内按「一个接口 + 一个注册数组」
 组织，新增格式只需加一个目录和一行注册。
 
-> ⚠️ **体积**：3D 采用 three.js 全家桶并打进客户端 bundle，bundle 从约 14 KB gz 增至
-> 约 **297 KB gz**（1.57 MB 未压缩）。这是「大一统」路线的代价——所有安装者都承担，
-> 即使从不打开模型。若要减重，唯一的办法是把 3D 拆成独立包。
+> ⚠️ **体积**：3D 采用 three.js 全家桶并打进客户端 bundle。构建开启 `minify` 后为
+> **约 672 KB 未压缩 / 172 KB gzip**（此前 1.57 MB / 297 KB）。这是「大一统」路线的代价——
+> 所有安装者都承担，即使从不打开模型。若要进一步减重，唯一的办法是把 3D 拆成独立包。
+
+## 工程约定
+
+| 约定 | 位置 | 说明 |
+|---|---|---|
+| 所有上限集中一处 | [`src/shared/limits.ts`](src/shared/limits.ts) | 13 个文件里的 15 个常量统一为命名限额，改一处即可调整 |
+| 构建产物压缩 + 带 sourcemap | `tsdown.config.ts` | 堆栈能映射回源码行；`lib/*.js.map` 只用于本地调试 |
+| 启动时做契约自检 | `src/client/contracts.ts`、`src/host/self-check.ts` | 上游改名时打印一行诊断，而不是静默地什么都不渲染 |
+| 类型检查 | `npm run typecheck` | `strict` + `noUncheckedIndexedAccess`；依赖类型本机缺失，用 `externals.d.ts` 声明 |
 
 ## 支持的格式
 

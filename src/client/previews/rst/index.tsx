@@ -1,4 +1,5 @@
-/** reStructuredText viewer. */
+﻿/** reStructuredText viewer. */
+import { LIMITS } from '../../../shared/limits.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { Blocks } from '../../kernel/blocks.tsx'
 import { previewSourceOf } from '../../kernel/source.ts'
@@ -6,7 +7,7 @@ import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { parseRst } from './parse.ts'
 
 /** Expanded text is capped so a huge dump cannot stall the pane. */
-const MAX_CHARS = 2 * 1024 * 1024
+const MAX_CHARS = LIMITS.rstChars
 
 export function RstBody({ content, scrollportRef }: PreviewBodyProps) {
   const source = previewSourceOf(content)

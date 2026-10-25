@@ -1,4 +1,5 @@
-/** Pure zip and tar parsing, so the formats can be tested without a browser. */
+﻿/** Pure zip and tar parsing, so the formats can be tested without a browser. */
+import { LIMITS } from '../limits.ts'
 
 /** One listed archive member. */
 export interface ArchiveEntry {
@@ -15,7 +16,7 @@ export interface ArchiveEntry {
 }
 
 /** Cap on listed entries. */
-export const MAX_ENTRIES = 5_000
+export const MAX_ENTRIES = LIMITS.archiveEntries
 
 export function u16(bytes: Uint8Array, at: number): number {
   return bytes[at]! | (bytes[at + 1]! << 8)

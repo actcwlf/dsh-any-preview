@@ -1,7 +1,8 @@
-/** Choosing between streaming and buffering when the platform hides the size. */
+﻿/** Choosing between streaming and buffering when the platform hides the size. */
+import { LIMITS } from '../../../shared/limits.ts'
 
 /** Largest file pulled into memory to restore seeking. */
-export const MAX_BUFFER_BYTES = 64 * 1024 * 1024
+export const MAX_BUFFER_BYTES = LIMITS.mediaBuffer
 
 /**
  * Decide what to do when the platform reports no seekable range.

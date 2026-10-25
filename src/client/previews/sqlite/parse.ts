@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SQLite schema reader.
  *
  * Only the schema is read: the file header, then the b-tree pages holding
@@ -6,6 +6,7 @@
  * preview into a database browser, with all the page-overflow and encoding
  * corner cases that implies.
  */
+import { LIMITS } from '../../../shared/limits.ts'
 
 /** File header facts worth showing. */
 export interface SqliteHeader {
@@ -24,10 +25,10 @@ export interface SqliteObject {
 }
 
 /** Pages walked before giving up; a schema this big is pathological. */
-export const MAX_SCHEMA_PAGES = 256
+export const MAX_SCHEMA_PAGES = LIMITS.sqlitePages
 
 /** Objects listed. */
-export const MAX_OBJECTS = 500
+export const MAX_OBJECTS = LIMITS.sqliteObjects
 
 /**
  * Whether the head bytes carry the SQLite magic.

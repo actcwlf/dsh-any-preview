@@ -31,6 +31,8 @@ export default [
     fixedExtension: false,
     dts: false,
     clean: false,
+    minify: true,
+    sourcemap: true,
   },
   {
     name: `${ID}/client`,
@@ -42,6 +44,10 @@ export default [
     fixedExtension: false,
     dts: false,
     clean: false,
+    // three ships uncompressed inside the bundle; minifying roughly halves it
+    // and the sourcemap is what makes a stack trace land on a real source line.
+    minify: true,
+    sourcemap: true,
     // three and its addons ship inside the bundle: the Harness module table
     // provides platform modules only, so an external require would throw.
     deps: {

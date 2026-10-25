@@ -1,10 +1,11 @@
-/**
+﻿/**
  * Extract one archive member to disk so the standard preview can open it.
  *
  * The Host filesystem service reads bytes but has no binary write, so the write
  * itself uses Node's fs, confined to the directory the caller names and to a
  * sanitized base name. Anything that would escape that directory is refused.
  */
+import { LIMITS } from '../shared/limits.ts'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
@@ -12,10 +13,10 @@ import { zipEntryBytes } from '../shared/zip/parse.ts'
 import type { RouteContext } from './contracts.ts'
 
 /** Refuse archives larger than this before loading them into memory. */
-const MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+const MAX_ARCHIVE_BYTES = LIMITS.hostArchive
 
 /** Refuse members larger than this after expansion. */
-const MAX_ENTRY_BYTES = 128 * 1024 * 1024
+const MAX_ENTRY_BYTES = LIMITS.hostEntry
 
 /** Path this route claims on the authenticated Fetch channel. */
 export const EXTRACT_ROUTE_PATH = '/api/any-preview/extract'

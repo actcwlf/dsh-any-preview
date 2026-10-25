@@ -1,4 +1,5 @@
-/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+﻿/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
@@ -13,7 +14,7 @@ import { useSearch } from '../../kernel/useSearch.ts'
 import { DELIMITER_LABEL, detectDelimiter } from './detect.ts'
 
 /** Row budget: beyond this the view stops accumulating and says so. */
-const MAX_ROWS = 20_000
+const MAX_ROWS = LIMITS.csvRows
 
 /** Fixed row height the windowing math relies on. */
 const ROW_HEIGHT = 22

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Client-side zip/tar IO: ranged reads over the shared file route, directory
  * listing, and per-entry expansion.
  *
@@ -6,15 +6,16 @@
  * fallbacks (`Content-Range` for the size, 200 answers to a Range request) are
  * written once. The pure byte parsing lives in `shared/zip/parse.ts`.
  */
+import { LIMITS } from '../../shared/limits.ts'
 import { findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../shared/zip/parse.ts'
 import { formatBytes } from './format.ts'
 
 /** Anything read whole must fit this. */
-export const MAX_WHOLE_BYTES = 64 * 1024 * 1024
+export const MAX_WHOLE_BYTES = LIMITS.archiveWhole
 
 /** Largest member expanded inline; bigger payloads stay on disk. */
-export const MAX_ENTRY_BYTES = 2 * 1024 * 1024
+export const MAX_ENTRY_BYTES = LIMITS.archiveEntry
 
 /** Enough tail to cover an archive comment plus the end-of-central-directory record. */
 const TAIL_BYTES = 66_000

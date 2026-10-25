@@ -8,6 +8,8 @@ import { registerExtractRoute } from './host/extract-route.ts'
 import type { ExtractRouteContext } from './host/extract-route.ts'
 import { registerMediaRoute } from './host/media-route.ts'
 import type { MediaRouteContext } from './host/media-route.ts'
+import { checkHostContracts } from './host/self-check.ts'
+import { reportContractIssues } from './shared/contracts.ts'
 
 /** Both routes need the Fetch carrier and the Host filesystem policy. */
 export const inject = ['connection', 'fs']
@@ -17,6 +19,8 @@ interface HostContext extends MediaRouteContext, ExtractRouteContext {
 }
 
 export function apply(ctx: HostContext): void {
+  // A renamed capability would otherwise fail silently at request time.
+  reportContractIssues('host', checkHostContracts(ctx))
   ctx.effect(() => registerMediaRoute(ctx), 'any-preview: media route')
   ctx.effect(() => registerExtractRoute(ctx), 'any-preview: extract route')
 }

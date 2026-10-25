@@ -1,10 +1,11 @@
-/**
+﻿/**
  * 3D model preview: three.js renderer with orbit controls.
  *
  * `loading: 'renderer'` because a model needs the whole file; the bytes come
  * from the shared file route (kernel/file-url.ts) rather than the byte pipeline,
  * which would hand them over as base64.
  */
+import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
@@ -22,10 +23,10 @@ import { useDocument } from '../../kernel/useDocument.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 
 /** Refuse models past this size: decoding costs several times the file size. */
-const MAX_BYTES = 100 * 1024 * 1024
+const MAX_BYTES = LIMITS.modelBytes
 
 /** Models whose geometry exceeds this are refused rather than frozen. */
-const MAX_TRIANGLES = 3_000_000
+const MAX_TRIANGLES = LIMITS.modelTriangles
 
 const VIEWER_EXTENSIONS = ['glb', 'gltf', 'obj', 'stl'] as const
 

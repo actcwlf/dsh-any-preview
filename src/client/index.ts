@@ -9,6 +9,8 @@
 import type { PreviewModule } from './kernel/types.ts'
 import { PREVIEWS } from './previews/index.ts'
 import { setDirectoryPicker, setOpenResource } from './runtime.ts'
+import { checkClientContracts } from './contracts.ts'
+import { reportContractIssues } from '../shared/contracts.ts'
 
 interface DocumentPreviewDefinition {
   readonly id: string
@@ -64,6 +66,10 @@ function registerPreview(ctx: ClientContext, module: PreviewModule): void {
 }
 
 export function apply(ctx: ClientContext): void {
+  // Turn a missing upstream capability into one diagnostic line instead of a
+  // silently empty sidebar.
+  reportContractIssues('client', checkClientContracts(ctx))
+
   // Optional capabilities. A profile without them still renders every preview;
   // only the "open elsewhere" and "choose a directory" affordances are lost.
   //

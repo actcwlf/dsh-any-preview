@@ -1,7 +1,8 @@
-/**
+﻿/**
  * Jupyter notebook reader: cells, execution counts and the output kinds a reader
  * can actually show (text, images as data URIs, errors).
  */
+import { LIMITS } from '../../../shared/limits.ts'
 
 /** One rendered output. */
 export interface NotebookOutput {
@@ -25,7 +26,7 @@ export interface Notebook {
 }
 
 /** Refuse absurd notebooks rather than freezing the pane. */
-const MAX_CELLS = 1_000
+const MAX_CELLS = LIMITS.notebookCells
 
 const IMAGE_MIME = ['image/png', 'image/jpeg', 'image/gif', 'image/svg+xml', 'image/webp'] as const
 

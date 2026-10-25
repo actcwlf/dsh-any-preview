@@ -1,4 +1,5 @@
-/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+import { LIMITS } from '../../../shared/limits.ts'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import { sanitizeHtml } from '../../kernel/html.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
@@ -7,7 +8,7 @@ import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { parseNotebook } from './parse.ts'
 
 /** Notebooks are read whole; this bounds what the pane will render. */
-const MAX_CHARS = 8 * 1024 * 1024
+const MAX_CHARS = LIMITS.notebookChars
 
 export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
   const source = previewSourceOf(content)

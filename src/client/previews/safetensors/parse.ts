@@ -1,9 +1,10 @@
-/**
+﻿/**
  * SafeTensors header reader: an 8-byte little-endian header length followed by
  * a JSON object mapping tensor names to dtype, shape and byte offsets.
  *
  * Only the header is ever read; tensor data is not touched.
  */
+import { LIMITS } from '../../../shared/limits.ts'
 
 /** One tensor entry from the header. */
 export interface SafeTensor {
@@ -23,7 +24,7 @@ export interface SafeTensorsHeader {
 }
 
 /** Header metadata beyond this is refused rather than buffered. */
-export const MAX_HEADER_BYTES = 16 * 1024 * 1024
+export const MAX_HEADER_BYTES = LIMITS.safetensorsHeader
 
 /** Tolerated tensor entries; a bigger file still lists this many. */
 export const MAX_TENSORS = 50_000

@@ -1,4 +1,5 @@
-/** GGUF inspector: architecture, quantization and tensor shapes of a model file. */
+﻿/** GGUF inspector: architecture, quantization and tensor shapes of a model file. */
+import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useState } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
@@ -10,7 +11,7 @@ import { parseGguf } from './parse.ts'
 import type { GgufHeader } from './parse.ts'
 
 /** Header windows tried in turn; a model's metadata is usually a few MB. */
-const WINDOWS = [256 * 1024, 2 * 1024 * 1024, 8 * 1024 * 1024]
+const WINDOWS = [256 * 1024, 2 * 1024 * 1024, LIMITS.ggufWindow]
 
 /** Tensors listed before the table becomes noise. */
 const SHOWN_TENSORS = 300
