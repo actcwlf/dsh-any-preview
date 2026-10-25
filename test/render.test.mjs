@@ -64,6 +64,8 @@ test('client bundle registers every preview in the list', { skip: !available }, 
   const { definitions } = await mount()
   assert.deepEqual(definitions.map(definition => definition.id), [
     'dsh-any-preview/csv',
+    'dsh-any-preview/diff',
+    'dsh-any-preview/log',
     'dsh-any-preview/video',
     'dsh-any-preview/audio',
   ])
@@ -131,4 +133,45 @@ test('media bodies stream from the range route', { skip: !available }, async () 
   }))
   assert.match(audioHtml, /<audio/)
   assert.doesNotMatch(audioHtml, /<video/)
+})
+
+test('diff body renders a classified patch', { skip: !available }, async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/diff')
+  const patch = [
+    'diff --git a/a.ts b/a.ts',
+    '--- a/a.ts',
+    '+++ b/a.ts',
+    '@@ -1,2 +1,3 @@',
+    ' const keep = 1',
+    '-const old = 2',
+    '+const next = 2',
+    '',
+  ].join('\n')
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text: patch, eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/change.patch',
+    wrap: false,
+  }))
+  assert.match(html, /7 行/)
+  assert.match(html, /\+1/)
+  assert.match(html, /−1/)
+  assert.match(html, /@@ -1,2 \+1,3 @@/)
+  assert.match(html, /差异视图/)
+})
+
+test('log body renders lines and a filter', { skip: !available }, async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/log')
+  const log = ['booting', 'ERROR failed to bind', 'INFO listening'].join('\n')
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text: log, eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/run.log',
+    wrap: false,
+  }))
+  assert.match(html, /过滤/)
+  assert.match(html, /跟随尾部/)
+  assert.match(html, /3 行/)
+  assert.match(html, /ERROR failed to bind/)
+  assert.match(html, /rgb\(248, 81, 73\)/)
 })

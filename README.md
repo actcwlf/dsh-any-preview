@@ -1,14 +1,14 @@
 # dsh-any-preview
 
-给 DSH 右侧栏的文件预览加渲染器。**当前实现了 CSV / TSV 表格**；包内按「一个接口 +
-一个注册数组」组织，新增格式只需加一个目录和一行注册。
+给 DSH 右侧栏的文件预览加渲染器。**当前实现：CSV/TSV 表格、统一 diff、日志、视频/音频**；
+包内按「一个接口 + 一个注册数组」组织，新增格式只需加一个目录和一行注册。
 
 内置渲染器已覆盖 office / excel / pdf / image / html / markdown / code，本包专注它没覆盖
-或不擅长的部分：**流式大文件**，以及后续的音视频等重格式。详见
-[架构设计](./docs/architecture.md) 与 [媒体规划](./docs/media-preview.plan.md)。
+或不擅长的部分：**流式大文件**、**结构明确却只能看源码的格式**，以及音视频。详见
+[架构设计](./docs/architecture.md) 与 [格式规划](./docs/formats-plan.md)。
 
-打开 `.csv` / `.tsv` 时，`priority: 'extension'` 压过内置的纯文本兜底，默认呈现流式表格；
-工具栏仍可切回内置的纯文本或表格视图。
+打开 `.csv` / `.tsv` 时 `priority: 'extension'` 压过内置的纯文本兜底，默认呈现流式表格；
+`.diff` / `.patch` / `.log` 内置完全不认领，直接落到本包。
 
 ## 结构
 
@@ -18,19 +18,23 @@ dsh-any-preview/
 ├── cordis.patch.yml     # insert 一行插件到 profile
 ├── tsdown.config.ts     # 双产物构建：lib/index.js（host）+ lib/client.js（browser）
 ├── sample.csv           # 测试用样例
-├── test/                # node --test：分块性质测试 + SSR 渲染测试
-├── src/index.ts         # host 半：空实现（媒体路由在 P1 加入）
+├── test/                # node --test：性质测试 + 路由测试 + SSR 渲染测试
+├── src/index.ts         # host 半：媒体 Range 路由
+├── src/host/media-route.ts
 └── src/client/
     ├── index.ts         # 遍历 PREVIEWS 统一注册，逐模块 try/catch
     ├── kernel/
     │   ├── types.ts         # PreviewModule / DocumentContent / PreviewBodyProps
     │   ├── source.ts        # 三种 content 模式 → 统一 PreviewSource
-    │   └── text-pipeline.ts # 增量行解析 + 有界行缓冲
+    │   ├── stream.ts        # useStreamedText：把增量文本喂给有状态消费者
+    │   ├── lines.ts         # 增量行切分（CRLF、跨块）
+    │   └── text-pipeline.ts # 增量分隔符解析 + 有界行缓冲
     └── previews/
         ├── index.ts     # ★ PREVIEWS 数组：唯一的注册清单
-        └── csv/
-            ├── index.tsx  # 模块声明 + 表格主体
-            └── detect.ts  # 分隔符探测
+        ├── csv/         # 流式表格（大文件主线）
+        ├── diff/        # 统一 diff 分类与渲染
+        ├── log/         # 日志级别着色、过滤、尾部跟随
+        └── media/       # video/audio + Blob 兜底
 ```
 
 ## 注册机制
@@ -94,8 +98,12 @@ npm test
 
 - `test/pipeline.test.mjs`：在所有可能的切分点上比对「分块解析」与「整串解析」，
   覆盖引号跨块、CRLF 跨块、行预算与 `finish` 幂等
+- `test/lines.test.mjs`：增量行切分，同样在每一个切分点上比对
+- `test/diff.test.mjs` / `test/log.test.mjs`：diff 分类与计数、日志级别与预算
+- `test/route.test.mjs`：假文件系统上跑 `serveMedia`，覆盖 200/206/416/HEAD/404/422
+- `test/media-decision.test.mjs`：Blob 兜底的触发条件与上限
 - `test/render.test.mjs`：按浏览器方式加载 `lib/client.js`，用真实 React 做 SSR，
-  校验注册元数据与表格输出
+  校验每个格式的注册元数据与渲染输出
 
 渲染测试需要 DSH checkout 提供 React，可用 `DSH_REPO` 覆盖默认路径。
 
