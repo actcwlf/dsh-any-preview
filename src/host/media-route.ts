@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Authenticated byte-range route for media previews.
  *
  * `/api/file` answers the complete body and ignores `Range`, with a byte cap
@@ -10,6 +10,8 @@
  * fence and browser authentication before this handler runs.
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
+import { LAN_ROUTE_PATH } from './lan-route.ts'
+import { LAN_URL_TTL_MS, signLanPath } from './lan-url.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
 /** Exact pathname claimed on the shared `/api` Fetch channel. */
@@ -172,12 +174,19 @@ const STATUS_BY_CODE: Readonly<Record<string, number>> = {
  * @param fs - Host filesystem service.
  * @returns the response.
  */
-export async function serveMedia(request: Request, fs: HostFileSystem): Promise<Response> {
+export async function serveMedia(request: Request, fs: HostFileSystem, secret?: Uint8Array): Promise<Response> {
   const url = new URL(request.url)
-  // Experiment: tell the page which loopback origin answered, so it can try
-  // loading media over real HTTP instead of the dsh-app:// proxy.
-  if (url.searchParams.get('origin') === '1') {
-    return Response.json({ origin: url.origin }, { headers: BASE_HEADERS })
+  // Mint a signed loopback URL for the page: the media element cannot send the
+  // session cookie to 127.0.0.1 from a dsh-app:// page, so the URL is the
+  // credential.
+  if (url.searchParams.get('lan') === '1' && secret !== undefined) {
+    const target = url.searchParams.get('path')
+    if (target === null || target === '') return failure(400, 'missing path')
+    if (!isAbsolute(target)) return failure(400, 'absolute path required')
+    const expiresAt = Date.now() + LAN_URL_TTL_MS
+    const signature = signLanPath(secret, target, expiresAt)
+    const query = `path=${encodeURIComponent(target)}&exp=${String(expiresAt)}&sig=${encodeURIComponent(signature)}`
+    return Response.json({ url: `${url.origin}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
   }
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')
@@ -253,11 +262,11 @@ export async function serveMedia(request: Request, fs: HostFileSystem): Promise<
  * Claim the media route for the plugin lifetime.
  * @param ctx - Host context carrying `connection` and `fs`.
  */
-export function registerMediaRoute(ctx: MediaRouteContext): () => void {
+export function registerMediaRoute(ctx: MediaRouteContext, secret?: Uint8Array): () => void {
   return ctx.connection.fetch.register({
     path: MEDIA_ROUTE_PATH,
     methods: ['GET', 'HEAD'],
     requestBody: 'buffered',
-    fetch: request => serveMedia(request, ctx.fs),
+    fetch: request => serveMedia(request, ctx.fs, secret),
   })
 }

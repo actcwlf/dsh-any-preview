@@ -1,0 +1,153 @@
+/**
+ * Loopback HTTP route for media, addressed by a signed URL.
+ *
+ * Why it exists: the desktop shell serves the page from `dsh-app://app` and
+ * proxies `/api`; the proxy withholds `Content-Length`, and Chromium's media
+ * loader then reports `seekable = [0, 0]` even when the response is a 206 with
+ * a correct `Content-Range`. Loading the same bytes over real HTTP puts them on
+ * Chromium's http media path, which understands range responses.
+ *
+ * The route lives outside `/api` on purpose: that prefix is fenced by the
+ * session cookie, and a cross-site media request cannot send one.
+ */
+import { once } from 'node:events'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { basename } from 'node:path'
+import { stat } from 'node:fs/promises'
+import type { RouteContext } from './contracts.ts'
+import { verifyLanPath } from './lan-url.ts'
+
+/** Path the loopback route claims. */
+export const LAN_ROUTE_PATH = '/any-preview/lan'
+
+/** Read window while streaming. */
+const CHUNK_BYTES = 1 << 20
+
+/** The slice of the Host context this route needs. */
+interface LanContext extends RouteContext {
+  inject?(deps: readonly string[], callback: (scope: never) => void): unknown
+}
+
+/** The webserver service as this route uses it. */
+interface WebServerLike {
+  register(route: {
+    kind: 'exact'
+    path: string
+    handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
+  }): () => void
+}
+
+function header(res: ServerResponse, status: number, values: Record<string, string>): void {
+  res.writeHead(status, values)
+}
+
+/**
+ * Register the loopback route when the profile provides a web server.
+ * @param ctx - Host context.
+ * @param secret - per-process signing secret.
+ * @returns disposer, or a no-op when no web server is available.
+ */
+export function registerLanRoute(ctx: LanContext, secret: Uint8Array): () => void {
+  let dispose: (() => void) | undefined
+  ctx.inject?.(['webServer'], (scope: never) => {
+    const server = (scope as { webServer: WebServerLike }).webServer
+    dispose = server.register({
+      kind: 'exact',
+      path: LAN_ROUTE_PATH,
+      handler: async (req, res) => { await handle(req, res, ctx, secret) },
+    })
+  })
+  return () => { dispose?.() }
+}
+
+async function handle(req: IncomingMessage, res: ServerResponse, ctx: LanContext, secret: Uint8Array): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://127.0.0.1')
+  const path = url.searchParams.get('path') ?? ''
+  const expiresAt = Number(url.searchParams.get('exp') ?? '0')
+  const signature = url.searchParams.get('sig') ?? ''
+
+  // A cross-site media element still needs the response to be readable.
+  const cors: Record<string, string> = {
+    'Access-Control-Allow-Origin': 'dsh-app://app',
+    'Access-Control-Allow-Private-Network': 'true',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'private, no-store',
+    'X-Content-Type-Options': 'nosniff',
+  }
+
+  if (req.method === 'OPTIONS') {
+    header(res, 204, { ...cors, 'Access-Control-Allow-Headers': 'range', 'Access-Control-Allow-Methods': 'GET, HEAD' })
+    res.end()
+    return
+  }
+  if (!verifyLanPath(secret, path, expiresAt, signature)) {
+    header(res, 403, { ...cors, 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('invalid or expired signature')
+    return
+  }
+
+  let size: number
+  try {
+    const target = await ctx.fs.resolve(path, { signal: AbortSignal.timeout(5000) })
+    const info = await ctx.fs.stat(target, AbortSignal.timeout(5000))
+    if (info === undefined || info.type !== 'file' || info.size === undefined) {
+      header(res, 404, cors)
+      res.end()
+      return
+    }
+    size = info.size
+  } catch {
+    header(res, 404, cors)
+    res.end()
+    return
+  }
+
+  const type = mediaTypeOf(basename(path))
+  const rawRange = req.headers.range
+  const rangeHeader = typeof rawRange === 'string' ? rawRange : undefined
+  const match = rangeHeader === undefined ? null : /^bytes=(\d*)-(\d*)$/u.exec(rangeHeader.trim())
+  const start = match === null || match[1] === '' ? 0 : Number(match[1])
+  const end = match === null || match[2] === '' ? size - 1 : Math.min(Number(match[2]), size - 1)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) {
+    header(res, 416, { ...cors, 'Content-Range': `bytes */${String(size)}` })
+    res.end()
+    return
+  }
+
+  const length = end - start + 1
+  header(res, 206, {
+    ...cors,
+    'Content-Type': type,
+    'Content-Range': `bytes ${String(start)}-${String(end)}/${String(size)}`,
+    'Content-Length': String(length),
+  })
+  if (req.method === 'HEAD') {
+    res.end()
+    return
+  }
+
+  const target = await ctx.fs.resolve(path, { signal: AbortSignal.timeout(5000) })
+  let offset = start
+  while (offset <= end) {
+    const want = Math.min(CHUNK_BYTES, end - offset + 1)
+    const bytes = await ctx.fs.readByteRange(target, { offset, length: want }, AbortSignal.timeout(15000))
+    if (!res.write(Buffer.from(bytes))) await once(res, 'drain')
+    offset += bytes.length
+    if (bytes.length === 0) break
+  }
+  res.end()
+}
+
+/** Media type by suffix, matching the `/api` route. */
+function mediaTypeOf(name: string): string {
+  const suffix = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
+  return TYPES[suffix] ?? 'application/octet-stream'
+}
+
+const TYPES: Readonly<Record<string, string>> = {
+  mp4: 'video/mp4', m4v: 'video/x-m4v', mov: 'video/quicktime', webm: 'video/webm',
+  ogv: 'video/ogg', mkv: 'video/x-matroska', avi: 'video/x-msvideo', mpg: 'video/mpeg',
+  mpeg: 'video/mpeg', '3gp': 'video/3gpp', '3g2': 'video/3gpp2', ts: 'video/mp2t', m2ts: 'video/mp2t',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav',
+  flac: 'audio/flac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', weba: 'audio/webm',
+}

@@ -72,13 +72,12 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     void (async () => {
       try {
         const probe = new URL(remote)
-        probe.searchParams.set('origin', '1')
+        probe.searchParams.set('lan', '1')
         const response = await fetch(probe)
         if (!response.ok) return
-        const body = await response.json() as { origin?: unknown }
-        if (typeof body.origin !== 'string' || body.origin === '') return
-        const target = new URL(remote)
-        if (alive) setLanSrc(`${body.origin}${target.pathname}${target.search}`)
+        const body = await response.json() as { url?: unknown }
+        if (typeof body.url !== 'string' || body.url === '') return
+        if (alive) setLanSrc(body.url)
       } catch {
         // Leave the proxied URL in place.
       }

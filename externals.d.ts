@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ambient declarations for packages this plugin only consumes at runtime.
  *
  * The type check exists to catch mistakes in *this* code — an undefined
@@ -48,3 +48,18 @@ declare module 'three/addons/*'
 declare module 'node:fs/promises'
 declare module 'node:path'
 declare module 'node:zlib'
+declare module 'node:crypto'
+declare module 'node:http' {
+  export interface IncomingMessage {
+    readonly url?: string
+    readonly method?: string
+    readonly headers: Record<string, string | string[] | undefined>
+  }
+  export interface ServerResponse {
+    writeHead(status: number, headers?: Record<string, string>): void
+    write(chunk: unknown): boolean
+    end(chunk?: unknown): void
+  }
+}
+declare module 'node:events'
+declare const Buffer: any
