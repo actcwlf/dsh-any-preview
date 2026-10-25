@@ -5,7 +5,7 @@
 
 /** One rendered output. */
 export interface NotebookOutput {
-  readonly kind: 'text' | 'image' | 'error' | 'other'
+  readonly kind: 'text' | 'image' | 'error' | 'html' | 'other'
   readonly text?: string
   readonly dataUri?: string
 }
@@ -70,6 +70,10 @@ function readOutputs(raw: unknown): NotebookOutput[] {
       if (image !== undefined) {
         const uri = decodeDataUri(image, data[image])
         if (uri !== undefined) outputs.push({ kind: 'image', dataUri: uri })
+        continue
+      }
+      if (typeof data['text/html'] === 'string' && data['text/html'].trim() !== '') {
+        outputs.push({ kind: 'html', text: data['text/html'] })
         continue
       }
       if (typeof data['text/plain'] === 'string') {

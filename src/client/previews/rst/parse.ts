@@ -1,8 +1,8 @@
 /**
  * reStructuredText reader: the subset that README.rst and docs/*.rst actually
- * use — adorned headings, bullet/enumerated lists, literal blocks, the common
- * code/note directives, and inline emphasis/code/links. Anything unrecognized
- * degrades to a paragraph rather than disappearing.
+ * use — adorned headings, bullet/enumerated lists, literal blocks, simple and
+ * grid tables, footnotes, substitution definitions, the common directives, and
+ * inline emphasis/code/links. Anything unrecognized degrades to a paragraph.
  */
 import type { Block } from '../../kernel/blocks.tsx'
 
@@ -11,6 +11,10 @@ const DIRECTIVE = /^\.\.\s+([a-zA-Z][\w-]*)::\s*(.*)$/u
 const TARGET = /^\.\.\s+_[^:]+:\s*$/u
 const BULLET = /^(\s*)[-*+]\s+(.*)$/u
 const ENUMERATED = /^(\s*)(\d+[.)]|[a-zA-Z][.)]|#\.)\s+(.*)$/u
+const SUBSTITUTION = /^\.\.\s+\|([^|]+)\|\s+([a-zA-Z]+)::\s*(.*)$/u
+const FOOTNOTE = /^\.\.\s+\[([^\]]+)\]\s+(.*)$/u
+const SIMPLE_BORDER = /^=+( +=+)+$/u
+const GRID_BORDER = /^\+(?:[-=]+\+)+$/u
 
 /** Directives whose body is prose worth showing. */
 const CALLOUTS = new Set(['note', 'warning', 'tip', 'important', 'danger', 'caution', 'admonition'])
@@ -54,7 +58,91 @@ function takeIndented(cursor: Cursor): string[] {
   return body
 }
 
-/** Strip trailing blank lines only. */
+/** Column spans from an `=== ===` border. */
+function simpleColumns(border: string): Array<readonly [number, number]> {
+  return [...border.matchAll(/=+/gu)].map(match => [match.index!, match.index! + match[0].length] as const)
+}
+
+/** Parse a simple table starting at its top border. */
+function parseSimpleTable(lines: readonly string[], start: number): { block: Block, next: number } | undefined {
+  const top = lines[start]!
+  if (!SIMPLE_BORDER.test(top.trim())) return undefined
+  const columns = simpleColumns(top.trimStart())
+  const offset = indentOf(top)
+  const beforeSeparator: string[][] = []
+  const rows: string[][] = []
+  let separatorSeen = false
+  let index = start + 1
+  while (index < lines.length) {
+    const line = lines[index]!
+    if (SIMPLE_BORDER.test(line.trim())) {
+      index += 1
+      if (!separatorSeen) {
+        separatorSeen = true
+        continue
+      }
+      break
+    }
+    if (line.trim() === '') break
+    const cells = columns.map(([from, to]) => line.slice(offset + from, offset + to).trim())
+    ;(separatorSeen ? rows : beforeSeparator).push(cells)
+    index += 1
+  }
+  if (!separatorSeen) return undefined
+  return { block: { kind: 'table', header: beforeSeparator[0] ?? [], rows }, next: index }
+}
+
+/** Parse a grid table starting at its top border. */
+function parseGridTable(lines: readonly string[], start: number): { block: Block, next: number } | undefined {
+  const border = lines[start]!
+  if (!GRID_BORDER.test(border.trim())) return undefined
+  const stops = [...border.trim().matchAll(/\+/gu)].map(match => match.index!)
+  if (stops.length < 2) return undefined
+  const header: string[][] = []
+  const rows: string[][] = []
+  let headerDone = false
+  let index = start + 1
+  while (index < lines.length) {
+    const line = lines[index]!
+    const trimmed = line.trim()
+    if (trimmed.startsWith('|')) {
+      const cells: string[] = []
+      for (let column = 0; column + 1 < stops.length; column += 1) {
+        cells.push(trimmed.slice(stops[column]! + 1, stops[column + 1]!).trim())
+      }
+      ;(headerDone ? rows : header).push(cells)
+      index += 1
+      continue
+    }
+    if (GRID_BORDER.test(trimmed)) {
+      if (trimmed.includes('=')) headerDone = true
+      index += 1
+      continue
+    }
+    break
+  }
+  if (header.length === 0 && rows.length === 0) return undefined
+  return {
+    block: { kind: 'table', header: header[0] ?? [], rows: headerDone ? rows : rows },
+    next: index,
+  }
+}
+
+/** Apply substitutions and footnote references to one block's text. */
+function mapBlock(block: Block, apply: (text: string) => string): Block {
+  switch (block.kind) {
+    case 'heading':
+    case 'paragraph':
+    case 'quote':
+      return { ...block, text: apply(block.text) }
+    case 'list':
+      return { ...block, items: block.items.map(apply) }
+    case 'table':
+      return { ...block, header: block.header.map(apply), rows: block.rows.map(row => row.map(apply)) }
+    default:
+      return block
+  }
+}
 
 /**
  * Parse reStructuredText into blocks.
@@ -66,8 +154,29 @@ export function parseRst(source: string): Block[] {
     .replaceAll('\r\n', '\n')
     // Role prefixes carry no visual value here: `:ref:`label`` reads as `label`.
     .replace(/:([a-zA-Z][\w-]*):`([^`]+)`/gu, '`$2`')
+
+  const substitutions = new Map<string, string>()
+  const footnotes: { label: string, text: string }[] = []
+  for (const line of normalized.split('\n')) {
+    const substitution = SUBSTITUTION.exec(line.trim())
+    if (substitution !== null) {
+      const [, name, kind, value] = substitution
+      substitutions.set(name!.trim(), kind === 'image' ? `[图片] ${value!.trim()}` : value!.trim())
+      continue
+    }
+    const footnote = FOOTNOTE.exec(line.trim())
+    if (footnote !== null) footnotes.push({ label: footnote[1]!, text: footnote[2]!.trim() })
+  }
+
+  const applyText = (text: string): string => {
+    let output = text
+    for (const [name, value] of substitutions) output = output.replaceAll(`|${name}|`, value)
+    // A footnote reference renders as its label.
+    return output.replace(/\[([^\]\n]+)\]_/gu, '[$1]')
+  }
+
   const cursor: Cursor = { lines: normalized.split('\n'), index: 0 }
-  const blocks: Block[] = []
+  let blocks: Block[] = []
   const adornments: string[] = []
   const levelOf = (char: string): number => {
     const known = adornments.indexOf(char)
@@ -106,7 +215,14 @@ export function parseRst(source: string): Block[] {
       continue
     }
 
-    if (TARGET.test(trimmed)) {
+    const table = parseSimpleTable(cursor.lines, cursor.index) ?? parseGridTable(cursor.lines, cursor.index)
+    if (table !== undefined) {
+      blocks.push(table.block)
+      cursor.index = table.next
+      continue
+    }
+
+    if (TARGET.test(trimmed) || SUBSTITUTION.test(trimmed) || FOOTNOTE.test(trimmed)) {
       cursor.index += 1
       continue
     }
@@ -123,22 +239,29 @@ export function parseRst(source: string): Block[] {
       }
       if (CALLOUTS.has(name)) {
         const label = argument === '' ? name : `${name}: ${argument}`
-        const text = [label, ...body.filter(part => part !== '')].join('\n')
-        blocks.push({ kind: 'quote', text })
+        blocks.push({ kind: 'quote', text: [label, ...body.filter(part => part !== '')].join('\n') })
         continue
       }
       if (ASSETS.has(name)) {
         blocks.push({ kind: 'paragraph', text: `[图片] ${argument}` })
         continue
       }
-      // contents / toctree / include and unknown directives: keep their body text.
+      if (name === 'toctree') {
+        const entries = body
+          .map(part => part.trim())
+          .filter(part => part !== '' && !part.startsWith(':'))
+        blocks.push({ kind: 'paragraph', text: '目录' })
+        if (entries.length > 0) blocks.push({ kind: 'list', ordered: false, items: entries })
+        continue
+      }
+      // contents / include and unknown directives: keep their body text.
       if (body.length > 0) blocks.push({ kind: 'paragraph', text: body.join(' ').trim() })
       continue
     }
 
     if (BULLET.test(line)) {
       const items: string[] = []
-      let markerIndent = indentOf(line)
+      const markerIndent = indentOf(line)
       while (cursor.index < cursor.lines.length) {
         const current = cursor.lines[cursor.index]!
         const bullet = BULLET.exec(current)
@@ -147,7 +270,6 @@ export function parseRst(source: string): Block[] {
           cursor.index += 1
           continue
         }
-        // Continuation lines belong to the previous item.
         if (items.length > 0 && current.trim() !== '' && indentOf(current) > markerIndent) {
           items[items.length - 1] = `${items[items.length - 1]!} ${current.trim()}`
           cursor.index += 1
@@ -198,7 +320,6 @@ export function parseRst(source: string): Block[] {
     if (joined.endsWith('::')) {
       const head = joined.slice(0, -2).trimEnd()
       if (head !== '') blocks.push({ kind: 'paragraph', text: `${head}:` })
-      // Skip the blank separator, then take the literal block.
       while (cursor.index < cursor.lines.length && cursor.lines[cursor.index]!.trim() === '') cursor.index += 1
       const literal = takeIndented(cursor)
       if (literal.length > 0) blocks.push({ kind: 'code', text: literal.join('\n') })
@@ -207,5 +328,9 @@ export function parseRst(source: string): Block[] {
     blocks.push({ kind: 'paragraph', text: joined })
   }
 
+  blocks = blocks.map(block => mapBlock(block, applyText))
+  if (footnotes.length > 0) {
+    blocks.push({ kind: 'list', ordered: false, items: footnotes.map(footnote => `[${footnote.label}] ${footnote.text}`) })
+  }
   return blocks
 }

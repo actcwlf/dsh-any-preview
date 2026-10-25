@@ -11,6 +11,8 @@ export type Block =
   | { readonly kind: 'code', readonly text: string, readonly language?: string }
   | { readonly kind: 'list', readonly ordered: boolean, readonly items: readonly string[] }
   | { readonly kind: 'quote', readonly text: string }
+  | { readonly kind: 'table', readonly header: readonly string[], readonly rows: readonly (readonly string[])[] }
+  | { readonly kind: 'image', readonly src: string, readonly alt: string }
 
 const INLINE = /(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\n]+\))/u
 
@@ -78,6 +80,37 @@ function renderBlock(block: Block, index: number): ReactNode {
         <blockquote key={key} style={quoteStyle}>
           {renderInline(block.text, key)}
         </blockquote>
+      )
+    case 'table':
+      return (
+        <div key={key} style={{ overflowX: 'auto', margin: '8px 0' }}>
+          <table style={tableStyle}>
+            {block.header.length > 0 && (
+              <thead>
+                <tr>
+                  {block.header.map((cell, cellIndex) => (
+                    <th key={`${key}-h${String(cellIndex)}`} style={thStyle}>{renderInline(cell, `${key}-h${String(cellIndex)}`)}</th>
+                  ))}
+                </tr>
+              </thead>
+            )}
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={`${key}-r${String(rowIndex)}`}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={`${key}-r${String(rowIndex)}c${String(cellIndex)}`} style={tdStyle}>
+                      {renderInline(cell, `${key}-r${String(rowIndex)}c${String(cellIndex)}`)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )
+    case 'image':
+      return (
+        <img key={key} src={block.src} alt={block.alt} style={imageStyle} />
       )
     default:
       return (
@@ -176,6 +209,14 @@ export function parseMarkdownBlocks(text: string): Block[] {
       continue
     }
 
+    const image = /^!\[([^\]\n]*)\]\(([^)\s]+)\)$/u.exec(trimmed)
+    if (image !== null) {
+      flush()
+      blocks.push({ kind: 'image', alt: image[1] ?? '', src: image[2]! })
+      index += 1
+      continue
+    }
+
     paragraph.push(trimmed)
     index += 1
   }
@@ -184,6 +225,17 @@ export function parseMarkdownBlocks(text: string): Block[] {
 }
 
 const paragraphStyle = { margin: '6px 0', lineHeight: 1.7, color: 'var(--dsw-alias-label-primary)' } as const
+const tableStyle = { borderCollapse: 'collapse' as const, fontSize: 12, width: '100%' } as const
+const thStyle = {
+  padding: '4px 10px', textAlign: 'left' as const, fontWeight: 600,
+  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
+  border: '1px solid var(--dsw-alias-border-l2)',
+} as const
+const tdStyle = {
+  padding: '4px 10px', color: 'var(--dsw-alias-label-primary)',
+  border: '1px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const,
+} as const
+const imageStyle = { display: 'block' as const, maxWidth: '100%', margin: '8px 0', borderRadius: 4 } as const
 const codeStyle = {
   margin: '8px 0', padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
   fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55,

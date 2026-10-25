@@ -1,9 +1,13 @@
-/** Lightweight markup readers: reST, notebooks, and the EPUB helpers. */
+﻿/** Lightweight markup readers: reST, notebooks, and the EPUB helpers. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseRst } from '../src/client/previews/rst/parse.ts'
 import { parseNotebook } from '../src/client/previews/ipynb/parse.ts'
-import { containerOpfPath, decodeEntities, htmlToMarkdownText, parseOpf, resolveHref } from '../src/client/previews/epub/parse.ts'
+import {
+  containerOpfPath, decodeEntities, htmlToMarkdownText, imageMimeType, parseNav, parseNcx, parseOpf,
+  resolveHref, scopeCss,
+} from '../src/client/previews/epub/parse.ts'
+import { sanitizeHtml } from '../src/client/kernel/html.ts'
 
 test('rst headings take their level from the order the adornments appear', () => {
   const blocks = parseRst([
@@ -144,4 +148,83 @@ test('chapter XHTML becomes headings, list items and code fences', () => {
 
 test('named and numeric entities decode', () => {
   assert.equal(decodeEntities('a &lt; b &amp;&amp; c &#65;&#x42;'), 'a < b && c AB')
+})
+
+test('rst simple tables keep header and body rows', () => {
+  const blocks = parseRst(['=====  =====', 'Name   Age', '=====  =====', 'Ada    36', '=====  ====='].join('\n'))
+  assert.equal(blocks[0].kind, 'table')
+  assert.deepEqual(blocks[0].header, ['Name', 'Age'])
+  assert.deepEqual(blocks[0].rows, [['Ada', '36']])
+})
+
+test('rst grid tables keep header and body rows', () => {
+  const blocks = parseRst(['+-----+-----+', '| a   | b   |', '+=====+=====+', '| 1   | 2   |', '+-----+-----+'].join('\n'))
+  assert.equal(blocks[0].kind, 'table')
+  assert.deepEqual(blocks[0].header, ['a', 'b'])
+  assert.deepEqual(blocks[0].rows, [['1', '2']])
+})
+
+test('rst footnotes move to a trailing list and references lose the underscore', () => {
+  const blocks = parseRst(['Text[1]_ here.', '', '.. [1] The note.'].join('\n'))
+  assert.equal(blocks[0].text, 'Text[1] here.')
+  const last = blocks[blocks.length - 1]
+  assert.equal(last.kind, 'list')
+  assert.deepEqual(last.items, ['[1] The note.'])
+})
+
+test('rst substitutions are applied to the text', () => {
+  const blocks = parseRst(['.. |name| replace:: World', '', 'Hello |name|!'].join('\n'))
+  assert.equal(blocks[0].text, 'Hello World!')
+})
+
+test('rst toctree becomes a directory list', () => {
+  const blocks = parseRst(['.. toctree::', '   :maxdepth: 2', '', '   intro', '   usage'].join('\n'))
+  assert.equal(blocks[0].text, '目录')
+  assert.equal(blocks[1].kind, 'list')
+  assert.deepEqual(blocks[1].items, ['intro', 'usage'])
+})
+
+test('epub nav and ncx both yield titled chapter entries', () => {
+  const nav = parseNav('<nav><ol><li><a href="Text/ch1.xhtml">One</a></li></ol></nav>', 'OEBPS')
+  assert.deepEqual(nav, [{ title: 'One', href: 'OEBPS/Text/ch1.xhtml' }])
+  const ncx = parseNcx('<navPoint><navLabel><text>Two</text></navLabel><content src="ch2.xhtml"/></navPoint>', 'OEBPS')
+  assert.deepEqual(ncx, [{ title: 'Two', href: 'OEBPS/ch2.xhtml' }])
+})
+
+test('epub stylesheets are scoped and filtered', () => {
+  const scoped = scopeCss('.drop { color: blue } p, .x { color: red; background-image: url(a.png) }', 'dsh-epub-body')
+  assert.equal(scoped.replaceAll(' ', ''), '.dsh-epub-body p{color:red}'.replaceAll(' ', ''))
+})
+
+test('images are typed by suffix and turned into data URIs', () => {
+  assert.equal(imageMimeType('OEBPS/Images/a.PNG'), 'image/png')
+  assert.equal(imageMimeType('OEBPS/a.pdf'), undefined)
+  const text = htmlToMarkdownText('<p><img src="a.png" alt="cover"/></p>', () => 'data:image/png;base64,AA')
+  assert.match(text, /!\[cover\]\(data:image\/png;base64,AA\)/u)
+})
+
+test('unresolved images are dropped instead of producing broken links', () => {
+  const text = htmlToMarkdownText('<p><img src="missing.png"/></p>', () => undefined)
+  assert.ok(!text.includes('!['), text)
+})
+
+test('sanitizing keeps markup and removes every way to execute', () => {
+  const clean = sanitizeHtml(
+    '<div onclick="steal()"><script>evil()</script><a href="javascript:boom()">t</a><p>ok</p></div>',
+  )
+  assert.ok(!clean.includes('<script'), clean)
+  assert.ok(!clean.includes('onclick'), clean)
+  assert.ok(!clean.includes('javascript:'), clean)
+  assert.ok(clean.includes('<p>ok</p>'), clean)
+})
+
+test('a notebook html output is kept as html', () => {
+  const notebook = parseNotebook(JSON.stringify({
+    cells: [{
+      cell_type: 'code', execution_count: 1, source: 'df',
+      outputs: [{ output_type: 'execute_result', data: { 'text/html': '<table><tr><td>1</td></tr></table>' } }],
+    }],
+  }))
+  assert.equal(notebook.cells[0].outputs[0].kind, 'html')
+  assert.match(notebook.cells[0].outputs[0].text, /<table>/u)
 })

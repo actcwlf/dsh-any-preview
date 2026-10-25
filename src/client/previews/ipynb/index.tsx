@@ -1,5 +1,6 @@
-﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
+import { sanitizeHtml } from '../../kernel/html.ts'
 import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -17,6 +18,7 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
 
   return (
     <div style={PANE_ROOT}>
+      <style>{NB_CSS}</style>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '8px 14px 24px', fontSize: 13 }} ref={scrollportRef}>
         {notebook.cells.map((cell, index) => (
           <section key={index} style={{ marginBottom: 14 }}>
@@ -34,6 +36,12 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
               }
               if (output.kind === 'error') {
                 return <pre key={outputIndex} style={errorStyle}>{output.text}</pre>
+              }
+              if (output.kind === 'html' && output.text !== undefined) {
+                return (
+                  <div key={outputIndex} className="dsh-nb-html" style={htmlStyle}
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(output.text) }} />
+                )
               }
               if (output.text !== undefined && output.text.trim() !== '') {
                 return <pre key={outputIndex} style={outputStyle}>{output.text}</pre>
@@ -75,6 +83,19 @@ const errorStyle = {
 const imageStyle = {
   display: 'block', maxWidth: '100%', marginTop: 6, borderRadius: 4,
 } as const
+
+const htmlStyle = {
+  marginTop: 6, overflowX: 'auto' as const, fontSize: 12,
+  color: 'var(--dsw-alias-label-primary)',
+} as const
+
+/** Scoped so an output's own markup cannot restyle the app. */
+const NB_CSS = [
+  '.dsh-nb-html table{border-collapse:collapse;font-size:12px}',
+  '.dsh-nb-html th,.dsh-nb-html td{border:1px solid var(--dsw-alias-border-l2);padding:3px 8px;text-align:left}',
+  '.dsh-nb-html thead th{background:var(--dsw-alias-bg-layer-2)}',
+  '.dsh-nb-html img{max-width:100%}',
+].join('')
 
 /** What the client entry registers for this format. */
 export const ipynbPreview: PreviewModule = {
