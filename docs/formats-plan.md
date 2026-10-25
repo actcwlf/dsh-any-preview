@@ -16,13 +16,24 @@
 | 文档 | doc, docx, ppt, pptx | `office`（Host 侧 LibreOffice） |
 | 其他 | pdf, md, html, png/jpg/… | 各自 |
 
-**没有任何渲染器认领、目前只能当纯文本看**的后缀：
+**误判纠正（2026-10-25）**：下面这些后缀其实**已被内置 `code` 渲染器认领**，只是只有
+语法高亮、没有专用视图。实测 `CODE_HIGHLIGHT_EXTENSIONS` 含 115 个后缀，
+`languageForPath` 的映射是：
 
 ```
-jsonl  ndjson  log  diff  patch  ipynb  zip  ttf  otf  woff2  glb  gltf
+json jsonc jsonl ndjson ipynb  →  json 语法（Shiki）
+diff patch                     →  diff 语法
+log                            →  log 语法
 ```
 
-这就是真正值得做的空白——不是"再造一个 JSON 查看器"，而是这些**结构明确却只能读到源码**的格式。
+所以本包的 P2 渲染器不是"填补空白"，而是**用结构化视图替换默认的高亮文本视图**
+（`priority: 'extension'` 生效，工具栏仍可切回内置的「代码」视图）。
+
+**真正没有任何渲染器认领**的只剩：
+
+```
+zip  ttf  otf  woff2  glb  gltf
+```
 
 ## 2. 新增格式的准入规则（沿用媒体那一轮的教训）
 
