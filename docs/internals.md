@@ -187,3 +187,42 @@ warmableChunks()        // 需要预热的 id 列表
 
 `client/index.ts` 按 `warmableChunks()` 遍历预热，`model` 与 `ts-player` 在加载前查
 `isChunkEnabled`，因此接入配置时只需循环调用 `setChunkStrategy`，不必改预览组件。
+
+## 向对话注册 agent 工具
+
+插件可以注册模型可调用的工具，已验证可行（探针 `preview_probe` 在新会话里成功调用）。
+要点全部是踩出来的：
+
+```ts
+ctx.inject(['tools'], (toolsCtx) => {
+  toolsCtx.effect(() => toolsCtx.tools.register({
+    name: 'preview_probe',
+    description: '…',
+    parameters: {                       // 必须是「已编译」的 JSON Schema
+      type: 'object',
+      properties: { echo: { type: 'string' } },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { ok: { type: 'boolean' } } },
+      render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
+    },
+    async execute(args) { return { ok: true } },
+  }), 'label')
+})
+```
+
+四条硬规则：
+
+1. **`parameters` 不是作者侧 DSL**。`tools.register` 不再帮你编译；直接给 `{ echo: {…} }`
+   会让上游收到 `type: null` 并**拒绝整份工具列表**（表现为该 profile 的对话全部失败）。
+   要么用 `defineTool`（`@deepseek-ai/dsh-tools`，插件里不可解析，需内联），
+   要么手写编译后的产物：`{ type: 'object', properties: {…} }`（隐式参数根是**开放**的，
+   不加 `additionalProperties`）；
+2. **输出 schema 的标量不能写 `required`**，只有参数映射的每个属性可以；
+3. **注册要包在注入作用域的 `effect` 里**（`toolsCtx.effect(() => register(...), label)`）；
+4. **验证必须在新会话里做**。工具列表在会话创建时组装，旧会话不会刷新——
+   否则会把"没刷新"误判成"注册失败"。
+
+排查手段：把注册结果记进模块状态，并挂到一条已认证的 HTTP 路由上（我们挂在
+`/api/any-preview/asset-base` 的 `probe` 字段），在控制台一行 `fetch` 就能区分
+"没注册"与"不可见"。
