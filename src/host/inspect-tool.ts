@@ -45,6 +45,10 @@ const OUTPUT_SCHEMA = {
 } as const
 
 /** The `tools` service as this tool uses it. */
+interface SandboxPolicyLike {
+  resolve(input: { session?: unknown }): { workspaceRoot?: string, root?: string }
+}
+
 interface ToolsLike {
   register(tool: unknown): () => void
 }
@@ -109,6 +113,10 @@ function summariseCsv(bytes: Uint8Array, truncatedRead: boolean): { kind: string
  */
 export function registerInspectTool(ctx: InspectContext): () => void {
   let dispose: (() => void) | undefined
+  let sandbox: SandboxPolicyLike | undefined
+  ctx.inject?.(['sandboxPolicy'], (scope: never) => {
+    sandbox = (scope as { sandboxPolicy?: SandboxPolicyLike }).sandboxPolicy
+  })
   ctx.inject?.(['tools'], (scope: never) => {
     const toolsCtx = scope as unknown as {
       tools: ToolsLike
@@ -127,7 +135,7 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             { type: 'text', text: value.summary ?? '' },
           ],
         },
-        async execute(args: { path?: string } | undefined) {
+        async execute(args: { path?: string } | undefined, exec?: { agent?: { session?: unknown } }) {
           const path = args?.path
           if (typeof path !== 'string' || path === '') throw new Error('path is required')
           const signal = AbortSignal.timeout(10_000)
@@ -141,7 +149,14 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             target = await ctx.fs.resolve(mapped, { signal })
           } else {
             try {
-              target = await ctx.fs.resolve(path, { signal })
+              let cwd: string | undefined
+            try {
+              const policy = sandbox?.resolve(exec?.agent === undefined ? {} : { session: exec.agent.session })
+              cwd = policy?.workspaceRoot ?? policy?.root
+            } catch {
+              // No policy: fall through to the service default.
+            }
+            target = await ctx.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })
             } catch {
               // Last resort: the application's cwd, which is what used to happen.
               const mapped = ctx.fs.processPathFromHostPath(join(process.cwd(), path))

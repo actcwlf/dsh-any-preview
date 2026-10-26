@@ -10,7 +10,7 @@
 export interface HostFileSystem {
   processPathFromHostPath(path: string): string | undefined
   processPath(target: unknown): string
-  resolve(path: string, options: { signal: AbortSignal }): Promise<unknown>
+  resolve(path: string, options: { signal: AbortSignal, cwd?: string }): Promise<unknown>
   stat(target: unknown, signal: AbortSignal): Promise<{ type?: string, size?: number, displayPath?: string } | undefined>
   readByteRange(target: unknown, range: { offset: number, length: number }, signal: AbortSignal): Promise<Uint8Array>
   readBytes(target: unknown, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array>
