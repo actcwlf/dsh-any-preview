@@ -22,6 +22,7 @@ interface ProbeContext extends RouteContext {
 export interface ProbeState {
   readonly attempted: boolean
   readonly registered: boolean
+  readonly path?: string
   readonly error?: string
 }
 
@@ -44,8 +45,7 @@ export function registerProbeTool(ctx: ProbeContext): () => void {
     state = { attempted: true, registered: false, error: 'host context has no inject' }
     return () => {}
   }
-  ctx.inject(['tools'], (scope: never) => {
-    const tools = (scope as { tools: ToolsLike }).tools
+  const attempt = (tools: ToolsLike, path: string): void => {
     try {
       dispose = tools.register({
         name: 'preview_probe',
@@ -72,14 +72,23 @@ export function registerProbeTool(ctx: ProbeContext): () => void {
           return { ok: true, plugin: 'dsh-any-preview', echo: args?.echo ?? '' }
         },
       })
-      state = { attempted: true, registered: true }
+      state = { attempted: true, registered: true, path }
     } catch (error) {
       state = {
         attempted: true,
         registered: false,
+        path,
         error: error instanceof Error ? error.message : String(error),
       }
     }
-  })
+  }
+  ctx.inject(['tools'], (scope: never) => { attempt((scope as { tools: ToolsLike }).tools, 'inject') })
+  // Second path: some kernels expose the registry on the plugin context itself.
+  try {
+    const direct = (ctx as { tools?: ToolsLike }).tools
+    if (direct !== undefined && !state.registered) attempt(direct, 'direct')
+  } catch {
+    // Reading an uninjected namespace throws by design; that is not a failure.
+  }
   return () => { dispose?.() }
 }
