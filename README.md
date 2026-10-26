@@ -109,3 +109,4 @@ dsh plugin --profile desktop remove dsh-any-preview
 - [架构与内部实现](./docs/internals.md)：注册机制、目录结构、大文件策略、懒加载、构建与测试
 - [架构设计](./docs/architecture.md)、[格式规划](./docs/formats-plan.md)
 - [第三方许可](./licenses/README.md)：随包分发的组件与义务
+- [安全边界记录](./docs/security-notes.md)：读不受限、插件 fs 不受沙箱约束（已知问题，暂不修复）
