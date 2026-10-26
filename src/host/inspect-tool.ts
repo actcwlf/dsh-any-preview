@@ -29,7 +29,7 @@ const PARAMETERS = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Workspace path of the file to inspect.' },
+    path: { type: 'string', description: 'Absolute path of the file to inspect.' },
   },
 } as const
 
