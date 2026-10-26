@@ -88,8 +88,9 @@ function summariseCsv(bytes: Uint8Array, truncatedRead: boolean): { kind: string
   const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
   const lines = text.split(/\r?\n/u).filter((line) => line !== '')
   if (lines.length === 0) throw new Error('file is empty')
-  const delimiter = detectDelimiter(lines[0])
-  const columns = lines[0].split(delimiter)
+  const first = lines[0] ?? ''
+  const delimiter = detectDelimiter(first)
+  const columns = first.split(delimiter)
   const rows = lines.slice(1, 11)
   const out: string[] = []
   out.push(`delimited text: delimiter ${JSON.stringify(delimiter === '\t' ? 'tab' : delimiter)}, ${String(columns.length)} columns`)
