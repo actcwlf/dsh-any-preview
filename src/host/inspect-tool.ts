@@ -11,7 +11,7 @@
  * outside the session workspace, so this tool is only as narrow as its own
  * summary — a workspace-root check is still to be added.
  */
-import { extname } from 'node:path'
+import { extname, isAbsolute, join } from 'node:path'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
 
@@ -131,9 +131,24 @@ export function registerInspectTool(ctx: InspectContext): () => void {
           const path = args?.path
           if (typeof path !== 'string' || path === '') throw new Error('path is required')
           const signal = AbortSignal.timeout(10_000)
-          const mapped = ctx.fs.processPathFromHostPath(path)
-          if (mapped === undefined) throw new Error('path is outside the workspace')
-          const target = await ctx.fs.resolve(mapped, { signal })
+          // Absolute paths go through the host-path mapping. A relative path is
+          // handed to the fs service as-is: it is the layer that knows where the
+          // session workspace is, and it resolves workspace-relative names.
+          let target: unknown
+          if (isAbsolute(path)) {
+            const mapped = ctx.fs.processPathFromHostPath(path)
+            if (mapped === undefined) throw new Error('path is outside the workspace')
+            target = await ctx.fs.resolve(mapped, { signal })
+          } else {
+            try {
+              target = await ctx.fs.resolve(path, { signal })
+            } catch {
+              // Last resort: the application's cwd, which is what used to happen.
+              const mapped = ctx.fs.processPathFromHostPath(join(process.cwd(), path))
+              if (mapped === undefined) throw new Error('path is outside the workspace')
+              target = await ctx.fs.resolve(mapped, { signal })
+            }
+          }
           const info = await ctx.fs.stat(target, signal)
           const size = info?.size ?? 0
           const suffix = extname(path).slice(1).toLowerCase()
