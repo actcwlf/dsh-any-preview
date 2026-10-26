@@ -71,32 +71,39 @@ export function registerProbeTool(ctx: ProbeContext): () => void {
     state = { attempted: true, registered: false, error: 'host context has no inject' }
     return () => {}
   }
+  // Mirrors the proven plugin pattern: register inside the injected scope's
+  // effect, so the registration shares that scope's lifetime and disposition.
   ctx.inject(['tools'], (scope: never) => {
-    const tools = (scope as { tools: ToolsLike }).tools
-    try {
-      dispose = tools.register({
-        name: 'preview_probe',
-        description: 'Return a fixed payload. Used to check whether a plugin-registered tool is '
-          + 'reachable from the agent loop. It reads nothing and changes nothing.',
-        parameters: PARAMETERS,
-        output: {
-          schema: OUTPUT_SCHEMA,
-          render: (_args: unknown, value: unknown): unknown[] => [
-            { type: 'text', text: JSON.stringify(value) },
-          ],
-        },
-        async execute(args: { echo?: string } | undefined) {
-          return { ok: true, echo: args?.echo ?? '' }
-        },
-      })
-      state = { attempted: true, registered: true }
-    } catch (error) {
-      state = {
-        attempted: true,
-        registered: false,
-        error: error instanceof Error ? error.message : String(error),
-      }
+    const toolsCtx = scope as unknown as {
+      tools: ToolsLike
+      effect(fn: () => void, label: string): unknown
     }
+    toolsCtx.effect(() => {
+      try {
+        dispose = toolsCtx.tools.register({
+          name: 'preview_probe',
+          description: 'Return a fixed payload. Used to check whether a plugin-registered tool is '
+            + 'reachable from the agent loop. It reads nothing and changes nothing.',
+          parameters: PARAMETERS,
+          output: {
+            schema: OUTPUT_SCHEMA,
+            render: (_args: unknown, value: unknown): unknown[] => [
+              { type: 'text', text: JSON.stringify(value) },
+            ],
+          },
+          async execute(args: { echo?: string } | undefined) {
+            return { ok: true, echo: args?.echo ?? '' }
+            },
+        })
+        state = { attempted: true, registered: true }
+      } catch (error) {
+        state = {
+          attempted: true,
+          registered: false,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      }
+    }, 'any-preview: probe tool')
   })
   return () => { dispose?.() }
 }
