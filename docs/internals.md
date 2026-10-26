@@ -226,3 +226,30 @@ ctx.inject(['tools'], (toolsCtx) => {
 排查手段：把注册结果记进模块状态，并挂到一条已认证的 HTTP 路由上（我们挂在
 `/api/any-preview/asset-base` 的 `probe` 字段），在控制台一行 `fetch` 就能区分
 "没注册"与"不可见"。
+## `preview_inspect`：把解析能力交给模型
+
+工具名 `preview_inspect({ path })`，返回 `{ kind, summary, truncated }`——**给形状，不给内容**。
+`read` 负责按行给内容，二者互补；不要再用工具重复 `read` 的能力。
+
+当前支持 `.gguf`（版本 / KV / 张量表）与 `.csv/.tsv/.tab`（分隔符 / 列 / 前 10 行）。
+只读窗口：二进制 4 MB、文本 1 MB；输出有界（各 ≤ 20 项）。非支持格式直接报错。
+
+### 相对路径怎么解析（踩坑记录）
+
+`ctx.fs` **不知道**会话工作区在哪：`processPathFromHostPath('samples/x.csv')` 会拼到应用 cwd
+（profile 目录），`fs.resolve(relative)` 同样如此，契约里也没有 root 访问器。
+
+正解是接 `sandboxPolicy`（`workspace-write` 所指的那个根）：
+
+```ts
+ctx.inject?.(['sandboxPolicy'], scope => { sandbox = scope.sandboxPolicy })
+const policy = sandbox?.resolve(exec?.agent ? { session: exec.agent.session } : {})
+const cwd = policy?.workspaceRoot ?? policy?.root
+target = await ctx.fs.resolve(path, { cwd, signal })
+```
+
+`resolve` 的 `opts.cwd` 是官方支持的相对基准（`fs/fs/src/index.ts:128`）。
+
+### 验证方式
+
+**必须在新会话里测**：工具列表在会话创建时组装，旧会话不刷新。这条已经坑过一次。
