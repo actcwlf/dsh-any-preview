@@ -11,6 +11,7 @@
  */
 import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
 import { LAN_ROUTE_PATH, lanBaseUrl } from './lan-route.ts'
+import { probeSchema, probeState } from './probe-tool.ts'
 import { signLanPath } from './lan-url.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
@@ -295,6 +296,6 @@ export function registerAssetBaseRoute(ctx: MediaRouteContext): () => void {
     path: ASSET_BASE_PATH,
     methods: ['GET'],
     requestBody: 'buffered',
-    fetch: async () => Response.json({ base: lanBaseUrl() }, { headers: BASE_HEADERS }),
+    fetch: async () => Response.json({ base: lanBaseUrl(), probe: { ...probeState(), schema: probeSchema() } }, { headers: BASE_HEADERS }),
   })
 }
