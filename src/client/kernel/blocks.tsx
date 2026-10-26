@@ -4,15 +4,11 @@
  */
 import type { ReactNode } from 'react'
 
-/** One renderable block. */
-export type Block =
-  | { readonly kind: 'heading', readonly level: number, readonly text: string }
-  | { readonly kind: 'paragraph', readonly text: string }
-  | { readonly kind: 'code', readonly text: string, readonly language?: string }
-  | { readonly kind: 'list', readonly ordered: boolean, readonly items: readonly string[] }
-  | { readonly kind: 'quote', readonly text: string }
-  | { readonly kind: 'table', readonly header: readonly string[], readonly rows: readonly (readonly string[])[] }
-  | { readonly kind: 'image', readonly src: string, readonly alt: string }
+// The content model lives in shared/inspect so readers can run without React;
+// this module re-exports it for the renderers that already import it here.
+import type { Block } from '../../shared/inspect/document.ts'
+
+export type { Block }
 
 const INLINE = /(\*\*[^*\n]+\*\*|__[^_\n]+__|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\n]+\))/u
 
