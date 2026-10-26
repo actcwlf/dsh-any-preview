@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Ambient declarations for packages this plugin only consumes at runtime.
  *
  * The type check exists to catch mistakes in *this* code — an undefined
@@ -68,3 +68,5 @@ declare module 'node:events'
 declare const Buffer: any
 
 declare function requestIdleCallback(callback: () => void, options?: { timeout?: number }): number
+
+declare const process: { cwd(): string, env: Record<string, string | undefined> }
