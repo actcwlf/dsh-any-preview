@@ -12,8 +12,9 @@ import type { RouteContext } from './contracts.ts'
 
 /** Parameter schema: object root, closed, no `required` on the scalar. */
 const PARAMETERS = {
+  // Matches parameterSchemaSpecToJsonSchema exactly: the implicit parameter
+  // root is open, so no additionalProperties key.
   type: 'object',
-  additionalProperties: false,
   properties: {
     echo: { type: 'string', description: 'Any string; returned unchanged.' },
   },
