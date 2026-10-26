@@ -60,7 +60,7 @@ interface InspectContext extends RouteContext {
 }
 
 /** Render a GGUF header as a compact, bounded summary. */
-function summariseGguf(bytes: Uint8Array): { kind: string, summary: string, truncated: boolean } {
+export function summariseGguf(bytes: Uint8Array): { kind: string, summary: string, truncated: boolean } {
   const header = parseGguf(bytes)
   const kv = header.kv ?? []
   const tensors = header.tensors ?? []
@@ -76,7 +76,7 @@ function summariseGguf(bytes: Uint8Array): { kind: string, summary: string, trun
 }
 
 /** Pick the delimiter that appears most on the first line. */
-function detectDelimiter(line: string): string {
+export function detectDelimiter(line: string): string {
   const candidates = [',', '\t', ';', '|']
   let best = ','
   let bestCount = 0
@@ -88,7 +88,7 @@ function detectDelimiter(line: string): string {
 }
 
 /** Describe a delimited text file from its first bytes. */
-function summariseCsv(bytes: Uint8Array, truncatedRead: boolean): { kind: string, summary: string, truncated: boolean } {
+export function summariseCsv(bytes: Uint8Array, truncatedRead: boolean): { kind: string, summary: string, truncated: boolean } {
   const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
   const lines = text.split(/\r?\n/u).filter((line) => line !== '')
   if (lines.length === 0) throw new Error('file is empty')

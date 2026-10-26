@@ -10,7 +10,6 @@ import { registerLanRoute } from './host/lan-route.ts'
 import { createLanSecret } from './host/lan-url.ts'
 import { registerAssetBaseRoute, registerMediaRoute } from './host/media-route.ts'
 import { registerInspectTool } from './host/inspect-tool.ts'
-import { registerProbeTool } from './host/probe-tool.ts'
 import type { MediaRouteContext } from './host/media-route.ts'
 import { checkHostContracts } from './host/self-check.ts'
 import { reportContractIssues } from './shared/contracts.ts'
@@ -28,7 +27,6 @@ export function apply(ctx: HostContext): void {
   const lanSecret = createLanSecret()
   ctx.effect(() => registerMediaRoute(ctx, lanSecret), 'any-preview: media route')
   ctx.effect(() => registerAssetBaseRoute(ctx), 'any-preview: asset base route')
-  ctx.effect(() => registerProbeTool(ctx), 'any-preview: tool probe')
   ctx.effect(() => registerInspectTool(ctx), 'any-preview: inspect tool')
   ctx.effect(() => registerLanRoute(ctx, lanSecret), 'any-preview: loopback media route')
   ctx.effect(() => registerExtractRoute(ctx), 'any-preview: extract route')

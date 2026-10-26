@@ -187,3 +187,37 @@ warmableChunks()        // 需要预热的 id 列表
 
 `client/index.ts` 按 `warmableChunks()` 遍历预热，`model` 与 `ts-player` 在加载前查
 `isChunkEnabled`，因此接入配置时只需循环调用 `setChunkStrategy`，不必改预览组件。
+
+## `preview_inspect`：把解析能力交给模型
+
+工具名 `preview_inspect({ path })`，返回 `{ kind, summary, truncated }`——**给形状，不给内容**。
+`read` 负责按行给内容，二者互补，不要再用工具重复 `read` 的能力。
+
+当前支持：`.gguf`（版本 / KV / 张量表）、`.csv/.tsv/.tab`（分隔符 / 列 / 前 10 行）。
+只读窗口：二进制 4 MB、文本 1 MB；输出有界（各 ≤ 20 项）。非支持格式直接报错，不做猜测。
+
+### 相对路径怎么解析（踩坑记录）
+
+`ctx.fs` **不知道**会话工作区在哪：
+
+- `processPathFromHostPath('samples/x.csv')` 会拼到应用 cwd（profile 目录）；
+- `fs.resolve(relative)` 同样落到 cwd；
+- 契约里也没有 root 访问器。
+
+正解是接 **`sandboxPolicy`** 服务（`workspace-write` 策略所指的那个根）：
+
+```ts
+ctx.inject?.(['sandboxPolicy'], scope => { sandbox = scope.sandboxPolicy })
+
+const policy = sandbox?.resolve(exec?.agent ? { session: exec.agent.session } : {})
+const cwd = policy?.workspaceRoot ?? policy?.root
+target = await ctx.fs.resolve(path, { cwd, signal })
+```
+
+`resolve` 的 `opts.cwd` 是官方支持的相对基准（`fs/fs/src/index.ts:128`）。
+拿不到策略时不要报错，退回默认行为即可。
+
+### 验证方式
+
+**必须在新会话里测**：工具列表在会话创建时组装，旧会话不刷新。
+这条已经坑过一次——注册成功却"看不到"，原因只是会话没换。
