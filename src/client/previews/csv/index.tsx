@@ -1,4 +1,5 @@
 /** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { windowRange } from '../../kernel/window.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -158,16 +159,14 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     : ''
 
   return (
-    <div style={PANE_ROOT}>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-        padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-        borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-      }}>
+    <PreviewChrome
+      title={(
         <span>
           {t('csv.summary', { rows: view.body.length.toLocaleString('en-US'), columns: view.columns })}
           {t('csv.delimiter', { name: t(DELIMITER_LABEL[delimiterRef.current] ?? 'csv.comma') })}
         </span>
+      )}
+      toolbar={(
         <SearchBar
           options={options}
           onChange={setOptions}
@@ -179,10 +178,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           filter={filter}
           onFilter={setFilter}
         />
-        {status !== '' && (
-          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{status}</span>
-        )}
-      </div>
+      )}
+      status={status === '' ? undefined : status}
+    >
       <div
         ref={(element) => {
           scrollerRef.current = element
@@ -231,7 +229,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           </tbody>
         </table>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
