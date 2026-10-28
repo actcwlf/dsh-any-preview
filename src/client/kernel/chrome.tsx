@@ -25,15 +25,38 @@ export interface PreviewChromeProps {
   readonly children: ReactNode
 }
 
+// A narrow sidebar must not make the title and the toolbar overlap: the bar
+// wraps instead, and the title yields space first.
 const BAR = {
   display: 'flex',
   alignItems: 'center',
-  gap: 12,
+  flexWrap: 'wrap',
+  gap: 8,
+  rowGap: 6,
   padding: '6px 12px',
   fontSize: 12,
   color: 'var(--dsw-alias-label-secondary)',
   borderBottom: '1px solid var(--dsw-alias-border-l2)',
   flex: '0 0 auto',
+  minWidth: 0,
+} as const
+
+const TITLE = {
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  flex: '0 1 auto',
+} as const
+
+const TOOLBAR = {
+  flex: '1 1 auto',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  flexWrap: 'wrap',
+  gap: 8,
+  minWidth: 0,
 } as const
 
 const STATUS = {
@@ -57,8 +80,8 @@ export function PreviewChrome({ title, toolbar, status, tone = 'normal', childre
     <div style={PANE_ROOT}>
       {hasBar && (
         <div style={BAR}>
-          {title !== undefined && <span>{title}</span>}
-          <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, minWidth: 0 }}>
+          {title !== undefined && <span style={TITLE}>{title}</span>}
+          <div style={TOOLBAR}>
             {toolbar}
           </div>
         </div>
