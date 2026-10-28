@@ -1,17 +1,18 @@
-﻿/**
+/**
  * Archive listing: zip through its central directory (ranged reads when the
  * size is known, whole-file otherwise), tar and tar.gz through the whole file
  * (gzip inflate is native).
  *
  * Listing only — extracting an entry is a later step.
  */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { t } from '../../i18n.ts'
 import { errorText, PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
@@ -202,7 +203,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
   }
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <div style={barStyle}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
           <button type="button" onClick={onBack} style={backStyle}>{t('common.back')}</button>
@@ -213,7 +214,7 @@ function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack 
       <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}>
         {body}
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
@@ -310,7 +311,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   }
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <div style={barStyle}>
         <span>
           {t('archive.summary', { count: entries.length.toLocaleString('en-US'), total: formatBytes(total) })}
@@ -354,7 +355,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
           </tbody>
         </table>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
