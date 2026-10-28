@@ -72,19 +72,21 @@ const STATUS = {
  * @param props - title, toolbar, status and the body.
  * @returns the framed preview.
  */
-/** Below this width the title yields its space to the toolbar. */
-const TITLE_MIN_WIDTH = 340
-
-/** Below this width the toolbar switches to its compact form. */
-const TOOLBAR_COMPACT_WIDTH = 420
+/**
+ * One threshold for every concession: below it the title goes and the toolbar
+ * switches to its compact form. Two separate numbers produced a middle state
+ * where the title had already left but the toolbar had not yet simplified —
+ * change without visible benefit.
+ */
+const COMPACT_WIDTH = 420
 
 export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
   // shows the file name.
-  const showTitle = title !== undefined && (width === 0 || width >= TITLE_MIN_WIDTH)
-  const compact = width > 0 && width < TOOLBAR_COMPACT_WIDTH
+  const showTitle = title !== undefined && (width === 0 || width >= COMPACT_WIDTH)
+  const compact = width > 0 && width < COMPACT_WIDTH
   const hasBar = showTitle || toolbar !== undefined
   return (
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
