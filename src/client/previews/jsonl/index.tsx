@@ -1,9 +1,10 @@
-﻿/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
+/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { ACTIVE_ROW, PANE_FILL } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -49,8 +50,9 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={PANE_ROOT}>
-      <div style={barStyle}>
+    <PreviewChrome
+      title={(
+        <span>
         <span>
           {t('jsonl.records', { count: jsonl.records.length.toLocaleString('en-US') })}
           {columns.length === 0 ? t('jsonl.nonObject') : t('jsonl.fields', { count: columns.length })}
@@ -58,7 +60,11 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
             <span style={{ color: 'rgb(248, 81, 73)' }}>{t('jsonl.invalid', { count: jsonl.invalid.toLocaleString('en-US') })}</span>
           )}
         </span>
+        </span>
+      )}
+      toolbar={compact => (
         <SearchBar
+          compact={compact}
           options={options}
           onChange={setOptions}
           matches={found.matches.length}
@@ -69,12 +75,11 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
           filter={filter}
           onFilter={setFilter}
         />
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {jsonl.truncated
-            ? t('common.truncated')
-            : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : ''}
-        </span>
-      </div>
+      )}
+      status={jsonl.truncated
+        ? t('common.truncated')
+        : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : undefined}
+    >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
@@ -116,7 +121,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
           </tbody>
         </table>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
