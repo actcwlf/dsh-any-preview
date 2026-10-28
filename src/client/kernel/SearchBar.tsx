@@ -1,4 +1,5 @@
-﻿/** The shared search field: query, toggles, match navigation, optional filtering. */
+/** The shared search field: query, toggles, match navigation, optional filtering. */
+import { useState } from 'react'
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'

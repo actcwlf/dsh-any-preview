@@ -17,8 +17,8 @@ import { PANE_ROOT } from './layout.ts'
 export interface PreviewChromeProps {
   /** Name, size and format hint; omitted when the preview shows its own header. */
   readonly title?: ReactNode
-  /** Search, filters and view switches. */
-  readonly toolbar?: ReactNode
+  /** Search, filters and view switches; a function receives the compact flag. */
+  readonly toolbar?: ReactNode | ((compact: boolean) => ReactNode)
   /** One line at the bottom: row budget, truncation, errors. */
   readonly status?: ReactNode
   /** Colours the status line; `critical` for failures. */
@@ -75,12 +75,16 @@ const STATUS = {
 /** Below this width the title yields its space to the toolbar. */
 const TITLE_MIN_WIDTH = 340
 
+/** Below this width the toolbar switches to its compact form. */
+const TOOLBAR_COMPACT_WIDTH = 260
+
 export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
   // shows the file name.
   const showTitle = title !== undefined && (width === 0 || width >= TITLE_MIN_WIDTH)
+  const compact = width > 0 && width < TOOLBAR_COMPACT_WIDTH
   const hasBar = showTitle || toolbar !== undefined
   return (
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
@@ -91,7 +95,7 @@ export function PreviewChrome({ title, toolbar, status, tone = 'normal', childre
         <div style={BAR}>
           {showTitle && <span style={TITLE}>{title}</span>}
           <div style={TOOLBAR}>
-            {toolbar}
+            {typeof toolbar === 'function' ? toolbar(compact) : toolbar}
           </div>
         </div>
       )}
