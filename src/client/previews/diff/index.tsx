@@ -1,9 +1,10 @@
-﻿/** Unified diff / patch viewer with search. */
+/** Unified diff / patch viewer with search. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -62,8 +63,8 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={PANE_ROOT}>
-      <div style={barStyle}>
+    <PreviewChrome
+      title={(
         <span>
           {t('diff.rows', { count: diff.lines.length.toLocaleString('en-US') })}
           {' · '}
@@ -71,7 +72,10 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           {' '}
           <span style={{ color: 'rgb(248, 81, 73)' }}>−{diff.removed.toLocaleString('en-US')}</span>
         </span>
+      )}
+      toolbar={compact => (
         <SearchBar
+          compact={compact}
           options={options}
           onChange={setOptions}
           matches={found.matches.length}
@@ -82,10 +86,9 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           filter={filter}
           onFilter={setFilter}
         />
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {diff.truncated ? t('common.truncated') : ''}
-        </span>
-      </div>
+      )}
+      status={diff.truncated ? t('common.truncated') : undefined}
+    >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
@@ -116,7 +119,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
           ))}
         </div>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
