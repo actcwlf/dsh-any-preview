@@ -1,10 +1,11 @@
-﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import { sanitizeHtml } from '../../kernel/html.ts'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { parseNotebook } from './parse.ts'
@@ -21,7 +22,7 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
   if (notebook.cells.length === 0) return <div style={PANE_FILL}>{t('ipynb.notNotebook')}</div>
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <style>{NB_CSS}</style>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '8px 14px 24px', fontSize: 13 }} ref={scrollportRef}>
         {notebook.cells.map((cell, index) => (
@@ -55,7 +56,7 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
           </section>
         ))}
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 

@@ -1,7 +1,8 @@
-﻿/**
+/**
  * SQLite schema viewer: the file header, then every `sqlite_master` row.
  * Table contents are intentionally out of scope.
  */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -9,7 +10,7 @@ import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { Note, Summary } from '../../kernel/inspect.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import type { MessageKey } from '../../locales.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
@@ -97,7 +98,7 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
   for (const object of objects) counts.set(object.type, (counts.get(object.type) ?? 0) + 1)
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <Summary fields={[
         { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
         { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },
@@ -124,7 +125,7 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
           <Note>{t('sqlite.truncated', { pages, objects: objects.length })}</Note>
         )}
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 

@@ -1,8 +1,9 @@
-﻿/** `.eml` viewer: headers, the message text, and attachment names. */
+/** `.eml` viewer: headers, the message text, and attachment names. */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useMemo } from 'react'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { PRIMARY_HEADERS, headerLabel, parseEml } from './parse.ts'
@@ -27,7 +28,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   ]
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 14px' }} ref={scrollportRef}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, marginBottom: 14 }}>
           <tbody>
@@ -56,7 +57,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
           {mail.text === '' ? t('eml.noBody') : mail.text}
         </pre>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
