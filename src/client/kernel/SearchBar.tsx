@@ -73,6 +73,7 @@ export function SearchBar({
               aria-label={t('search.aria')}
               style={{ ...inputStyle, width: 'auto', flex: '1 1 auto', minWidth: 0 }}
             />
+            <span style={compactCount}>{`${index + 1}/${matches}`}</span>
             <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
             <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
             <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
@@ -124,11 +125,17 @@ export function SearchBar({
   )
 }
 
+const compactCount = { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, whiteSpace: 'nowrap', minWidth: 34, textAlign: 'center' } as const
+
 const compactRow = { position: 'relative', display: 'flex', alignItems: 'center' } as const
 
+// A small panel in the top-right corner, the way an editor shows find: it floats
+// over the content instead of taking a row, and never wider than the pane.
 const overlayStyle = {
-  position: 'absolute', inset: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 6,
-  background: 'var(--dsw-alias-bg-base)', paddingInline: 4,
+  position: 'absolute', top: 2, right: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 4,
+  width: 'min(320px, 100%)', padding: '4px 6px', borderRadius: 8,
+  background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-border-l2)',
+  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
 } as const
 
 const rowStyle = {
