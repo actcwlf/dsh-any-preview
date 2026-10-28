@@ -30,11 +30,11 @@ export interface SearchBarProps {
   /** Trailing content, e.g. a follow-tail toggle. */
   readonly children?: ReactNode
   /**
-   * Collapse to a single icon that opens the field as an overlay.
+   * Trim the row to what fits a narrow sidebar.
    *
-   * The sidebar can be dragged down to 12% of the dock, where a full search row
-   * cannot fit: the overlay is pinned to the bar's box, so its width never
-   * depends on its contents.
+   * The field stays **in the bar** — nothing floats. It collapses to an icon until
+   * opened, then shows only the input, two arrows and a close button. The toggles,
+   * the counter and the filter label are what make the full row about 380px wide.
    */
   readonly compact?: boolean
 }
@@ -48,38 +48,35 @@ export function SearchBar({
   const active = options.query.trim() !== ''
 
   if (compact) {
-    // The overlay anchors to the toolbar (position: relative there), not to this
-    // icon: a wrapper here would be only as wide as the button and clip it.
-    return (
-      <>
+    if (!open) {
+      return (
         <button
           type="button"
           title={t('search.aria')}
           aria-label={t('search.aria')}
-          aria-expanded={open}
+          aria-expanded={false}
           onClick={() => setOpen(true)}
           style={navStyle}
         >
           🔍
         </button>
-        {open && (
-          <div style={overlayStyle}>
-            <input
-              type="search"
-              autoFocus
-              value={options.query}
-              onChange={event => onChange({ ...options, query: event.target.value })}
-              placeholder={placeholder ?? t('search.placeholder')}
-              aria-label={t('search.aria')}
-              style={{ ...inputStyle, width: 'auto', flex: '1 1 auto', minWidth: 0 }}
-            />
-            <span style={compactCount}>{`${index + 1}/${matches}`}</span>
-            <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-            <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
-            <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
-          </div>
-        )}
-      </>
+      )
+    }
+    return (
+      <div style={compactRow}>
+        <input
+          type="search"
+          autoFocus
+          value={options.query}
+          onChange={event => onChange({ ...options, query: event.target.value })}
+          placeholder={placeholder ?? t('search.placeholder')}
+          aria-label={t('search.aria')}
+          style={{ ...inputStyle, width: 'auto', flex: '1 1 auto', minWidth: 0 }}
+        />
+        <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+        <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+        <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
+      </div>
     )
   }
 
@@ -125,17 +122,10 @@ export function SearchBar({
   )
 }
 
-const compactCount = { color: 'var(--dsw-alias-label-tertiary)', fontSize: 11, whiteSpace: 'nowrap', minWidth: 34, textAlign: 'center' } as const
-
-const compactRow = { position: 'relative', display: 'flex', alignItems: 'center' } as const
-
-// A small panel in the top-right corner, the way an editor shows find: it floats
-// over the content instead of taking a row, and never wider than the pane.
-const overlayStyle = {
-  position: 'absolute', top: 2, right: 0, zIndex: 10, display: 'flex', alignItems: 'center', gap: 4,
-  width: 'min(320px, 100%)', padding: '4px 6px', borderRadius: 8,
-  background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-border-l2)',
-  boxShadow: '0 4px 16px rgba(0, 0, 0, 0.28)',
+// The compact row must be able to shrink: `minWidth: 0` on both the row and the
+// input is what lets it fit a bar that is only ~300px wide.
+const compactRow = {
+  display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 auto', minWidth: 0,
 } as const
 
 const rowStyle = {
@@ -161,7 +151,7 @@ function toggleStyle(on: boolean) {
 const navStyle = {
   font: 'inherit', fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 4,
   cursor: 'pointer', height: 22, color: 'var(--dsw-alias-label-secondary)',
-  background: 'transparent', border: '1px solid var(--dsw-alias-border-l2)',
+  background: 'transparent', border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const countStyle = {
