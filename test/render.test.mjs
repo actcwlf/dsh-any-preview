@@ -232,3 +232,46 @@ test('jsonl body renders records as a table and flags bad lines', { skip: !avail
   assert.match(html, />name</)
   assert.match(html, /broken/)
 })
+
+/** Previews whose body cannot render without real bytes or a live resource. */
+const NEEDS_RESOURCE = new Set([
+  'dsh-any-preview/archive', 'dsh-any-preview/media', 'dsh-any-preview/glb',
+  'dsh-any-preview/gltf', 'dsh-any-preview/obj', 'dsh-any-preview/stl',
+  'dsh-any-preview/font',
+])
+
+test('every preview definition is well-formed', { skip: !available }, async () => {
+  const { definitions } = await mount()
+  const ids = new Set()
+  for (const definition of definitions) {
+    const label = String(definition.id)
+    assert.ok(!ids.has(definition.id), `duplicate id: ${label}`)
+    ids.add(definition.id)
+    assert.ok(definition.extensions.length > 0, `${label}: no extensions`)
+    assert.ok(definition.extensions.every(ext => !ext.startsWith('.')), `${label}: extension must be bare`)
+    assert.match(String(definition.title()), /\S/u, `${label}: empty title`)
+    assert.ok(['text-pages', 'bytes-complete', 'renderer'].includes(definition.loading), `${label}: unknown loading`)
+  }
+})
+
+test('every preview body renders without throwing', { skip: !available }, async () => {
+  const { seats } = await mount()
+  const failures = []
+  for (const seat of seats) {
+    const id = String(seat.entry.key)
+    if (NEEDS_RESOURCE.has(id)) continue
+    const extension = seat.entry.extensions?.[0] ?? 'txt'
+    try {
+      const html = renderToStaticMarkup(React.createElement(seat.component, {
+        content: { kind: 'text', text: 'a,b\n1,2\n', eof: true },
+        resourceAddress: `dsh-resource://file/session/s/sample.${extension}`,
+        wrap: false,
+      }))
+      assert.ok(html.length > 0, `${id}: empty markup`)
+      assert.ok(!html.includes('undefined'), `${id}: rendered undefined`)
+    } catch (error) {
+      failures.push(`${id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  assert.deepEqual(failures, [], `bodies that threw:\n${failures.join('\n')}`)
+})
