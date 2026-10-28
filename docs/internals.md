@@ -253,3 +253,57 @@ target = await ctx.fs.resolve(path, { cwd, signal })
 ### 验证方式
 
 **必须在新会话里测**：工具列表在会话创建时组装，旧会话不刷新。这条已经坑过一次。
+## 预览外壳（`PreviewChrome`）
+
+13 个文本/结构化预览共用 `src/client/kernel/chrome.tsx`，只有四块：
+
+```tsx
+<PreviewChrome
+  title={…}     // 摘要：3 行 × 5 列、GGUF v3、+8 −4
+  toolbar={…}   // 搜索等控件；也接受 (compact: boolean) => ReactNode
+  status={…}    // 一行状态：截断、上限、错误
+  tone="normal" | "critical"
+>
+  {body}
+</PreviewChrome>
+```
+
+### 四条约定
+
+1. **根节点必须用 `PANE_ROOT`**（`position: absolute; inset: 0`）。文档容器的 `.body` 可能**自己就是滚动容器**，用 `height: 100%` 会让整个外壳跟着内容滚走——顶栏消失就是因为这个。别自创等价样式。
+2. **文件名不进 `title`**：文档 tab 已经显示它，重复一遍等于在最窄的维度上放两份信息。`title` 只放"摘要"。
+3. **状态行固定在底部**，`white-space: nowrap` + 省略号：长文案不能折行顶起正文。
+4. **`toolbar` 传函数时拿到 `compact`**，由 chrome 按实测宽度决定。
+
+### 响应式：一个阈值
+
+```ts
+const COMPACT_WIDTH = 420   // chrome 自身宽度（ResizeObserver 实测）
+```
+
+| 宽度 | 标题 | 工具栏 |
+|---|---|---|
+| ≥ 420px | 显示 | 完整（搜索 + 计数 + 仅匹配） |
+| < 420px | 隐藏 | 精简（计数与"仅匹配"隐藏） |
+
+阈值**不是拍的**：完整搜索行的固定部分（输入框 150 + 两个开关 60 + 计数 48 + 箭头 60 + 标签 60）约 380px，取 420 留余量。最初设 260，结果紧凑模式永远触发不到，是死代码——**阈值要从实际布局反推**。
+
+为什么用实测而不是固定断点：侧栏最小宽度是壳层决定的（`ui-dockkit` 的 `MIN_PANE_FRACTION = 0.12`，即停靠区宽度的 12%），窗口 1024px 时只有约 123px，任何写死的像素数都对不上。
+
+### 搜索框
+
+`src/client/kernel/SearchBar.tsx`：
+
+- `Aa`、`.*` **内嵌在输入框里**（编辑器风格），不额外占顶栏宽度；
+- `Enter` 下一个命中、`Shift+Enter` 上一个、`Esc` 清空并失焦；
+- 不再显示"共 N 行"——表格里已能看到，属于冗余；
+- `compact` 时隐藏计数与"仅匹配"，搜索框与箭头保留。
+
+### 迁移方法（下次照做）
+
+不要用"整段 JSX 字面替换"——缩进稍差就静默失败或改坏。用行号：
+
+1. `grep` 出 `<div style={PANE_ROOT}>` 与末尾 `</div>`（4 空格缩进 + 下一行 `  )`）的精确行号；
+2. **从文件尾部往前改**，避免索引位移；
+3. 一个文件有多个返回分支时（`archive` 有两个），逐个 open 配对各自的 close；
+4. 改完立刻 `typecheck` + 全量测试，再提交。
