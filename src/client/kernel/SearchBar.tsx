@@ -42,7 +42,20 @@ export function SearchBar({
 }: SearchBarProps) {
   useLocale()
   const active = options.query.trim() !== ''
-
+  // Enter walks the matches the way an editor does; Esc clears and drops focus.
+  const onKeyDown = (event: any): void => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      if (event.shiftKey) onPrev()
+      else onNext()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onChange({ ...options, query: '' })
+      event.currentTarget.blur()
+    }
+  }
   return (
     <div style={compact ? compactRow : rowStyle}>
       {/* The field owns its toggles, like an editor's find box: they read as part
@@ -54,7 +67,8 @@ export function SearchBar({
           onChange={event => onChange({ ...options, query: event.target.value })}
           placeholder={placeholder ?? t('search.placeholder')}
           aria-label={t('search.aria')}
-          style={inputStyle}
+          onKeyDown={onKeyDown}
+        style={inputStyle}
         />
         <button
           type="button"
