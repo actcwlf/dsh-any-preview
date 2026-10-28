@@ -29,14 +29,57 @@ export interface SearchBarProps {
   readonly placeholder?: string
   /** Trailing content, e.g. a follow-tail toggle. */
   readonly children?: ReactNode
+  /**
+   * Collapse to a single icon that opens the field as an overlay.
+   *
+   * The sidebar can be dragged down to 12% of the dock, where a full search row
+   * cannot fit: the overlay is pinned to the bar's box, so its width never
+   * depends on its contents.
+   */
+  readonly compact?: boolean
 }
 
 export function SearchBar({
   options, onChange, matches, index, total, onPrev, onNext, filter, onFilter,
-  placeholder, children,
+  placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
+  const [open, setOpen] = useState(false)
   const active = options.query.trim() !== ''
+
+  if (compact) {
+    return (
+      <div style={compactRow}>
+        <button
+          type="button"
+          title={t('search.aria')}
+          aria-label={t('search.aria')}
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+          style={navStyle}
+        >
+          🔍
+        </button>
+        {open && (
+          <div style={overlayStyle}>
+            <input
+              type="search"
+              autoFocus
+              value={options.query}
+              onChange={event => onChange({ ...options, query: event.target.value })}
+              placeholder={placeholder ?? t('search.placeholder')}
+              aria-label={t('search.aria')}
+              style={{ ...inputStyle, width: 'auto', flex: '1 1 auto', minWidth: 0 }}
+            />
+            <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+            <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+            <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div style={rowStyle}>
       <input
@@ -78,6 +121,13 @@ export function SearchBar({
     </div>
   )
 }
+
+const compactRow = { position: 'relative', display: 'flex', alignItems: 'center' } as const
+
+const overlayStyle = {
+  position: 'absolute', inset: 0, zIndex: 5, display: 'flex', alignItems: 'center', gap: 6,
+  background: 'var(--dsw-alias-bg-base)', paddingInline: 4,
+} as const
 
 const rowStyle = {
   display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto',

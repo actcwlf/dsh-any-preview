@@ -166,8 +166,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           {t('csv.delimiter', { name: t(DELIMITER_LABEL[delimiterRef.current] ?? 'csv.comma') })}
         </span>
       )}
-      toolbar={(
+      toolbar={compact => (
         <SearchBar
+          compact={compact}
           options={options}
           onChange={setOptions}
           matches={found.matches.length}
