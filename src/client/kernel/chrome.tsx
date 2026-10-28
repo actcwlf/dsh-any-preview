@@ -10,6 +10,7 @@
  * shape is a preview with a different shape, not a parameter.
  */
 import type { ReactNode } from 'react'
+import { useElementWidth } from './useWidth.ts'
 import { PANE_ROOT } from './layout.ts'
 
 /** One preview's chrome. */
@@ -30,7 +31,7 @@ export interface PreviewChromeProps {
 const BAR = {
   display: 'flex',
   alignItems: 'center',
-  flexWrap: 'wrap',
+  flexWrap: 'nowrap',
   gap: 8,
   rowGap: 6,
   padding: '6px 12px',
@@ -54,7 +55,7 @@ const TOOLBAR = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'flex-end',
-  flexWrap: 'wrap',
+  flexWrap: 'nowrap',
   gap: 8,
   minWidth: 0,
 } as const
@@ -71,16 +72,24 @@ const STATUS = {
  * @param props - title, toolbar, status and the body.
  * @returns the framed preview.
  */
+/** Below this width the title yields its space to the toolbar. */
+const TITLE_MIN_WIDTH = 340
+
 export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
-  const hasBar = title !== undefined || toolbar !== undefined
+  const { ref, width } = useElementWidth<HTMLDivElement>()
+  // At the sidebar's minimum width there is no room for a label and a control in
+  // one line; the label is the one that can go, because the document tab already
+  // shows the file name.
+  const showTitle = title !== undefined && (width === 0 || width >= TITLE_MIN_WIDTH)
+  const hasBar = showTitle || toolbar !== undefined
   return (
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
     // does not: the owner's .body can itself be the scroller, and then the whole
     // chrome scrolls out of view with the content.
-    <div style={PANE_ROOT}>
+    <div ref={ref} style={PANE_ROOT}>
       {hasBar && (
         <div style={BAR}>
-          {title !== undefined && <span style={TITLE}>{title}</span>}
+          {showTitle && <span style={TITLE}>{title}</span>}
           <div style={TOOLBAR}>
             {toolbar}
           </div>
