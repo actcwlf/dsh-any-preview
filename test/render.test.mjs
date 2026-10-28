@@ -212,7 +212,7 @@ test('log body renders lines and a filter', { skip: !available }, async () => {
   }))
   assert.match(html, /搜索/)
   assert.match(html, /跟随尾部/)
-  assert.match(html, /3 行/)
+  // The resting line count was removed as redundant; the field stands alone.\n  assert.doesNotMatch(html, /3 行/)
   assert.match(html, /ERROR failed to bind/)
   assert.match(html, /rgb\(248, 81, 73\)/)
 })

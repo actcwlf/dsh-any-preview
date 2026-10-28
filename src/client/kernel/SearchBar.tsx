@@ -37,7 +37,7 @@ export interface SearchBarProps {
 }
 
 export function SearchBar({
-  options, onChange, matches, index, total, onPrev, onNext, filter, onFilter,
+  options, onChange, matches, index, onPrev, onNext, filter, onFilter,
   placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
@@ -83,9 +83,7 @@ export function SearchBar({
       )}
       {!compact && (
         <>
-          <span style={countStyle}>
-            {active ? `${index + 1}/${matches}` : t('search.lines', { count: total.toLocaleString('en-US') })}
-          </span>
+          {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
           <label style={labelStyle}>
             <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
             {t('search.onlyMatches')}
