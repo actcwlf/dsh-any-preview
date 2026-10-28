@@ -1,5 +1,4 @@
 /** The shared search field: query, toggles, match navigation, optional filtering. */
-import { useState } from 'react'
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
@@ -44,42 +43,30 @@ export function SearchBar({
   placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
-  const [open, setOpen] = useState(false)
   const active = options.query.trim() !== ''
 
   if (compact) {
-    if (!open) {
-      return (
-        <button
-          type="button"
-          title={t('search.aria')}
-          aria-label={t('search.aria')}
-          aria-expanded={false}
-          onClick={() => setOpen(true)}
-          style={navStyle}
-        >
-          🔍
-        </button>
-      )
-    }
+    // No toggle and no overlay: in a narrow bar the field simply is the toolbar.
+    // The arrows only matter once there is something to move between.
     return (
       <div style={compactRow}>
         <input
           type="search"
-          autoFocus
           value={options.query}
           onChange={event => onChange({ ...options, query: event.target.value })}
           placeholder={placeholder ?? t('search.placeholder')}
           aria-label={t('search.aria')}
           style={{ ...inputStyle, width: 'auto', flex: '1 1 auto', minWidth: 0 }}
         />
-        <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-        <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
-        <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
+        {active && (
+          <>
+            <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+            <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+          </>
+        )}
       </div>
     )
   }
-
   return (
     <div style={rowStyle}>
       <input
