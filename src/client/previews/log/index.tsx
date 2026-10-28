@@ -1,3 +1,4 @@
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -63,9 +64,10 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   }
 
   return (
-    <div style={PANE_ROOT}>
-      <div style={barStyle}>
+    <PreviewChrome
+      toolbar={compact => (
         <SearchBar
+          compact={compact}
           options={options}
           onChange={setOptions}
           matches={found.matches.length}
@@ -84,10 +86,9 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
             {t('log.follow')}
           </label>
         </SearchBar>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {log.truncated ? t('common.truncated') : ''}
-        </span>
-      </div>
+        )}
+        status={log.truncated ? t('common.truncated') : undefined}
+      >
       <div
           ref={setScroller}
           onScroll={() => {
@@ -123,7 +124,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           ))}
         </div>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
