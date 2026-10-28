@@ -1,4 +1,5 @@
-﻿/** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
+/** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -64,7 +65,10 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
   const shown = header.tensors.slice(0, SHOWN_TENSORS)
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome
+      title={<span>{'Safetensors · ' + t('common.tensors') + ' ' + header.tensors.length.toLocaleString('en-US')}</span>}
+      status={header.tensors.length > shown.length ? t('tensors.count', { count: header.tensors.length, shown: shown.length }) : undefined}
+    >
       <Summary fields={[
         { label: t('common.tensors'), value: header.tensors.length.toLocaleString('en-US') },
         { label: t('common.params'), value: header.totalParams.toLocaleString('en-US') },
@@ -90,12 +94,9 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
               tensor.params.toLocaleString('en-US'),
             ])}
           />
-          {header.tensors.length > shown.length && (
-            <Note>{t('tensors.count', { count: header.tensors.length, shown: shown.length })}</Note>
-          )}
         </section>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
