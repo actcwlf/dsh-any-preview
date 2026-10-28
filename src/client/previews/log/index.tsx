@@ -1,10 +1,11 @@
-﻿/** Streaming log viewer: severity colouring, search, tail follow. */
+/** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
+import { followAfterScroll, isAtBottom } from './follow.ts'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
@@ -28,6 +29,8 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [follow, setFollow] = useState(true)
+  // True once the reader unchecks follow by hand: scrolling must not undo that.
+  const manualOff = useRef(false)
   const scroller = useRef<HTMLDivElement | null>(null)
   const lines = log?.lines ?? []
   const found = useSearch(lines, options)
@@ -74,7 +77,10 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           onFilter={setFilter}
         >
           <label style={labelStyle}>
-            <input type="checkbox" checked={follow} onChange={event => setFollow(event.target.checked)} />
+            <input type="checkbox" checked={follow} onChange={event => {
+                manualOff.current = !event.target.checked
+                setFollow(event.target.checked)
+              }} />
             {t('log.follow')}
           </label>
         </SearchBar>
@@ -82,7 +88,20 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           {log.truncated ? t('common.truncated') : ''}
         </span>
       </div>
-      <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div
+          ref={setScroller}
+          onScroll={() => {
+            const element = scroller.current
+            if (element === null) return
+            const next = followAfterScroll({
+              follow,
+              manualOff: manualOff.current,
+              atBottom: isAtBottom(element.scrollTop, element.scrollHeight, element.clientHeight),
+            })
+            if (next !== follow) setFollow(next)
+          }}
+          style={{ flex: '1 1 auto', overflow: 'auto' }}
+        >
         <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div
