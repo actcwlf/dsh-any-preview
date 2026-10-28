@@ -30,8 +30,6 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [follow, setFollow] = useState(true)
-  // True once the reader unchecks follow by hand: scrolling must not undo that.
-  const manualOff = useRef(false)
   const scroller = useRef<HTMLDivElement | null>(null)
   const lines = log?.lines ?? []
   const found = useSearch(lines, options)
@@ -78,13 +76,6 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           filter={filter}
           onFilter={setFilter}
         >
-          <label style={labelStyle}>
-            <input type="checkbox" checked={follow} onChange={event => {
-                manualOff.current = !event.target.checked
-                setFollow(event.target.checked)
-              }} />
-            {t('log.follow')}
-          </label>
         </SearchBar>
         )}
         status={log.truncated ? t('common.truncated') : undefined}
@@ -96,7 +87,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
             if (element === null) return
             const next = followAfterScroll({
               follow,
-              manualOff: manualOff.current,
+              manualOff: false,
               atBottom: isAtBottom(element.scrollTop, element.scrollHeight, element.clientHeight),
             })
             if (next !== follow) setFollow(next)

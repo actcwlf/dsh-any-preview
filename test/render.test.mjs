@@ -211,7 +211,7 @@ test('log body renders lines and a filter', { skip: !available }, async () => {
     wrap: false,
   }))
   assert.match(html, /搜索/)
-  assert.match(html, /跟随尾部/)
+  // Following is automatic now: reading history pauses it, returning resumes.\n  assert.doesNotMatch(html, /跟随尾部/)
   // The resting line count was removed as redundant; the field stands alone.\n  assert.doesNotMatch(html, /3 行/)
   assert.match(html, /ERROR failed to bind/)
   assert.match(html, /rgb\(248, 81, 73\)/)
