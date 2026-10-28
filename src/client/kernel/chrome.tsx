@@ -10,6 +10,7 @@
  * shape is a preview with a different shape, not a parameter.
  */
 import type { ReactNode } from 'react'
+import { PANE_ROOT } from './layout.ts'
 
 /** One preview's chrome. */
 export interface PreviewChromeProps {
@@ -50,7 +51,10 @@ const STATUS = {
 export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const hasBar = title !== undefined || toolbar !== undefined
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+    // PANE_ROOT pins the shell to the owner's content box. A percentage height
+    // does not: the owner's .body can itself be the scroller, and then the whole
+    // chrome scrolls out of view with the content.
+    <div style={PANE_ROOT}>
       {hasBar && (
         <div style={BAR}>
           {title !== undefined && <span>{title}</span>}
