@@ -75,12 +75,8 @@ export function SearchBar({
           .*
         </button>
       </div>
-      {(active || !compact) && (
-        <>
-          <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-          <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
-        </>
-      )}
+      <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+      <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
       {!compact && (
         <>
           {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
