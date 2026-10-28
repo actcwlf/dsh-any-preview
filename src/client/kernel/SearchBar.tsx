@@ -48,8 +48,10 @@ export function SearchBar({
   const active = options.query.trim() !== ''
 
   if (compact) {
+    // The overlay anchors to the toolbar (position: relative there), not to this
+    // icon: a wrapper here would be only as wide as the button and clip it.
     return (
-      <div style={compactRow}>
+      <>
         <button
           type="button"
           title={t('search.aria')}
@@ -76,7 +78,7 @@ export function SearchBar({
             <button type="button" title={t('search.close')} aria-label={t('search.close')} onClick={() => setOpen(false)} style={navStyle}>×</button>
           </div>
         )}
-      </div>
+      </>
     )
   }
 
