@@ -1,4 +1,4 @@
-﻿/** GGUF inspector: architecture, quantization and tensor shapes of a model file. */
+/** GGUF inspector: architecture, quantization and tensor shapes of a model file. */
 import { useEffect, useState } from 'react'
 import { LIMITS } from '../../../shared/limits.ts'
 import { t } from '../../i18n.ts'
@@ -6,7 +6,8 @@ import { useLocale } from '../../useLocale.ts'
 import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { readRange } from '../../kernel/zip.ts'
@@ -83,7 +84,10 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
   const shown = header.tensors.slice(0, SHOWN_TENSORS)
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome
+      title={<span>{`GGUF v${String(header.version)}`}</span>}
+      status={header.kvCount > header.kv.length ? t('metadata.count', { count: header.kvCount, shown: header.kv.length }) : undefined}
+    >
       <Summary fields={[
         { label: t('common.version'), value: String(header.version) },
         { label: t('common.architecture'), value: kvOf(header, 'general.architecture') ?? '' },
@@ -96,9 +100,6 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
         <section style={{ marginTop: 10 }}>
           <div style={sectionTitle}>{t('common.metadata')}</div>
           <KeyValueTable entries={header.kv.map(entry => [entry.key, entry.value])} />
-          {header.kvCount > header.kv.length && (
-            <Note>{t('metadata.count', { count: header.kvCount, shown: header.kv.length })}</Note>
-          )}
         </section>
         <section style={{ marginTop: 14 }}>
           <div style={sectionTitle}>{t('common.tensors')}</div>
@@ -117,7 +118,7 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
           )}
         </section>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
