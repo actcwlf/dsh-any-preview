@@ -90,7 +90,7 @@ export function PreviewChrome({ title, toolbar, status, tone = 'normal', childre
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
     // does not: the owner's .body can itself be the scroller, and then the whole
     // chrome scrolls out of view with the content.
-    <div ref={ref} style={PANE_ROOT}>
+    <div ref={ref} style={PANE_ROOT} data-chrome-width={String(width)} data-chrome-compact={compact ? '1' : '0'}>
       {hasBar && (
         <div style={BAR}>
           {showTitle && <span style={TITLE}>{title}</span>}
