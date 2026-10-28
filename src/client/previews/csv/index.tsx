@@ -1,4 +1,5 @@
-﻿/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+import { windowRange } from '../../kernel/window.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
@@ -141,10 +142,15 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     )
   }
 
-  const total = visibleIndices.length
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
-  const last = Math.min(total, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN)
-  const windowIndices = visibleIndices.slice(first, last)
+    const total = visibleIndices.length
+    const { first, last } = windowRange({
+      scrollTop,
+      viewportHeight,
+      rowCount: total,
+      rowHeight: ROW_HEIGHT,
+      overscan: OVERSCAN,
+    })
+    const windowIndices = visibleIndices.slice(first, last)
 
   // Only a real condition is worth a label here: the row budget.
   const status = buffer.truncated
