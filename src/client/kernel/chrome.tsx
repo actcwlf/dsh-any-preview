@@ -65,6 +65,10 @@ const STATUS = {
   fontSize: 12,
   borderTop: '1px solid var(--dsw-alias-border-l2)',
   flex: '0 0 auto',
+  // One line, always: a long notice must not wrap into the body on a narrow pane.
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
 } as const
 
 /**
