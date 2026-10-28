@@ -1,8 +1,9 @@
-﻿/**
+/**
  * EPUB viewer: the book is a zip, so the container is read with the archive
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
  */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { formatBytes } from '../../kernel/format.ts'
 import { PreviewError, errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -12,7 +13,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import type { Block } from '../../kernel/blocks.tsx'
 import { fileUrl } from '../../kernel/file-url.ts'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { entryBytes, findEntry, listEntriesFromBuffer, normalizeEntryName, readEntryText } from '../../kernel/zip.ts'
@@ -158,7 +159,7 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
   const total = chapters.length
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       {css !== '' && <style>{css}</style>}
       <div style={barStyle}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto' }}>
@@ -187,7 +188,7 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
           ? <div style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('epub.noChapter')}</div>
           : <Blocks blocks={chapter.blocks} />}
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 

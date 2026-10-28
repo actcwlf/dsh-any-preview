@@ -1,9 +1,10 @@
-﻿/** Font preview: load the file into a FontFace and draw a specimen. */
+/** Font preview: load the file into a FontFace and draw a specimen. */
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useState } from 'react'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 
 /** Family name the preview owns, so it never collides with page fonts. */
@@ -55,7 +56,7 @@ export function FontBody({ content }: PreviewBodyProps) {
   }
 
   return (
-    <div style={PANE_ROOT}>
+    <PreviewChrome>
       <div style={barStyle}>
         <span>{t('font.sample')}</span>
         <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('font.loaded')}</span>
@@ -99,7 +100,7 @@ export function FontBody({ content }: PreviewBodyProps) {
           ))}
         </div>
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
