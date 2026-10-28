@@ -76,7 +76,7 @@ const STATUS = {
 const TITLE_MIN_WIDTH = 340
 
 /** Below this width the toolbar switches to its compact form. */
-const TOOLBAR_COMPACT_WIDTH = 260
+const TOOLBAR_COMPACT_WIDTH = 420
 
 export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
