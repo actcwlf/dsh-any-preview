@@ -31,6 +31,9 @@ export async function decoder(): Promise<Decoder> {
 
 /** Read one packed stream from the file. */
 function readPacked(url: string, stream: SevenZipPackStream): Promise<Uint8Array> {
+  // An empty stream (BCJ2 often has one) would ask for bytes=N-(N-1), and the
+  // route answers 416 rather than an empty body.
+  if (stream.size <= 0) return Promise.resolve(new Uint8Array())
   const start = DATA_START + stream.offset
   return readRange(url, start, start + stream.size - 1)
 }
