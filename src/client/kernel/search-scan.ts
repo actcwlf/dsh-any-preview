@@ -12,6 +12,11 @@ export interface ScanOptions {
   readonly chunk?: number
   /** Called with 0..1 after each slice. */
   readonly onProgress?: (fraction: number) => void
+  /**
+   * Called after each slice with what the scan knows so far: a reader can jump to the
+   * first hit immediately instead of waiting for the whole file.
+   */
+  readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
   readonly signal?: AbortSignal
   /** How many match lines to keep, so the reader can jump to them. */
   readonly lineLimit?: number
@@ -118,6 +123,7 @@ export async function scanText(text: string, pattern: RegExp, options: ScanOptio
     }
     offset = end
     options.onProgress?.(end / text.length)
+    options.onSlice?.(end / text.length, matches, counter.lines)
     await breathe()
   }
 

@@ -20,6 +20,11 @@ export interface SearchBarProps {
   readonly onPrev: () => void
   /** Move to the next match. */
   readonly onNext: () => void
+  /**
+   * Enter key. Previews that need an explicit step (a whole-file scan, say) take it over;
+   * without it Enter is just "next".
+   */
+  readonly onSubmit?: () => void
   /** Whether non-matching rows are hidden. */
   readonly filter: boolean
   /** Toggle filtering. */
@@ -42,16 +47,18 @@ export interface SearchBarProps {
 }
 
 export function SearchBar({
-  options, onChange, matches, index, onPrev, onNext, filter, onFilter,
+  options, onChange, matches, index, onPrev, onNext, onSubmit, filter, onFilter,
   filterable = true, placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
   const active = options.query.trim() !== ''
-  // Enter walks the matches the way an editor does; Esc clears and drops focus.
+  // Enter walks the matches the way an editor does; Esc clears and drops focus. A preview
+  // that scans on demand gets the Enter first, so typing stays cheap.
   const onKeyDown = (event: any): void => {
     if (event.key === 'Enter') {
       event.preventDefault()
       if (event.shiftKey) onPrev()
+      else if (onSubmit !== undefined) onSubmit()
       else onNext()
       return
     }

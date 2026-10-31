@@ -81,13 +81,20 @@ export interface CsvFile {
    * Slices are line-aligned, so a match that stays inside a row is never split; a match
    * across rows is found in the row it starts in. Because the walk is in order it also
    * leaves an anchor per slice behind, which is what makes a jump to a match exact.
+   *
+   * The scan starts at `from` when an anchor reaches it and wraps around to cover the
+   * rest, so a reader looking at row 1,500,000 gets a hit near them first while the
+   * count still ends up whole. Each slice reports what it found, so the first hit can be
+   * shown long before the last one.
    * @param pattern - compiled expression; global, so `lastIndex` advances.
-   * @param options - abort signal, progress callback, and how many match lines to keep.
+   * @param options - abort signal, where to start, and per-slice reporting.
    */
   scan(pattern: RegExp, options: {
     readonly signal: AbortSignal
-    readonly onProgress?: (fraction: number) => void
+    /** File row to start at; the scan wraps around to cover everything before it. */
+    readonly from?: number
     readonly lineLimit?: number
+    readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
   }): Promise<FileScan>
   /** Forget everything read so far. */
   dispose(): void
@@ -315,17 +322,33 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
     },
     async scan(pattern: RegExp, options: {
       readonly signal: AbortSignal
-      readonly onProgress?: (fraction: number) => void
+      readonly from?: number
       readonly lineLimit?: number
+      readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
     }): Promise<FileScan> {
       const counter = createLineCounter(options.lineLimit)
+      const requested = Math.max(0, options.from ?? 0)
+      // Only an anchor starts a walk: a guessed byte offset would misnumber every hit
+      // after it, which is worse than starting at the top.
+      const anchor = requested > 0 ? anchorBefore(requested) : undefined
+      const start = anchor === undefined ? { byte: 0, line: 0 } : { byte: anchor.byte, line: anchor.row }
       let matches = 0
-      let line = 0
-      let from = 0
-      for (;;) {
-        const slice = await fetchSlice(url, from, SLICE_BYTES, true, options.signal)
-        if (slice.text.length > 0) {
-          scanAnchors.push({ row: line, byte: slice.start })
+      let scanned = 0
+
+      /**
+       * Walk `[from, stop)`, reporting every hit.
+       * @param from - byte offset to start at (a row boundary).
+       * @param line - file row of that offset.
+       * @param stop - byte offset to stop before.
+       */
+      const walk = async (from: number, line: number, stop: number): Promise<void> => {
+        let offset = from
+        while (offset < stop) {
+          if (options.signal.aborted === true) return
+          const slice = await fetchSlice(url, offset, Math.max(1, Math.min(SLICE_BYTES, stop - offset)), true, options.signal)
+          if (slice.text.length === 0 || slice.end <= slice.start) return
+          const previous = scanAnchors[scanAnchors.length - 1]
+          if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: line, byte: slice.start })
           counter.nextSlice(line)
           pattern.lastIndex = 0
           for (;;) {
@@ -335,16 +358,20 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
             counter.record(slice.text, found.index)
             if (found[0].length === 0) pattern.lastIndex += 1
           }
-          line += countRows(slice.text, false)
-          scanCounted = line
+          line += countRows(slice.text, slice.eof)
+          scanCounted = Math.max(scanCounted, line)
+          scanned += slice.end - slice.start
+          options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, counter.lines)
+          if (slice.eof) return
+          offset = slice.end
+          // Yield so a search over a huge file never blocks input for long.
+          await new Promise(resolve => { setTimeout(resolve, 0) })
         }
-        options.onProgress?.(Math.min(1, slice.end / Math.max(1, slice.size)))
-        if (slice.eof || slice.end <= slice.start) break
-        from = slice.end
-        // Yield so a search over a huge file never blocks input for long.
-        await new Promise(resolve => { setTimeout(resolve, 0) })
       }
-      options.onProgress?.(1)
+
+      await walk(start.byte, start.line, size)
+      // Finish the file when the walk began in the middle of it.
+      if (start.byte > 0 && options.signal.aborted !== true) await walk(0, 0, start.byte)
       return { matches, lines: counter.lines }
     },
     dispose(): void {

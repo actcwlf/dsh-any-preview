@@ -110,10 +110,13 @@ async function mountCsv() {
  * @param {string} text - the file's contents.
  * @returns {{ bytes: number, restore: () => void }} its size, and how to undo this.
  */
-function installHost(text) {
+function installHost(text, options = {}) {
   const bytes = Buffer.from(text, 'utf8')
+  const delay = options.delay ?? 0
   const original = globalThis.fetch
   globalThis.fetch = async (input) => {
+    // A slow host lets a test stop a scan while it is still in flight.
+    if (delay > 0) await new Promise(resolve => { setTimeout(resolve, delay) })
     const url = new URL(String(input), 'http://127.0.0.1:4233/')
     if (url.pathname === '/api/any-preview/media') {
       return new Response(null, { status: 206, headers: { 'content-range': `bytes 0-0/${String(bytes.length)}` } })
@@ -437,9 +440,21 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
       input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
     })
   }
+  /** Press Enter in the search field, which is what starts a whole-file scan. */
+  const enter = async () => {
+    const input = view.container.querySelector('input[type="search"]')
+    assert.ok(input, 'the search field is mounted')
+    await act(async () => {
+      input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    })
+  }
   const nextButton = () => view.container.querySelector('button[title="下一个匹配"]')
 
   await search('user_100000')
+  // Typing alone only searches the rows in memory; the file is not walked until Enter.
+  await tick(300)
+  assert.doesNotMatch(view.container.textContent ?? '', /全文扫描/u, 'no scan before Enter')
+  await enter()
   // The scan walks the file; the row search cannot see this match at all.
   await tick(600)
   assert.match(view.container.textContent ?? '', /共 1 处匹配/u)
@@ -457,8 +472,42 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
 
   // A query that matches every row keeps the count whole and caps what is navigable.
   await search('user_')
+  await enter()
   await tick(800)
   assert.match(view.container.textContent ?? '', /共 120,000 处匹配（可跳转前 5,000 处）/u)
+})
+
+test('stopping a scan keeps the hits it had already found', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  // Each slice waits, so the stop lands while the scan is still in flight.
+  const rows = 120_000
+  const text = csvOf(rows)
+  const host = installHost(text, { delay: 80 })
+  t.after(host.restore)
+  globalThis.requestIdleCallback = () => 0
+  const view = await render(component, csvOf(5_000), { path: '/data/big.csv' })
+  t.after(view.dispose)
+  // Long enough for the (also delayed) size probe and first slice to land.
+  await tick(1_500)
+
+  const input = view.container.querySelector('input[type="search"]')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'user_70000')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  await tick(60)
+  const stop = [...view.container.querySelectorAll('button')].find(button => button.textContent === '终止扫描')
+  assert.ok(stop, 'the stop control appears while the scan runs')
+  await act(async () => { stop.click() })
+  await tick(400)
+  assert.match(view.container.textContent ?? '', /已停止扫描/u, 'the status says the scan was stopped')
+  assert.doesNotMatch(view.container.textContent ?? '', /全文扫描完成/u, 'and it is not reported as a finished scan')
+  // The search still works for the rows in memory, so the field is not wedged.
+  assert.equal(view.container.querySelector('input[type="search"]')?.value, 'user_70000')
 })
 
 test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !hugeAvailable }, async (t) => {

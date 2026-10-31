@@ -62,3 +62,41 @@ test('the line counter starts each slice at the line it is told', () => {
   counter.record('d\ne\n', 2)
   assert.deepEqual([...counter.lines], [0, 1, 3, 4])
 })
+
+test('a scan reports hits slice by slice instead of only at the end', async () => {
+  // A hit on every other line, long enough to take several slices of 1 KB.
+  const text = Array.from({ length: 800 }, (_value, index) => (index % 2 === 0 ? 'hit' : 'miss')).join('\n')
+  const seen = []
+  const result = await scanText(text, /hit/gu, {
+    chunk: 1024,
+    onSlice: (fraction, matches, lines) => seen.push({ fraction, matches, lines: [...lines] }),
+  })
+  assert.equal(result.matches, 400)
+  assert.ok(seen.length >= 3, `reported ${String(seen.length)} slices`)
+  // The first report already carries a hit, so a reader can jump before the scan ends.
+  assert.ok(seen[0].matches >= 1)
+  assert.ok(seen[0].lines.length >= 1)
+  // Counts only grow, and the last report is the whole file.
+  for (let index = 1; index < seen.length; index += 1) {
+    assert.ok(seen[index].matches >= seen[index - 1].matches)
+    assert.ok(seen[index].lines.length >= seen[index - 1].lines.length)
+  }
+  assert.equal(seen[seen.length - 1].fraction, 1)
+  assert.equal(seen[seen.length - 1].matches, 400)
+})
+
+test('a stopped scan keeps the hits it had already found', async () => {
+  const text = Array.from({ length: 2_000 }, () => 'hit\n').join('')
+  const controller = new AbortController()
+  const running = scanText(text, /hit/gu, {
+    chunk: 1024,
+    signal: controller.signal,
+    onSlice: (fraction, matches) => {
+      if (matches >= 2) controller.abort()
+    },
+  })
+  const result = await running
+  assert.equal(result.completed, false)
+  assert.ok(result.matches >= 2)
+  assert.ok(result.lines.length >= 2, 'the hits found before the stop are still there')
+})

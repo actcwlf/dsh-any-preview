@@ -58,6 +58,9 @@ const SCROLL_LIMIT_PX = 16_777_216
 /** Rows rendered above and below the viewport to cover fast scrolling. */
 const OVERSCAN = 8
 
+/** How many whole-file hits are kept reachable; the count itself is never capped. */
+const SCAN_LINE_LIMIT = 5_000
+
 /** Viewport height before the first measurement. */
 const FALLBACK_VIEWPORT = 480
 
@@ -89,14 +92,27 @@ const FAILED_FILE: FileState = { status: 'failed', revision: 0, total: 0, progre
 /** No match rows yet; a stable identity so the scan effect does not churn. */
 const NO_ROWS: readonly number[] = []
 
-/** A full-file scan: how far it got, how many matches, and where the first ones are. */
+/** One request for a whole-file search: what to look for, and from which row. */
+interface ScanRequest {
+  readonly query: string
+  /** Body row the scan starts at; it wraps around to cover the rows before it. */
+  readonly from: number
+}
+
+/** A whole-file scan: how far it got, what it found, and whether it still runs. */
 interface DeepScan {
-  /** 0..1. */
+  /** The query this scan belongs to; hits for an older query are dropped. */
+  readonly query: string
+  /** 0..1 of the file looked at. */
   readonly progress: number
-  /** Matches in the whole file, which may be more than {@link DeepScan.rows}. */
+  /** Matches seen so far, which may be more than {@link DeepScan.rows}. */
   readonly matches: number
-  /** Body rows of the first matches, in order, so the arrows can jump to them. */
+  /** Body rows of the first matches, in the order the scan met them. */
   readonly rows: readonly number[]
+  /** True when the scan reached the last slice or was stopped. */
+  readonly done: boolean
+  /** True when the reader stopped it. */
+  readonly aborted: boolean
 }
 
 /** Widen ragged rows so the grid lines up under the header. */
@@ -170,6 +186,9 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const [filter, setFilter] = useState(false)
   const [deep, setDeep] = useState<DeepScan | undefined>(undefined)
   const [deepIndex, setDeepIndex] = useState(0)
+  /** The committed whole-file search, or undefined until the reader asks for one. */
+  const [scanRequest, setScanRequest] = useState<ScanRequest | undefined>(undefined)
+  const scanAbortRef = useRef<AbortController | null>(null)
   // A file the owner has not finished handing over may be a big one, and a big one's row
   // pitch is compressed. Start on the loading line for it instead of painting the natural
   // pitch for a frame and then squeezing it.
@@ -223,10 +242,10 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const found = useSearch(texts, options)
 
   // Navigation. The row search only sees the rows loaded so far, so on a large file it
-  // can only reach matches near the top. Once the whole file has been scanned, its match
-  // rows are what the arrows walk — the scan locates them, so a hit at row 200,000 is one
-  // click away.
-  const deepRows = deep !== undefined && deep.progress >= 1 ? deep.rows : NO_ROWS
+  // can only reach matches near the top. Hits from a whole-file scan are what the arrows
+  // walk once there are any — they arrive slice by slice, so the first one is clickable
+  // long before the scan ends.
+  const deepRows = deep === undefined ? NO_ROWS : deep.rows
   const navigatingDeep = deepRows.length > 0
   const activeIndex = navigatingDeep ? Math.min(deepIndex, deepRows.length - 1) : found.index
   const activeRow = navigatingDeep ? deepRows[activeIndex] : found.activeRow
@@ -286,6 +305,32 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   // worth `pitch` rows rather than one row's height.
   const mappingPitch = geometry === undefined ? ROW_HEIGHT : geometry.pitch
   const logical = geometry === undefined ? 0 : logicalRow(scrollTop, geometry, bodyRows)
+
+  // Where a search starts: the row at the top of the viewport, so the walk begins where
+  // the reader is looking. A hit a few hundred rows away then costs one slice instead of
+  // the whole file.
+  const currentRow = Math.max(0, Math.floor(geometry === undefined ? scrollTop / ROW_HEIGHT : logical))
+
+  /** Ask for a whole-file search from the current position (Enter, or the toolbar). */
+  const startScan = (): void => {
+    const query = options.query.trim()
+    if (query === '') return
+    setDeep(undefined)
+    // A fresh request object, so asking again with the same query restarts the scan.
+    setScanRequest({ query, from: currentRow })
+  }
+
+  /** Stop the running scan; the hits already on screen stay usable. */
+  const cancelScan = (): void => {
+    scanAbortRef.current?.abort()
+    setDeep(current => (current === undefined ? current : { ...current, done: true, aborted: true }))
+  }
+
+  // Enter starts the scan; once it has hits, Enter is "next" like in an editor.
+  const commitSearch = (): void => {
+    if (navigatingDeep) nextMatch()
+    else startScan()
+  }
 
   // One window, from the file when there is one and from the delivered text otherwise.
   // The callback is read through a ref by the hook, so its identity does not matter.
@@ -470,20 +515,23 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   }, [activeRow, filter, visibleIndices, windowed, mappingPitch, geometry])
 
   // A large file cannot be searched from the parsed rows alone: the row budget keeps
-  // only its head. With a file source the whole file is scanned slice by slice; without
-  // one, the delivered text is. Either way the page stays responsive, with progress and
-  // a cancel control. Declared above the loading return so hook order never depends on
-  // the first parse.
+  // only its head. The whole-file scan is explicit (Enter or the toolbar button) and
+  // starts where the reader is looking, so a hit near them shows up in a slice or two
+  // instead of after the last byte; every slice publishes what it found, and the run can
+  // be stopped at any point without losing the hits already on screen. Declared above
+  // the loading return so hook order never depends on the first parse.
   useEffect(() => {
-    const query = options.query.trim()
-    const file = fileMode ? fileRef.current : null
-    setDeepIndex(0)
-    if (query === '' || source.kind !== 'text' || (file === null && text.length < LARGE_TEXT_CHARS)) {
+    if (scanRequest === undefined || source.kind !== 'text') {
       setDeep(undefined)
-      return
+      return undefined
     }
-    const controller = new AbortController()
-    setDeep({ progress: 0, matches: 0, rows: NO_ROWS })
+    const file = fileMode ? fileRef.current : null
+    if (file === null && text.length < LARGE_TEXT_CHARS) {
+      setDeep(undefined)
+      return undefined
+    }
+    const query = scanRequest.query
+    const from = scanRequest.from
     const flags = options.caseSensitive ? 'gu' : 'giu'
     let pattern: RegExp
     try {
@@ -491,24 +539,55 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
         ? new RegExp(query, flags)
         : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), flags)
     } catch {
+      // An unfinished regular expression is not an error the reader must see.
       setDeep(undefined)
-      return
+      return undefined
     }
-    const onProgress = (progress: number): void => {
-      setDeep(current => ({ progress, matches: current?.matches ?? 0, rows: current?.rows ?? NO_ROWS }))
+    const controller = new AbortController()
+    scanAbortRef.current = controller
+    const start: DeepScan = { query, progress: 0, matches: 0, rows: NO_ROWS, done: false, aborted: false }
+    setDeep(start)
+    setDeepIndex(0)
+    /** Take one slice's worth of news without waiting for the rest. */
+    const report = (progress: number, matches: number, lines: readonly number[]): void => {
+      setDeep(current => {
+        if (current === undefined) return current
+        // Line 0 is the header, so a match's body row is one less; a header hit has none.
+        const rows: number[] = []
+        for (const line of lines) if (line > 0) rows.push(line - 1)
+        return { ...current, progress, matches, rows }
+      })
     }
     const scan = file !== null
-      ? file.scan(pattern, { signal: controller.signal, onProgress })
-      : scanText(text, pattern, { signal: controller.signal, onProgress })
+      ? file.scan(pattern, {
+        signal: controller.signal,
+        // Body row -> file row: the walk needs the header counted in.
+        from: from + 1,
+        lineLimit: SCAN_LINE_LIMIT,
+        onSlice: report,
+      })
+      : scanText(text, pattern, { signal: controller.signal, lineLimit: SCAN_LINE_LIMIT, onSlice: report })
     void scan.then((result) => {
       if (controller.signal.aborted) return
-      // Line 0 is the header, so a match's body row is one less; a header hit has none.
-      const rows: number[] = []
-      for (const line of result.lines) if (line > 0) rows.push(line - 1)
-      setDeep({ progress: 1, matches: result.matches, rows })
-    }).catch(() => { /* aborted, or the file went away */ })
+      setDeep(current => {
+        if (current === undefined) return current
+        const rows: number[] = []
+        for (const line of result.lines) if (line > 0) rows.push(line - 1)
+        return { ...current, progress: 1, matches: result.matches, rows, done: true }
+      })
+    }).catch(() => { /* stopped, or the file went away */ })
     return () => { controller.abort() }
-  }, [options.query, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
+  }, [scanRequest, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
+
+  // Editing the query drops hits that belong to the old one: they would highlight and
+  // jump to rows the reader is no longer looking for.
+  useEffect(() => {
+    if (scanRequest === undefined) return
+    if (scanRequest.query !== options.query.trim()) {
+      setScanRequest(undefined)
+      setDeep(undefined)
+    }
+  }, [options.query, scanRequest])
 
   if (buffer === null || view === null) {
     const empty = source.kind === 'text' && eof && text.length === 0
@@ -562,19 +641,20 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   // A window read past the built index has real rows but estimated numbers.
   const estimated = windowed && !win.exact
 
-  // Aborting drops the progress line; the rows already highlighted stay.
-  const cancelScan = (): void => { setDeep(undefined) }
-
   // Only a real condition is worth a label here: a line past the cap, the row budget of
   // the non-windowed path, or the background walk that will make the row count exact.
+  // While a scan runs, the count is what it has found *so far*; it becomes the total only
+  // when the scan reaches the end.
   const status = deep !== undefined
-    ? (deep.progress >= 1
-        ? (deep.rows.length > 0 && deep.rows.length < deep.matches
-          ? t('csv.scanDoneCapped', {
-            count: deep.matches.toLocaleString('en-US'),
-            shown: deep.rows.length.toLocaleString('en-US'),
-          })
-          : t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') }))
+    ? (deep.done
+        ? (deep.aborted
+          ? t('csv.scanStopped', { count: deep.matches.toLocaleString('en-US') })
+          : deep.rows.length > 0 && deep.rows.length < deep.matches
+            ? t('csv.scanDoneCapped', {
+              count: deep.matches.toLocaleString('en-US'),
+              shown: deep.rows.length.toLocaleString('en-US'),
+            })
+            : t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') }))
         : t('csv.scanProgress', { percent: Math.round(deep.progress * 100), count: deep.matches.toLocaleString('en-US') }))
     : buffer.overlong || win.overlong
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
@@ -602,11 +682,17 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
           total={dataRows}
           onPrev={prevMatch}
           onNext={nextMatch}
+          onSubmit={commitSearch}
           filter={filter}
           onFilter={setFilter}
           filterable={!windowed}
-          children={deep === undefined || deep.progress >= 1 ? undefined : (<button type="button" onClick={cancelScan} style={cancelStyle}>{t('csv.cancelScan')}</button>)}
-        />
+        >
+          {deep !== undefined && !deep.done
+            ? (<button type="button" onClick={cancelScan} style={cancelStyle}>{t('csv.cancelScan')}</button>)
+            : (!compact && windowed && options.query.trim() !== ''
+              ? (<button type="button" title={t('csv.scanFile')} onClick={startScan} style={cancelStyle}>{t('csv.scanFile')}</button>)
+              : undefined)}
+        </SearchBar>
       )}
       status={status === '' ? undefined : status}
     >
