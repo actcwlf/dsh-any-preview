@@ -290,3 +290,42 @@ test('csv body renders a header and its rows', async () => {
   assert.match(html, /beta/u)
   assert.match(html, /2 行/u, 'the summary counts data rows')
 })
+
+/** A CSV of `rows` data rows, with the header first and no trailing newline. */
+function csvOf(rows) {
+  const lines = ['id,name,note']
+  for (let i = 1; i <= rows; i++) lines.push(`${i},user_${i},note ${i}`)
+  return lines.join('\n')
+}
+
+test('csv body counts every row of a file past the row budget', async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')
+  // Under two megabytes, but well past the 20,000 rows the buffer holds: the row
+  // budget is no longer a cap on what the table knows about.
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text: csvOf(25_000), eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/medium.csv',
+    wrap: false,
+  }))
+  assert.match(html, /25,000 行 × 3 列/u)
+  assert.match(html, />id</u)
+})
+
+test('csv body windows a large file instead of truncating it', async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')
+  const text = csvOf(120_000)
+  assert.ok(text.length > 2 * 1024 * 1024, 'the fixture is past the windowing threshold')
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text, eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/huge.csv',
+    wrap: false,
+  }))
+  // The header and the full row count are known before any window is read; the rows
+  // themselves are placeholders until the first window arrives.
+  assert.match(html, /120,000 行 × 3 列/u)
+  assert.match(html, />id</u)
+  assert.doesNotMatch(html, /data-row-index/u, 'no window is read during the first render')
+  assert.match(html, /height:\s*22px/u, 'placeholder rows keep the row height')
+})

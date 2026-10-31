@@ -1,7 +1,7 @@
 # 交接：CSV 大文件窗口化渲染
 
-> 分支 `feature/csv-stream-search`，共 6 个提交，238 项测试全绿。
-> 剩余工作只有一步：把已有的窗口模块接进 `src/client/previews/csv/index.tsx`。
+> 分支 `feature/csv-stream-search`。窗口模块 6 个提交 + **接线（已完成，见 §10）**；
+> 全量测试 259 项全绿，其中新增 jsdom 挂载测试与 22 MB `huge.csv` 夹具验证。
 
 ## 1. 背景与目标
 
@@ -62,7 +62,7 @@ useWindowedRows({ text, index, delimiter, scrollTop, viewportHeight, totalRows, 
                   windowSize?, settleMs? }): { startRow, rows, loading }
 ```
 
-## 4. 剩余工作：接线（预计 40 行改动）
+## 4. 接线（已完成，实际差异见 §10）
 
 文件：`src/client/previews/csv/index.tsx`（当前约 300 行）。
 
@@ -86,7 +86,7 @@ useWindowedRows({ text, index, delimiter, scrollTop, viewportHeight, totalRows, 
 9. **过滤与窗口的交互**：windowed 模式下**先不要支持 filter**（保持搜索高亮即可），或过滤时回退到非窗口模式——两者都要写注释说明；
 10. **删除 20,000 上限**：接线完成且验证通过后，把 `MAX_ROWS` 改为只用于非窗口模式的兜底，并更新 `csv.truncated` 文案语义。
 
-## 5. 必须验证的点
+## 5. 验证结果（已完成，明细见 §10）
 
 | 场景 | 期望 |
 |---|---|
@@ -125,10 +125,69 @@ git switch feature/csv-stream-search
 git log --oneline master..HEAD
 ```
 
-6 个提交均已通过全量测试。接线完成、`huge.csv` 验证通过后再合并回 master。
+接线已完成、`huge.csv` 验证通过（§10），可以合并回 master。
 
 ## 9. 相关但独立的事项
 
-- `samples/huge.csv`（21.8 MB，300,001 行）是本地验证夹具，**未提交**；需要时用 `tmp-7z/gen-csv.mjs` 重新生成；
+- `samples/huge.csv`（22.8 MB，300,001 行）是本地验证夹具，**未提交**；需要时用 `tmp-7z/gen-csv.mjs` 重新生成。
+  `test/csv-window-dom.test.mjs` 在文件存在时会跑第 20 万行的用例，否则跳过（`DSH_HUGE_CSV` 可指定别的路径）；
 - 7z 相关能力（BCJ/BCJ2/流式解压）已在 master，与本分支无关；
-- `docs/internals.md` 已有"预览外壳""7z""压缩包 UI"三节，CSV 窗口化完成后建议补一节。
+- `docs/internals.md` 已补「CSV 窗口化」一节。
+
+## 10. 接线完成（本次）
+
+### 改了哪些文件
+
+| 文件 | 改动 |
+|---|---|
+| `previews/csv/index.tsx` | 索引累积、窗口化判定、调 hook、按文件行号画行、上下撑高、共享一套渲染 |
+| `kernel/csv-window-state.ts` | `planWindow` 修正覆盖范围；新增 `windowedBodyRows`、`scaledRowHeight` |
+| `kernel/csv-window.ts` | 末尾无换行的最后一行算一行；可选行宽上限；返回 `overlong` |
+| `kernel/useWindowedRows.ts` | 文本变长时缓存失效；读窗口带行宽上限；加载态不再生成 5 000 个占位数组 |
+| `kernel/csv-index.ts` | `scanned` 之前返回永远为 0 的 `offset`，改为已消费的字符数 |
+| `kernel/SearchBar.tsx` | 新增 `filterable?`，窗口化时隐藏「仅匹配」 |
+| `test/*` | 新增/扩充 `csv-index`、`csv-window`、`csv-window-state`、`render`、`csv-window-dom` |
+| `docs/internals.md` | 新增「CSV 窗口化」 |
+
+### 与 §4 的差异（都是刻意的）
+
+1. **判定不只按 2 MB**：`text.length > 2MB || buffer.truncated`。行缓冲被行数上限截断时也是
+   "大文件"，否则 1.9 MB / 10 万行的文件仍会被 20 000 行上限截断——那正是要取消的限制。
+2. **不实现 §4.8 的「精确/估算切换」**：`index.push()` 同步扫描每一页，所以
+   `estimateRows(text.length)` 对已到文本**已经是精确值**；EOF 时唯一的差别是末行没有换行符
+   时的 +1 行。没有"估算 → 精确"的跳变，就无需等 3 屏拖动再切换。若将来把索引改成空闲增量扫描，
+   这段规则要按原样补回来（`index.tsx` 里留了注释）。
+3. **窗口化时不支持过滤**（保留搜索高亮），并直接隐藏「仅匹配」控件。
+4. **一次读整个窗口 + 下沿带**：原 `planWindow` 按视口大小给 `count`，而缓存以窗口号为键，
+   于是"短窗口"被缓存后，在同一窗口内滚动会是一片空白（§5 的"拖动后内容出现"根本过不了）。
+   现在 `count = 窗口大小 + 视口行数 + overscan`，缓存命中即可覆盖整个窗口。
+5. **只画视口那一屏**：窗口是读/缓存单位，DOM 仍只有约 40 个 `<tr>`；`placeholderRows` 因此删除。
+
+### 验证结果（`test/csv-window-dom.test.mjs`，真实 DOM 挂载）
+
+| 场景 | 结果 |
+|---|---|
+| 小文件（3 行） | 首帧即出行，不过窗口路径，过滤控件仍在 |
+| 12 万行 | 首帧只有表头 + 占位；200 ms 后出行；拖动时立刻退回占位；拖回来命中缓存立即出内容 |
+| 行号 | body 行 `i` 显示 `i+1`，表头不重复出现 |
+| 撑高 | 上撑高 + 所画行 + 下撑高 = `(总行数-1) × 行高`（12 万行 / 30 万行都验过） |
+| 22.8 MB `huge.csv` | 摘要 300,000 行；跳到第 20 万行后显示 `200001`、`user_200001`；总高 6 600 000 px |
+
+未验的部分（需要真浏览器）：滚动条外观、>76 万行时行高缩放的观感、拖动手感。
+`scaledRowHeight` 只有单测覆盖。
+
+### 翻页机制（重要，之前没写进文档）
+
+插件正文拿不到 `loadPage`，翻页靠 owner：`TextPreview` 在 `.body` 上挂 `onScrollCapture`，
+当**自定义滚动容器**（`scrollportRef`）滚到底时请求下一页。所以：
+
+- 表格高度必须精确等于已加载行数 × 行高（§「撑高」那条），否则滚不到底、翻不了页；
+- 每加载一页 5 000 行，滚动条变长，用户要再拖到底才会加载下一页；
+- 页面仍只在需要时加载，不会因为窗口化就一次性把 22 MB 读进内存。
+
+## 11. 尚未做（可选项）
+
+- `LIMITS.csvRows` 仍叫"行数上限"，现在只是缓冲预算；改名要同步 `internals.md`；
+- 深搜在文本变长时会重头扫描（`text.length` 是依赖），翻页 + 搜索同时进行会反复重置进度；
+- 文件重新加载（`reload`）时 `consumedRef` / 索引按"只增不减"处理，依赖 owner 卸载组件来复位。
+

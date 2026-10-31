@@ -29,10 +29,14 @@ dsh-any-preview/
     │   ├── source.ts        # 三种 content 模式 → 统一 PreviewSource
     │   ├── stream.ts        # useStreamedText：把增量文本喂给有状态消费者
     │   ├── lines.ts         # 增量行切分（CRLF、跨块）
-    │   └── text-pipeline.ts # 增量分隔符解析 + 有界行缓冲
+    │   ├── text-pipeline.ts # 增量分隔符解析 + 有界行缓冲
+    │   ├── csv-index.ts     # 稀疏行索引：每 N 行一个锚点
+    │   ├── csv-window.ts    # 从最近的锚点读一段行
+    │   ├── csv-window-state.ts # 窗口算术：读哪段、画哪些行、行高缩放
+    │   └── useWindowedRows.ts  # 静止后读窗口的 hook（含 LRU）
     └── previews/
         ├── index.ts     # ★ PREVIEWS 数组：唯一的注册清单
-        ├── csv/         # 流式表格（虚拟滚动）
+        ├── csv/         # 流式表格（虚拟滚动；大文件用窗口）
         ├── diff/        # 统一 diff 分类与渲染
         ├── log/         # 日志级别着色、过滤、尾部跟随
         ├── jsonl/       # 逐行 JSON：字段表格 + 坏行标出
@@ -72,11 +76,41 @@ Body 不直接读 owner 的 `content`，而是经 `kernel/source.ts` 归一化�
 ## 大文件
 
 `text-pages` 是**累积**文本，每来一页只解析新增的后缀（`kernel/stream.ts` +
-`kernel/text-pipeline.ts`），避免整段重解析的 O(n²)；行缓冲有上限（默认 20 000 行），
-到顶后停止累积并提示「已截断」。
+`kernel/text-pipeline.ts`），避免整段重解析的 O(n²)。行缓冲仍以 `LIMITS.csvRows`
+（20 000 行）为上限，但 CSV 表格早已越过它（见下），行数不再有上限。
 
 CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内的行，上下用撑高的空行维持
 滚动条长度。
+
+### CSV 窗口化（`kernel/csv-*`、`kernel/useWindowedRows.ts`）
+
+文本超过 2 MB、或行缓冲被行数上限截断时，表格改为「稀疏索引 + 窗口」：
+
+| 模块 | 作用 |
+|---|---|
+| `csv-index.ts` | 稀疏行索引：每 10 000 行一个锚点，引号感知，只扫描新增后缀 |
+| `csv-window.ts` | 按锚点读窗口：定位 → 跳过 → 解析切片；末尾没有换行的最后一行也算一行 |
+| `csv-window-state.ts` | 纯算术：`planWindow`（读哪一段）、`windowedBodyRows`（画哪些行 + 上下撑高）、`scaledRowHeight` |
+| `useWindowedRows.ts` | T1 占位 / T2 静止 200 ms 后读；按窗口号缓存（LRU，32 窗口 / 160 000 行） |
+
+要点：
+
+- **一屏的 DOM**：窗口是**读/缓存单位**（5 000 行），表格仍只挂视口那一屏（+8 行 overscan），
+  上下用撑高的 `<tr>` 维持整文件长度——300 000 行的表也只挂四十来个 `<tr>`；
+- **一次读要够长**：缓存按窗口号，所以一次读必须覆盖整个窗口**和**视口可能越过的下沿带
+  （`windowSize + 视口行数 + overscan`）。只按视口大小读会把"短窗口"缓存下来，之后在同一
+  窗口里滚动就是一片空白——这是第一版 `planWindow` 的 bug；
+- **行号 = 文件行号**：文件 row 0 是表头（表格自己画一次），所以 body 行 `i` 是文件行 `i+1`；
+  `windowedBodyRows` 负责这个 +1 换算，并保证「上撑高 + 所画行 + 下撑高 = (总行数-1) × 行高」；
+- **超过约 76 万行**（16 777 216 px）行高按比例缩小，滚动条仍按真实行数比例、文件末尾可达；
+- **窗口化时没有过滤**（`SearchBar filterable={false}`）：一屏的行代表不了整份文件，藏起控件
+  比"只过滤看得见的部分"诚实；搜索仍高亮，>2 MB 时状态行给全文扫描进度与命中总数；
+- **翻页由 owner 驱动**：表格自己的滚动条滚到底时，owner 通过 `scrollportRef` 认为正文到底，
+  请求下一页文本；新页到达后 `index.push` 只扫新增后缀，窗口缓存因文本变长而失效并重读。
+
+已知边界：行缓冲的「已截断」提示因此不再出现（截断必然切换到窗口化）；`csv.truncated`
+只作为非窗口路径的兜底文案保留。
+
 
 ## 搜索
 
@@ -138,8 +172,13 @@ npm test
   日志级别与预算、JSONL 解析与列发现
 - `test/route.test.mjs`：假文件系统上跑 `serveMedia`，覆盖 200/206/416/HEAD/404/422
 - `test/media-decision.test.mjs`：Blob 兜底的触发条件与上限
+- `test/csv-index.test.mjs` / `test/csv-window.test.mjs` / `test/csv-window-state.test.mjs`：
+  稀疏索引的锚点与估算、窗口读取与整串解析逐行一致、窗口算术（读哪一段、画哪些行、撑高、
+  行高缩放）
+- `test/csv-window-dom.test.mjs`：用 jsdom 真正挂载 CSV 正文，验证「首屏占位 → 静止后出内容
+  → 拖动时只出占位 → 拖回来命中缓存」；机器上有 `samples/huge.csv` 时还会跑到第 20 万行
 - `test/render.test.mjs`：按浏览器方式加载 `lib/client.js`，用真实 React 做 SSR，
-  校验每个格式的注册元数据与渲染输出
+  校验每个格式的注册元数据与渲染输出（含 >2 MB 文件的首屏行数与占位）
 
 渲染测试需要 DSH checkout 提供 React，可用 `DSH_REPO` 覆盖默认路径。
 
