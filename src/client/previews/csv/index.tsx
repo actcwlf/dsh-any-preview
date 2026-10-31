@@ -14,11 +14,20 @@ import { previewSourceOf } from '../../kernel/source.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
+import { scanText } from '../../kernel/search-scan.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
 import { DELIMITER_LABEL, detectDelimiter } from './detect.ts'
 
 /** Row budget: beyond this the view stops accumulating and says so. */
 const MAX_ROWS = LIMITS.csvRows
+
+/** Text longer than this is scanned in the background instead of from the loaded rows. */
+const LARGE_TEXT_CHARS = 2 * 1024 * 1024
+const cancelStyle = {
+  font: 'inherit', fontSize: 11, padding: '0 6px', height: 22, borderRadius: 4, cursor: 'pointer',
+  color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
+  border: '1px solid var(--dsw-alias-border-l2)',
+} as const
 
 /** Fixed row height the windowing math relies on. */
 const ROW_HEIGHT = 22
@@ -57,6 +66,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
+  const [deep, setDeep] = useState<{ progress: number, matches: number } | undefined>(undefined)
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -153,8 +163,44 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     })
     const windowIndices = visibleIndices.slice(first, last)
 
+  // A large file cannot be searched from the loaded rows alone: the row budget keeps
+  // only its head. The full text is scanned in slices so the page stays responsive,
+  // with progress and a cancel control because that scan can take a while.
+  useEffect(() => {
+    const query = options.query.trim()
+    if (query === '' || source.kind !== 'text' || text.length < LARGE_TEXT_CHARS) {
+      setDeep(undefined)
+      return
+    }
+    const controller = new AbortController()
+    setDeep({ progress: 0, matches: 0 })
+    const flags = options.caseSensitive ? 'gu' : 'giu'
+    let pattern: RegExp
+    try {
+      pattern = options.regex
+        ? new RegExp(query, flags)
+        : new RegExp(query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), flags)
+    } catch {
+      setDeep(undefined)
+      return
+    }
+    void scanText(text, pattern, {
+      signal: controller.signal,
+      onProgress: progress => setDeep(current => ({ progress, matches: current?.matches ?? 0 })),
+    }).then((result) => {
+      if (!controller.signal.aborted) setDeep({ progress: 1, matches: result.matches })
+    }).catch(() => { /* aborted */ })
+    return () => { controller.abort() }
+  }, [options.query, options.regex, options.caseSensitive, text.length, source.kind])
+
+  const cancelScan = (): void => { setDeep(undefined) }
+
   // Only a real condition is worth a label here: the row budget.
-  const status = buffer.overlong
+  const status = deep !== undefined
+    ? (deep.progress >= 1
+        ? t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') })
+        : t('csv.scanProgress', { percent: Math.round(deep.progress * 100), count: deep.matches.toLocaleString('en-US') }))
+    : buffer.overlong
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
     : buffer.truncated
     ? t('csv.truncated', { limit: MAX_ROWS.toLocaleString('en-US') })
@@ -180,6 +226,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
           onNext={found.next}
           filter={filter}
           onFilter={setFilter}
+          children={deep === undefined || deep.progress >= 1 ? undefined : (<button type="button" onClick={cancelScan} style={cancelStyle}>{t('csv.cancelScan')}</button>)}
         />
       )}
       status={status === '' ? undefined : status}
