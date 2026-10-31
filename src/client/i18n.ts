@@ -86,7 +86,12 @@ function interpolate(template: string, params?: Readonly<Record<string, string |
  * @returns the localized text.
  */
 export function t(key: MessageKey, params?: Readonly<Record<string, string | number>>): string {
-  if (bound !== undefined) return bound(key, params)
+    if (bound !== undefined) {
+      const translated = bound(key, params)
+      // The shell registers its dictionary once per app run, so a key added by a
+      // plugin update is unknown until restart; the bundled table must answer then.
+      if (translated !== key) return translated
+    }
   const table = locale === 'en' ? en : zh
   return interpolate(table[key] ?? zh[key] ?? key, params)
 }
