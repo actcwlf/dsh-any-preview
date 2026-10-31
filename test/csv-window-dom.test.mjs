@@ -62,15 +62,12 @@ async function mountCsv() {
     configurable: true,
     get() { return 480 },
   })
-  for (const key of [
-    'window', 'document', 'HTMLElement', 'Element', 'Node', 'Event', 'MutationObserver',
-    'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame', 'IS_REACT_ACT_ENVIRONMENT',
-  ]) {
-    if (key === 'window') globalThis.window = window
-    else if (key === 'document') globalThis.document = window.document
-    else if (key === 'IS_REACT_ACT_ENVIRONMENT') globalThis.IS_REACT_ACT_ENVIRONMENT = true
-    else globalThis[key] = window[key]
+  for (const key of ['HTMLElement', 'Element', 'Node', 'Event', 'MutationObserver', 'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame']) {
+    globalThis[key] = window[key]
   }
+  globalThis.window = window
+  globalThis.document = window.document
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true
   // Warming the 3D chunk is a browser-only concern; keep it out of the test's timer queue.
   globalThis.requestIdleCallback = () => 0
 
