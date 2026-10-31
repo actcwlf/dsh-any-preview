@@ -459,7 +459,19 @@ function parseFilesInfo(reader: Reader, folders: readonly SevenZipFolder[]): Sev
   return entries
 }
 
-/** CRC32 helper, so a caller can verify the start header. */
+
+/**
+ * Parse a kEncodedHeader payload: the same streams info a normal header carries,
+ * describing one packed stream that decodes to the real header.
+ */
+export function parseEncodedHeader(bytes: Uint8Array): {
+  folders: SevenZipFolder[]
+  packStreams: SevenZipPackStream[]
+} | undefined {
+  const reader = new Reader(bytes)
+  if (reader.byte() !== ID.encodedHeader) return undefined
+  return parseStreamsInfo(reader)
+}/** CRC32 helper, so a caller can verify the start header. */
 export function crc32Of(bytes: Uint8Array): number {
   return crc32(bytes)
 }
