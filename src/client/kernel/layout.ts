@@ -15,9 +15,10 @@ export const PANE_ROOT: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
-  // The host's document surface, not the app's base: a pane painted on `bg-base` reads
-  // one step brighter than the preview it sits in.
-  background: 'var(--dsw-alias-bg-document-preview)',
+  // Transparent on purpose: the host's own preview leaves its header on the pane surface
+  // and tints only the scrolling body (`bg-document-preview`). Painting the whole pane
+  // tinted turns the toolbar grey and reads as a block pasted into the app.
+  background: 'transparent',
 }
 
 /** A centred placeholder that fills the same box. */
@@ -27,6 +28,11 @@ export const PANE_FILL: CSSProperties = {  position: 'absolute',
   placeItems: 'center',
   fontSize: 12,
   color: 'var(--dsw-alias-label-secondary)',
+  background: 'var(--dsw-alias-bg-document-preview)',
+}
+
+/** The scrolling body's surface: the host's document tint, not the app's base white. */
+export const DOCUMENT_BODY: CSSProperties = {
   background: 'var(--dsw-alias-bg-document-preview)',
 }
 

@@ -4,7 +4,7 @@ import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { PANE_FILL } from '../../kernel/layout.ts'
+import { DOCUMENT_BODY, PANE_FILL } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -89,7 +89,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
       )}
       status={diff.truncated ? t('common.truncated') : undefined}
     >
-      <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
+      <div ref={setScroller} style={{ ...DOCUMENT_BODY, flex: '1 1 auto', overflow: 'auto' }}>
         <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div

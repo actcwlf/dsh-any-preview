@@ -1,11 +1,11 @@
-/**
+﻿/**
  * The table itself: a scroller holding either the exact rows or the pinned window, with
  * the header, the row numbers and the highlight. No state beyond the row box lives here.
  */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { Marked } from '../../kernel/marks.tsx'
-import { ACTIVE_ROW } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, DOCUMENT_BODY } from '../../kernel/layout.ts'
 import { toFileRow } from '../../kernel/row-numbering.ts'
 import type { ProportionalGeometry, WindowedBody } from '../../kernel/window-state.ts'
 
@@ -55,7 +55,7 @@ export function CsvTable(props: CsvTableProps) {
       onScroll={event => onScroll(event.currentTarget.scrollTop)}
       // The pinned table changes under the browser's scroll anchoring; it must not
       // "correct" our offset behind our back.
-      style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
+      style={{ ...DOCUMENT_BODY, flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
     >
       <div style={content}>
         <div style={pinnedBlock}>
