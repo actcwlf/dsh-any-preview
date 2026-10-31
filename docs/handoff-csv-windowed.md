@@ -1,4 +1,4 @@
-# 交接：CSV 大文件窗口化渲染
+﻿# 交接：CSV 大文件窗口化渲染
 
 > 分支 `feature/csv-stream-search`。窗口模块 6 个提交 + **接线（§10）** + **文件源（§12）**；
 > 全量测试 274 项全绿，其中新增 jsdom 挂载测试（含 22 MB `huge.csv` 夹具）与文本切片路由测试。
@@ -500,6 +500,28 @@ delimited text · 8 columns · delimiter "," · ~2,032,730 rows
 跨窗口的方言检查也修掉了一个隐患：拼接出来的 CSV 可能在中途换成分号，旧实现只看第一行。
 
 
+## 18. 与 DSH 视觉对齐的第一轮（纯样式）
 
+对照宿主的 token 体系（`packages/client/ui-theme/src/styles/{base,design-platform}.css`）与它自己的
+文档预览（`ui-sidebar-documentpreview/src/client/TextPreview.module.css`）审了一遍，结论是"骨架对、
+细节另起一套"。第一轮只改样式，不动交互：
 
+| 项 | 之前 | 现在 | 依据 |
+|---|---|---|---|
+| 代码字体 | `font-family: var(--dsw-font-markdown-code-block, monospace)`（该 token 是**简写** `11px/19px …`，赋给 font-family 后整条声明作废 → 落到继承字体，很可能根本不是等宽） | `var(--ds-font-family-code, ui-monospace, monospace)`，8 处 | base.css 里定义的就是 `--ds-font-family-code` |
+| 面板底色 | `--dsw-alias-bg-base`（比文档面板亮一档） | `--dsw-alias-bg-document-preview` | 宿主自己的预览面就是它 |
+| 命中行 | 硬编码 `rgba(255,196,0,.14)` | `color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent)` | 走 warn 语义，深色翻转 |
+| 高亮标记 | 硬编码 `rgb(255,196,0)` + `#1a1a1a` | `state-warn-secondary` + `--dsw-static-neutral-1000`（琥珀在两种主题下都很亮，所以字用不翻转的墨色） | 同上 |
+| diff ± / log 级别 / jsonl 坏行 / 空状态 | 6 处 GitHub 色系 `rgb(...)` | `state-success-primary` / `state-error-primary` / `state-warn-label` / `state-business-primary` | 宿主有整套 state token |
+| 分隔线 | 全项目 33 处 `1px solid` | `0.5px solid`（宿主文档面是 hairline） | TextPreview 的 `border-bottom: 0.5px` |
+| 圆角 | 搜索框 6px、按钮 4px | `var(--dsw-radius-sm)` / `var(--dsw-radius-xs)` | 阶梯是 4/8/12/16/20/28 |
+| 表头 | 5px padding + 26.5px | 6px padding + 15px 行高 = 27.5px，几何预算按 28 | 与 22px 行高成偶数节奏 |
+| 搜索框焦点 | `outline: none`，键盘用户看不到焦点 | 字段获得焦点时画宿主同款 2px `state-business-primary` 环（`boxShadow`，zIndex 抬一档） | 宿主有 `:focus-visible` 环体系 |
+| 状态行 critical | `var(--dsw-alias-label-error, #c0392b)`（该 token 不存在，落到硬编码红） | `var(--dsw-alias-state-error-primary)` | 同上 |
 
+浅色主题的无头 Chromium 对照图（左：改动前，右：改动后）确认了底色、hairline、琥珀高亮与焦点环；
+深色主题只按 token 语义推演（琥珀的高亮字用不翻转的墨色，其余全部随主题翻转），没有在独立页面里
+复现宿主的深色级联，宿主的深色由宿主自己的样式保证。
+
+第二轮（未做）：数值列右对齐 + `tabular-nums`、行 hover（`interactive-bg-hover`）、表头滚动阴影、
+加载骨架（`bg-skeleton`）、chrome 字号升到 13、滚动条 rebind 到 l2。

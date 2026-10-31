@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Archive listing: zip through its central directory (ranged reads when the
  * size is known, whole-file otherwise), tar and tar.gz through the whole file
  * (gzip inflate is native).
@@ -162,7 +162,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const headerStyle = {
@@ -173,25 +173,25 @@ const headerStyle = {
   fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)',
   background: 'var(--dsw-alias-bg-layer-2)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 
 const cellStyle = {
   padding: '4px 12px',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   whiteSpace: 'nowrap' as const,
 } as const
 
 const backStyle = {
   font: 'inherit', fontSize: 12, padding: '1px 8px', borderRadius: 4, cursor: 'pointer',
   color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
-  border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const preStyle = {
   margin: 0,
   padding: '10px 14px',
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)',
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)',
   fontSize: 12,
   lineHeight: 1.6,
   whiteSpace: 'pre-wrap',
@@ -214,7 +214,7 @@ const pathInputStyle = {
   borderRadius: 6,
   color: 'var(--dsw-alias-label-primary)',
   background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 
 const smallButtonStyle = {
@@ -225,7 +225,7 @@ const smallButtonStyle = {
   cursor: 'pointer',
   color: 'var(--dsw-alias-label-primary)',
   background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
   flex: '0 0 auto',
 } as const
 

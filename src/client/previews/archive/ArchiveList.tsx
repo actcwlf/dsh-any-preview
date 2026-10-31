@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The archive listing, shared by every container format.
  *
  * Containers supply data and three callbacks; the bar, the hints and the table are
@@ -73,7 +73,7 @@ export function ArchiveList(props: ArchiveListProps) {
 const BAR = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
 } as const
 const ACTIONS = {
   display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)',
@@ -82,7 +82,7 @@ const ACTIONS = {
 const SMALL = {
   font: 'inherit', fontSize: 12, padding: '2px 10px', borderRadius: 6, cursor: 'pointer',
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 const TABLE = {
   borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12,
@@ -90,9 +90,9 @@ const TABLE = {
 const HEADER = {
   position: 'sticky' as const, top: 0, padding: '5px 12px', textAlign: 'left' as const, fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const CELL = {
   padding: '4px 12px', fontFamily: 'var(--dsw-font-family)', fontSize: 12,
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 3D model preview: three.js renderer with orbit controls.
  *
  * `loading: 'renderer'` because a model needs the whole file; the bytes come
@@ -280,7 +280,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 /** One module per extension so the toolbar can still offer the text view. */

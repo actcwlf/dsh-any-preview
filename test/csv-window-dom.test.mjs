@@ -483,7 +483,7 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   const hit = rows.find(row => row.index === 99_999)
   assert.ok(hit, `the hit row is painted, painted ${String(rows[0]?.index)}..${String(rows[rows.length - 1]?.index)}`)
   assert.equal(hit.cells[2], 'user_100000')
-  assert.match(view.container.querySelector('tr[data-row-index="99999"]')?.getAttribute('style') ?? '', /rgba\(255, 196, 0/u,
+  assert.match(view.container.querySelector('tr[data-row-index="99999"]')?.getAttribute('style') ?? '', /state-warn-primary/u,
     'the hit row is marked')
 
   // A query that matches every row keeps the count whole and caps what is navigable.

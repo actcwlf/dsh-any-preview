@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Shared block rendering for lightweight markup: a tiny inline tokenizer plus a
  * block list that several formats produce (reST, notebook markdown, EPUB text).
  */
@@ -225,16 +225,16 @@ const tableStyle = { borderCollapse: 'collapse' as const, fontSize: 12, width: '
 const thStyle = {
   padding: '4px 10px', textAlign: 'left' as const, fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const tdStyle = {
   padding: '4px 10px', color: 'var(--dsw-alias-label-primary)',
-  border: '1px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const,
+  border: '0.5px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const,
 } as const
 const imageStyle = { display: 'block' as const, maxWidth: '100%', margin: '8px 0', borderRadius: 4 } as const
 const codeStyle = {
   margin: '8px 0', padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55,
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55,
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 const listStyle = { margin: '6px 0', paddingLeft: 22, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary)' } as const

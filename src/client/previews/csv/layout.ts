@@ -10,11 +10,11 @@
 export const ROW_HEIGHT = 22
 
 /**
- * The header's box: 5px padding above and below, one 12px line, and the bottom rule.
- * Chromium lays the real header out at 26.5px; 27 is the conservative integer, which
+ * The header's box: 6px padding above and below, one 15px line, and the 0.5px rule.
+ * Chromium lays the real header out at 27.5px; 28 is the conservative integer, which
  * keeps "one more row fits" false rather than true.
  */
-export const HEADER_HEIGHT = 27
+export const HEADER_HEIGHT = 28
 
 /**
  * Browsers stop growing an element's scroll height near 2^24 px (about 727,000 rows at

@@ -79,7 +79,7 @@ export function KeyValueTable({ entries }: { readonly entries: readonly (readonl
 
 const summaryStyle = {
   display: 'flex', flexWrap: 'wrap' as const, gap: 6, padding: '8px 12px',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const chipStyle = {
@@ -94,11 +94,11 @@ const tableStyle = { borderCollapse: 'collapse' as const, width: '100%', fontSiz
 const thStyle = {
   position: 'sticky' as const, top: 0, padding: '4px 10px', fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', whiteSpace: 'nowrap' as const,
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', whiteSpace: 'nowrap' as const,
 } as const
 const tdStyle = {
   padding: '3px 10px', color: 'var(--dsw-alias-label-primary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)', whiteSpace: 'nowrap' as const,
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)', whiteSpace: 'nowrap' as const,
 } as const
 
 const noteStyle = {

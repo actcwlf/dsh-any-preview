@@ -1,4 +1,4 @@
-/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -62,12 +62,12 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
 
 const cellLabel = {
   fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2,
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)',
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)',
 } as const
 
 const codeStyle = {
   margin: 0, padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55,
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55,
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 
@@ -81,8 +81,8 @@ const outputStyle = {
 
 const errorStyle = {
   ...outputStyle,
-  borderLeft: '2px solid rgb(248, 81, 73)',
-  color: 'rgb(248, 81, 73)',
+  borderLeft: '2px solid var(--dsw-alias-state-error-primary)',
+  color: 'var(--dsw-alias-state-error-primary)',
 } as const
 
 const imageStyle = {
@@ -97,7 +97,7 @@ const htmlStyle = {
 /** Scoped so an output's own markup cannot restyle the app. */
 const NB_CSS = [
   '.dsh-nb-html table{border-collapse:collapse;font-size:12px}',
-  '.dsh-nb-html th,.dsh-nb-html td{border:1px solid var(--dsw-alias-border-l2);padding:3px 8px;text-align:left}',
+  '.dsh-nb-html th,.dsh-nb-html td{border:0.5px solid var(--dsw-alias-border-l2);padding:3px 8px;text-align:left}',
   '.dsh-nb-html thead th{background:var(--dsw-alias-bg-layer-2)}',
   '.dsh-nb-html img{max-width:100%}',
 ].join('')

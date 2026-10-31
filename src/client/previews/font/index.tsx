@@ -1,4 +1,4 @@
-/** Font preview: load the file into a FontFace and draw a specimen. */
+﻿/** Font preview: load the file into a FontFace and draw a specimen. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -107,7 +107,7 @@ export function FontBody({ content }: PreviewBodyProps) {
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'] as const

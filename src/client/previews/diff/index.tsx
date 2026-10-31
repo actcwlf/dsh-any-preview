@@ -1,4 +1,4 @@
-/** Unified diff / patch viewer with search. */
+﻿/** Unified diff / patch viewer with search. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -68,9 +68,9 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
         <span>
           {t('diff.rows', { count: diff.lines.length.toLocaleString('en-US') })}
           {' · '}
-          <span style={{ color: 'rgb(46, 160, 67)' }}>+{diff.added.toLocaleString('en-US')}</span>
+          <span style={{ color: 'var(--dsw-alias-state-success-primary)' }}>+{diff.added.toLocaleString('en-US')}</span>
           {' '}
-          <span style={{ color: 'rgb(248, 81, 73)' }}>−{diff.removed.toLocaleString('en-US')}</span>
+          <span style={{ color: 'var(--dsw-alias-state-error-primary)' }}>−{diff.removed.toLocaleString('en-US')}</span>
         </span>
       )}
       toolbar={compact => (
@@ -90,7 +90,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
       status={diff.truncated ? t('common.truncated') : undefined}
     >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
+        <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div
               key={index}
@@ -106,7 +106,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
                 whiteSpace: 'pre',
                 // Keep the add/remove tint readable; the bar and the marks carry
                 // the navigation instead of a competing background.
-                boxShadow: index === found.activeRow ? 'inset 3px 0 0 rgb(255, 196, 0)' : undefined,
+                boxShadow: index === found.activeRow ? 'inset 3px 0 0 var(--dsw-alias-state-warn-primary)' : undefined,
               }}
             >
               <span style={{ flex: '0 0 auto', width: 48, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' }}>
@@ -126,7 +126,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 

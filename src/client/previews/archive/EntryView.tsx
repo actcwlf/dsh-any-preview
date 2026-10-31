@@ -1,4 +1,4 @@
-/**
+﻿/**
  * One archive member, shared by every container format.
  *
  * Zip and 7z differ only in how bytes are obtained and how they reach disk; the
@@ -244,7 +244,7 @@ export function EntryView(props: EntryViewProps) {
 
 const BAR = {
   display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', fontSize: 12,
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
 } as const
 const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' } as const
 const BACK = {
@@ -258,19 +258,19 @@ const ROW = { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as
 const PATH_INPUT = {
   font: 'inherit', fontSize: 12, padding: '2px 8px', borderRadius: 6, flex: '1 1 auto', minWidth: 120,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const SMALL = {
   font: 'inherit', fontSize: 12, padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
   color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
-  border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 const NOTE = { marginTop: 8, color: 'var(--dsw-alias-label-secondary)' } as const
-const FAIL = { marginTop: 8, color: 'rgb(248, 81, 73)' } as const
+const FAIL = { marginTop: 8, color: 'var(--dsw-alias-state-error-primary)' } as const
 const PATH_TEXT = { marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' as const } as const
 const NOTE_INLINE = { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)' } as const
 const LOADING = { padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' } as const
 const PRE = {
   margin: 0, padding: '8px 12px', fontSize: 12,
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', whiteSpace: 'pre-wrap' as const,
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', whiteSpace: 'pre-wrap' as const,
 } as const

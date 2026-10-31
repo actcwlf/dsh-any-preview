@@ -1,4 +1,5 @@
 /** The shared search field: query, toggles, match navigation, optional filtering. */
+import { useState } from 'react'
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
@@ -51,6 +52,7 @@ export function SearchBar({
   filterable = true, placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
+  const [focused, setFocused] = useState(false)
   const active = options.query.trim() !== ''
   // Enter walks the matches the way an editor does; Esc clears and drops focus. A preview
   // that scans on demand gets the Enter first, so typing stays cheap.
@@ -71,8 +73,9 @@ export function SearchBar({
   return (
     <div style={compact ? compactRow : rowStyle}>
       {/* The field owns its toggles, like an editor's find box: they read as part
-          of the input instead of competing with it for bar width. */}
-      <div style={fieldStyle}>
+          of the input instead of competing with it for bar width. The ring lives on
+          the field rather than the input, because the field is the control. */}
+      <div style={focused ? RING : fieldStyle}>
         <input
           type="search"
           value={options.query}
@@ -80,6 +83,8 @@ export function SearchBar({
           placeholder={placeholder ?? t('search.placeholder')}
           aria-label={t('search.aria')}
           onKeyDown={onKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         style={inputStyle}
         />
         <button
@@ -131,9 +136,12 @@ const rowStyle = {
 
 const fieldStyle = {
   display: 'flex', alignItems: 'center', gap: 2, flex: '1 1 auto', minWidth: 0,
-  padding: '0 2px 0 8px', borderRadius: 6, height: 24,
-  background: 'var(--dsw-alias-bg-layer-2)', border: '1px solid var(--dsw-alias-border-l2)',
+  padding: '0 2px 0 8px', borderRadius: 'var(--dsw-radius-sm)', height: 24,
+  background: 'var(--dsw-alias-bg-layer-2)', border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
+
+/** The host's focus ring, drawn on the field: 2px, business primary, above neighbours. */
+const RING = { ...fieldStyle, boxShadow: '0 0 0 2px var(--dsw-alias-state-business-primary)', zIndex: 1 } as const
 
 const inputStyle = {
   font: 'inherit', fontSize: 12, padding: 0, flex: '1 1 auto', minWidth: 0,
@@ -143,18 +151,18 @@ const inputStyle = {
 
 function inlineToggle(on: boolean) {
   return {
-    font: 'inherit', fontSize: 11, lineHeight: '16px', padding: '0 4px', borderRadius: 4,
+    font: 'inherit', fontSize: 11, lineHeight: '16px', padding: '0 4px', borderRadius: 'var(--dsw-radius-xs)',
     cursor: 'pointer', height: 18, flex: '0 0 auto',
     color: on ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)',
     background: on ? 'var(--dsw-alias-bg-base)' : 'transparent',
-    border: `1px solid ${on ? 'var(--dsw-alias-border-l3)' : 'transparent'}`,
+    border: `0.5px solid ${on ? 'var(--dsw-alias-border-l3)' : 'transparent'}`,
   } as const
 }
 
 const navStyle = {
-  font: 'inherit', fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 4,
+  font: 'inherit', fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-xs)',
   cursor: 'pointer', height: 22, color: 'var(--dsw-alias-label-secondary)',
-  background: 'transparent', border: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const countStyle = {

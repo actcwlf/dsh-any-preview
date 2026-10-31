@@ -57,7 +57,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
           {t('jsonl.records', { count: jsonl.records.length.toLocaleString('en-US') })}
           {columns.length === 0 ? t('jsonl.nonObject') : t('jsonl.fields', { count: columns.length })}
           {jsonl.invalid > 0 && (
-            <span style={{ color: 'rgb(248, 81, 73)' }}>{t('jsonl.invalid', { count: jsonl.invalid.toLocaleString('en-US') })}</span>
+            <span style={{ color: 'var(--dsw-alias-state-error-primary)' }}>{t('jsonl.invalid', { count: jsonl.invalid.toLocaleString('en-US') })}</span>
           )}
         </span>
         </span>
@@ -96,7 +96,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
               const rowStyle = {
                 height: 22,
                 background: active ? ACTIVE_ROW : record.error === undefined ? undefined : 'rgba(248, 81, 73, 0.14)',
-                boxShadow: active ? 'inset 3px 0 0 rgb(255, 196, 0)' : undefined,
+                boxShadow: active ? 'inset 3px 0 0 var(--dsw-alias-state-warn-primary)' : undefined,
               } as const
               return record.error === undefined
                 ? (
@@ -112,7 +112,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
                 : (
                     <tr key={index} data-row-index={index} style={rowStyle}>
                       <td style={indexStyle}>{record.line}</td>
-                      <td colSpan={Math.max(1, columns.length)} style={{ ...cellStyle, color: 'rgb(248, 81, 73)' }}>
+                      <td colSpan={Math.max(1, columns.length)} style={{ ...cellStyle, color: 'var(--dsw-alias-state-error-primary)' }}>
                         <Marked text={record.raw} pattern={found.pattern} emphasis={active} />
                       </td>
                     </tr>
@@ -139,11 +139,11 @@ function cellOf(value: unknown, column: string): string {
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const shared = {
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
   background: 'var(--dsw-alias-bg-layer-2)',
 } as const
 
@@ -165,17 +165,19 @@ const indexStyle = {
   lineHeight: '20px',
   textAlign: 'right' as const,
   color: 'var(--dsw-alias-label-tertiary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   position: 'sticky' as const,
   left: 0,
-  background: 'var(--dsw-alias-bg-base)',
+  // Opaque and body-coloured: it slides under the header, so it cannot be transparent,
+  // and a brighter surface would paint a strip down the pane.
+  background: 'var(--dsw-alias-bg-document-preview)',
   userSelect: 'none' as const,
 } as const
 
 const cellStyle = {
   padding: '0 12px',
   lineHeight: '20px',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
 } as const
 

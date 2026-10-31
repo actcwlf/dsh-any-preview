@@ -1,4 +1,4 @@
-/**
+﻿/**
  * EPUB viewer: the book is a zip, so the container is read with the archive
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
@@ -195,19 +195,19 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
 const barStyle = {
   display: 'flex', alignItems: 'center', gap: 12, padding: '6px 12px', fontSize: 12,
   color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const buttonStyle = {
   font: 'inherit', fontSize: 12, padding: '1px 8px', borderRadius: 5, cursor: 'pointer',
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 
 const selectStyle = {
   font: 'inherit', fontSize: 12, maxWidth: 180, padding: '1px 4px', borderRadius: 5,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '1px solid var(--dsw-alias-border-l2)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 
 /** What the client entry registers for this format. */

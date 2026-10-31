@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SQLite schema viewer: the file header, then every `sqlite_master` row.
  * Table contents are intentionally out of scope.
  */
@@ -141,7 +141,7 @@ const typeBadge = {
 
 const sqlStyle = {
   margin: 0, padding: '6px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.5,
+  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.5,
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 

@@ -1,4 +1,4 @@
-/** 7z listing; a member opens in the shared entry view, like any other archive. */
+﻿/** 7z listing; a member opens in the shared entry view, like any other archive. */
 import { useEffect, useState } from 'react'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { errorText } from '../../kernel/errors.ts'
@@ -132,7 +132,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   )
 }
 const TABLE = { width: '100%', borderCollapse: 'collapse' } as const
-const ROW = { borderBottom: '1px solid var(--dsw-alias-border-l2)' } as const
+const ROW = { borderBottom: '0.5px solid var(--dsw-alias-border-l2)' } as const
 const ROW_DIRECTORY = { ...ROW, color: 'var(--dsw-alias-label-tertiary)' } as const
 const CELL = { padding: '4px 12px', fontSize: 12, fontFamily: 'var(--dsw-font-family)' } as const
 const LINK = {

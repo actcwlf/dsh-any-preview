@@ -1,4 +1,4 @@
-import { PreviewChrome } from '../../kernel/chrome.tsx'
+﻿import { PreviewChrome } from '../../kernel/chrome.tsx'
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -17,9 +17,9 @@ import { createLogConsumer, levelOf } from './parse.ts'
 import type { LogLevel } from './parse.ts'
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
-  error: 'rgb(248, 81, 73)',
-  warn: 'rgb(210, 153, 34)',
-  info: 'rgb(56, 139, 253)',
+  error: 'var(--dsw-alias-state-error-primary)',
+  warn: 'var(--dsw-alias-state-warn-label)',
+  info: 'var(--dsw-alias-state-business-primary)',
   debug: 'var(--dsw-alias-label-tertiary)',
   none: 'var(--dsw-alias-label-primary)',
 }
@@ -94,7 +94,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           }}
           style={{ flex: '1 1 auto', overflow: 'auto' }}
         >
-        <div style={{ fontFamily: 'var(--dsw-font-markdown-code-block, monospace)', fontSize: 12, lineHeight: 1.55 }}>
+        <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div
               key={index}
@@ -122,7 +122,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 
 const labelStyle = {

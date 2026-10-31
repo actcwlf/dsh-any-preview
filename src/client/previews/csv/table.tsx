@@ -114,7 +114,7 @@ export function CsvTable(props: CsvTableProps) {
 }
 
 const shared = {
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
   background: 'var(--dsw-alias-bg-layer-2)',
 } as const
 
@@ -123,7 +123,9 @@ const headerStyle = {
   position: 'sticky' as const,
   top: 0,
   zIndex: 1,
-  padding: '5px 12px',
+  // 6 + 6 + 15 + 0.5 = 27.5, which is the 28px the scroll geometry budgets for.
+  padding: '6px 12px',
+  lineHeight: '15px',
   textAlign: 'left' as const,
   fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)',
@@ -137,16 +139,18 @@ const indexStyle = {
   padding: '0 10px',
   textAlign: 'right' as const,
   color: 'var(--dsw-alias-label-tertiary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   position: 'sticky' as const,
   left: 0,
-  background: 'var(--dsw-alias-bg-base)',
+  // Opaque, and the same surface as the body: it slides under the header, so it cannot
+  // be transparent, and a brighter colour would draw a strip down the pane.
+  background: 'var(--dsw-alias-bg-document-preview)',
   userSelect: 'none' as const,
 } as const
 
 const cellStyle = {
   padding: '0 12px',
-  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
 } as const
 

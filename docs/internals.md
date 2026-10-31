@@ -393,6 +393,16 @@ target = await ctx.fs.resolve(path, { cwd, signal })
 
 13 个文本/结构化预览共用 `src/client/kernel/chrome.tsx`，只有四块：
 
+### 视觉一律走宿主的 token
+
+颜色只用 `--dsw-alias-*`（`bg-document-preview`、`label-*`、`border-l1..l4`、`state-*`），
+不许出现 `rgb()`：深色主题由宿主在 `body[data-ds-dark-theme]` 上翻转这些别名，硬编码就翻不过来。
+分隔线统一 **0.5px**（宿主文档面是 hairline，1px 会把表格画成"网格"），圆角取 `--dsw-radius-xs/sm`，
+代码字体是 `--ds-font-family-code`（`--dsw-font-markdown-code-block` 是**简写**，不能当 font-family 用）。
+搜索框的焦点环画在外层 field 上（2px `state-business-primary`），因为 field 才是控件。
+
+详情与前后对照见 `handoff` §18。
+
 ```tsx
 <PreviewChrome
   title={…}     // 摘要：3 行 × 5 列、GGUF v3、+8 −4

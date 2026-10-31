@@ -30,18 +30,19 @@ export function Marked({ text, pattern, emphasis = false }: {
 
 /** Every match: visible, but quiet enough to leave the text readable. */
 const MARK = {
-  background: 'rgba(255, 213, 0, 0.38)',
+  background: 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 38%, transparent)',
   color: 'inherit',
   borderRadius: 2,
   padding: '0 1px',
 } as const
 
-/** The navigated match: solid and outlined so it reads first. */
+/** The navigated match: solid and outlined so it reads first. Amber stays bright in
+ * both themes, so the text on it has to stay dark: the ink token is theme-independent. */
 const EMPHASIS_MARK = {
-  background: 'rgb(255, 196, 0)',
-  color: '#1a1a1a',
+  background: 'var(--dsw-alias-state-warn-secondary)',
+  color: 'var(--dsw-static-neutral-1000)',
   borderRadius: 2,
   padding: '0 1px',
   fontWeight: 600,
-  boxShadow: '0 0 0 1px rgba(0, 0, 0, 0.35)',
+  boxShadow: '0 0 0 1px var(--dsw-alias-border-l4)',
 } as const

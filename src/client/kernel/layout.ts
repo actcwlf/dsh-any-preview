@@ -15,7 +15,9 @@ export const PANE_ROOT: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
-  background: 'var(--dsw-alias-bg-base)',
+  // The host's document surface, not the app's base: a pane painted on `bg-base` reads
+  // one step brighter than the preview it sits in.
+  background: 'var(--dsw-alias-bg-document-preview)',
 }
 
 /** A centred placeholder that fills the same box. */
@@ -24,9 +26,9 @@ export const PANE_FILL: CSSProperties = {  position: 'absolute',
   display: 'grid',
   placeItems: 'center',
   fontSize: 12,
-  color: 'var(--dsw-alias-label-tertiary)',
-  background: 'var(--dsw-alias-bg-base)',
+  color: 'var(--dsw-alias-label-secondary)',
+  background: 'var(--dsw-alias-bg-document-preview)',
 }
 
 /** Background tint for the row the search navigation points at. */
-export const ACTIVE_ROW = 'rgba(255, 196, 0, 0.14)'
+export const ACTIVE_ROW = 'color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent)'

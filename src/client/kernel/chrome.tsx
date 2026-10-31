@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The shared shell every preview sits in.
  *
  * Four optional regions and nothing else: a title, a toolbar, the body, and a
@@ -37,7 +37,7 @@ const BAR = {
   padding: '6px 12px',
   fontSize: 12,
   color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
   flex: '0 0 auto',
   minWidth: 0,
 } as const
@@ -63,7 +63,7 @@ const TOOLBAR = {
 const STATUS = {
   padding: '4px 12px',
   fontSize: 12,
-  borderTop: '1px solid var(--dsw-alias-border-l2)',
+  borderTop: '0.5px solid var(--dsw-alias-border-l2)',
   flex: '0 0 auto',
   // One line, always: a long notice must not wrap into the body on a narrow pane.
   whiteSpace: 'nowrap',
@@ -109,7 +109,7 @@ export function PreviewChrome({ title, toolbar, status, tone = 'normal', childre
         {children}
       </div>
       {status !== undefined && status !== '' && (
-        <div style={{ ...STATUS, color: tone === 'critical' ? 'var(--dsw-alias-label-error, #c0392b)' : 'var(--dsw-alias-label-tertiary)' }}>
+        <div style={{ ...STATUS, color: tone === 'critical' ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
           {status}
         </div>
       )}
