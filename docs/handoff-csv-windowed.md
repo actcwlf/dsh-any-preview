@@ -422,18 +422,31 @@ viewportHeight`），并把揭示挪进 `scroll.ts` 的 `reveal()`，`index.tsx`
   已恒为 22 px）。`OPENING_FILE` 常量保留（打开时确实会置这个状态）。
 - `csv/window.ts` 顶部"以后把 text 换成 ranged read"的注释改成现在时。
 
-### 16.4 还留着的事（按收益排序）
+### 16.4 这一轮又做了四件（原清单 1/2/3/5）
 
-1. **两台状态机收进 reducer**：`file: idle → opening → ready → complete|failed` 和
-   `scan: idle → running → done|stopped` 现在是布尔位分散在两个钩子里，`useReducer` + 事件能
-   让它们在单测里直接跑（目前只能靠 DOM 集成测试）；
-2. **改名 + 参数化**（上一轮讨论的第 1 步）：`csv-file.ts` → `row-file.ts`（`parse: 'line' | 'csv'`）、
-   `csv-window-state.ts` → `window-state.ts`，为 log/jsonl 复用做准备；
-3. **行号换算收口**："文件行 ↔ 表体行"的 ±1 仍在 5 处（`read` 的 startRow、扫描的 `line - 1`、
-   `bandRows` 的偏移、`~` 标签、`origin()`），值得收成一对 `toBody` / `toFile`；
-4. **表头高度进几何**：`visibleRows` 没算 27 px 表头，100 % 时差一行、顶部行被表头压住一截
-   （纯外观）；
-5. **后台建索引每片一次 setState**（150 MB = 150 次整组件渲染），进度按 5 片或 100 ms 节流即可。
+1. **两台状态机收进 reducer**（`previews/csv/state.ts`）：`fileState(state, event)` 与
+   `scanState(state, event)` 是纯函数，事件是 `open / ready / fail` 与 `clear / start / slice /
+   done / stop`。`useReducer` 只负责把它们接到组件里。单测（`test/csv-state.test.mjs`）覆盖了
+   "ready 之前先失败就不会被迟到的切片救活""命中的行号要减 1 且丢掉表头""停止后命中仍可跳转"
+   这些之前只能靠 DOM 集成测试才碰得到的规则。
+2. **改名 + 参数化**：`csv-file.ts` → **`row-file.ts`**，`openCsvFile(path, delimiter)` →
+   `openRowFile(path, { parse })`——切片怎么变成行由调用方给（CSV 传
+   `previews/csv/parse.ts` 的 `parseCsvSlice`，log 将来传"一行一格"），文件源本身只认换行；
+   `csv-window-state.ts` → **`window-state.ts`**（它本来就与列无关）。文件名与测试文件一起改
+   （`test/window-state.test.mjs`）。
+3. **行号换算收口**：新增 `kernel/row-numbering.ts`（`toFileRow` / `toBodyRow` /
+   `isHeaderRow`），`bandRows`、扫描的 `line → row`、`~` 标签、扫描起点全部改用它。
+4. **后台建索引的进度节流**：每片只更新一次状态 → 改成"每 2 % 或完成时"才 dispatch，
+   150 MB 文件的整组件渲染从 150 次降到约 50 次。
+
+### 16.5 还留着的
+
+1. **表头高度进几何**：`visibleRows` 没算 27 px 表头，100 % 时差一行、顶部行被表头压住一截
+   （纯外观，改动会牵动所有比例几何的常量）；
+2. **文本路径的 `csv-index` / `csv-window` 仍是 CSV 专用**（引号感知的跳过）；log 走"一行一格"
+   时不需要引号，但两个函数目前把引号写死。等真的移植 log 时再加 `quoted` 参数比现在预埋更稳；
+3. **格式移植本身**（log → jsonl → diff），见上一轮讨论的方案：壳已经抽好，每个格式只需
+   换 `parse`、`renderRow` 和表头。
 
 
 

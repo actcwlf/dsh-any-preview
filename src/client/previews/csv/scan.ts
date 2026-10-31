@@ -1,39 +1,23 @@
-/**
+﻿/**
  * The whole-file search: one explicit run at a time, started where the reader is, with
  * hits published as they are found and a stop that keeps what it already found.
  *
  * Typing only searches the rows already in memory (that is the caller's own search); this
  * hook owns the expensive run and the navigation that takes over once it has hits.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
+import { toFileRow } from '../../kernel/row-numbering.ts'
+import { NO_ROWS, scanState as scanReducer } from './state.ts'
+import type { ScanState } from './state.ts'
 
 /** Matches whose row is kept, so the reader can jump to them. */
 const SCAN_LINE_LIMIT = 5_000
-
-/** No match rows yet; a stable identity so the scan effect does not churn. */
-const NO_ROWS: readonly number[] = []
 
 /** One request for a whole-file search: what to look for, and from which row. */
 export interface ScanRequest {
   readonly query: string
   /** Body row the scan starts at; it wraps around to cover the rows before it. */
   readonly from: number
-}
-
-/** What a run has found so far. */
-export interface ScanState {
-  /** The query this scan belongs to; hits for an older one are dropped. */
-  readonly query: string
-  /** 0..1 of the file looked at. */
-  readonly progress: number
-  /** Matches seen so far, which may be more than {@link ScanState.rows}. */
-  readonly matches: number
-  /** Body rows of the first matches, in the order the scan met them. */
-  readonly rows: readonly number[]
-  /** True when the scan reached the last slice or was stopped. */
-  readonly done: boolean
-  /** True when the reader stopped it. */
-  readonly aborted: boolean
 }
 
 /** Runs one scan; a file source or the delivered text, whichever the caller has. */
@@ -92,7 +76,7 @@ export interface WholeFileScanOptions {
 export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
   const { scan, query, regex, caseSensitive, origin, revision, sourceKey, fallback } = options
   const [request, setRequest] = useState<ScanRequest | undefined>(undefined)
-  const [state, setState] = useState<ScanState | undefined>(undefined)
+  const [state, dispatchScan] = useReducer(scanReducer, undefined)
   const [index, setIndex] = useState(0)
   const abortRef = useRef<AbortController | null>(null)
   const runnerRef = useRef(scan)
@@ -101,7 +85,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
   useEffect(() => {
     const runner = runnerRef.current
     if (request === undefined || runner === undefined) {
-      setState(undefined)
+      dispatchScan({ type: 'clear' })
       return undefined
     }
     let pattern: RegExp
@@ -112,37 +96,26 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
         : new RegExp(request.query.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&'), flags)
     } catch {
       // An unfinished regular expression is not an error the reader must see.
-      setState(undefined)
+      dispatchScan({ type: 'clear' })
       return undefined
     }
     const controller = new AbortController()
     abortRef.current = controller
-    setState({ query: request.query, progress: 0, matches: 0, rows: NO_ROWS, done: false, aborted: false })
+    dispatchScan({ type: 'start', query: request.query })
     setIndex(0)
     /** Take one slice's worth of news without waiting for the rest. */
     const report = (progress: number, matches: number, lines: readonly number[]): void => {
-      setState(current => {
-        if (current === undefined) return current
-        // Line 0 is the header, so a match's body row is one less; a header hit has none.
-        const rows: number[] = []
-        for (const line of lines) if (line > 0) rows.push(line - 1)
-        return { ...current, progress, matches, rows }
-      })
+      dispatchScan({ type: 'slice', progress, matches, lines })
     }
     void runner(pattern, {
       signal: controller.signal,
       // Body row -> file row: the walk needs the header counted in.
-      from: request.from + 1,
+      from: toFileRow(request.from),
       lineLimit: SCAN_LINE_LIMIT,
       onSlice: report,
     }).then((result) => {
       if (controller.signal.aborted) return
-      setState(current => {
-        if (current === undefined) return current
-        const rows: number[] = []
-        for (const line of result.lines) if (line > 0) rows.push(line - 1)
-        return { ...current, progress: 1, matches: result.matches, rows, done: true }
-      })
+      dispatchScan({ type: 'done', matches: result.matches, lines: result.lines })
     }).catch(() => { /* stopped, or the file went away */ })
     return () => { controller.abort() }
   }, [request, regex, caseSensitive, revision, sourceKey])
@@ -153,7 +126,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     if (request === undefined) return
     if (request.query !== query.trim()) {
       setRequest(undefined)
-      setState(undefined)
+      dispatchScan({ type: 'clear' })
     }
   }, [query, request])
 
@@ -165,13 +138,13 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
   const start = (): void => {
     const text = query.trim()
     if (text === '') return
-    setState(undefined)
+    dispatchScan({ type: 'clear' })
     // A fresh request object, so asking again with the same query restarts the scan.
     setRequest({ query: text, from: origin() })
   }
   const stop = (): void => {
     abortRef.current?.abort()
-    setState(current => (current === undefined ? current : { ...current, done: true, aborted: true }))
+    dispatchScan({ type: 'stop' })
   }
   const next = (): void => {
     if (navigating) setIndex((activeIndex + 1) % rows.length)
@@ -198,3 +171,5 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     commit,
   }
 }
+
+

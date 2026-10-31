@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Where the viewport is and how a pixel maps to a row.
  *
  * The proportional mode needs this geometry to keep its identity between renders: the
@@ -6,8 +6,8 @@
  * after every scroll and pin the view to the last search hit.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { logicalRow, proportionalGeometry } from '../../kernel/csv-window-state.ts'
-import type { ProportionalGeometry } from '../../kernel/csv-window-state.ts'
+import { logicalRow, proportionalGeometry } from '../../kernel/window-state.ts'
+import type { ProportionalGeometry } from '../../kernel/window-state.ts'
 
 /** Viewport height before the first measurement. */
 const FALLBACK_VIEWPORT = 480
@@ -149,4 +149,5 @@ export function useRowScroll(options: RowScrollOptions): RowScroll {
     bindScroller, setScrollTop, scrollTo, reveal,
   }
 }
+
 

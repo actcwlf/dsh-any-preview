@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Row windows for the CSV table, loaded after the scroll settles.
  *
  * Fixed row height means the viewport's row range is known immediately, so during a
@@ -12,7 +12,7 @@
  * dropped when either changes.
  */
 import { useEffect, useRef, useState } from 'react'
-import { cacheCapacity, planWindow } from './csv-window-state.ts'
+import { cacheCapacity, planWindow } from './window-state.ts'
 
 /** One window read. */
 export interface WindowRead {
@@ -152,3 +152,4 @@ export function useWindowedRows(options: WindowedRowsOptions): WindowRows {
   // window of 5,000 placeholder rows would be allocation without a reader.
   return { startRow: plan.alignedStart, rows: [], loading: true, overlong: false, exact: true }
 }
+

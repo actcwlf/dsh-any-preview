@@ -1,9 +1,9 @@
-/** Window arithmetic: which rows a viewport needs, where they sit, and the cache key. */
+﻿/** Window arithmetic: which rows a viewport needs, where they sit, and the cache key. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   cacheCapacity, logicalRow, planWindow, proportionalGeometry, stickyBand, windowedBodyRows,
-} from '../src/client/kernel/csv-window-state.ts'
+} from '../src/client/kernel/window-state.ts'
 
 const ROW = 22
 const VIEWPORT = 660
@@ -154,3 +154,4 @@ test('a band never paints past either end of the table', () => {
   assert.ok(beyond.first + beyond.count <= 100)
   assert.ok(beyond.offset >= 0)
 })
+

@@ -1,5 +1,5 @@
 /**
- * A CSV read as byte slices, with a sparse row index built in the background.
+ * A file read as byte slices, with a sparse row index built in the background.
  *
  * The document owner delivers text in order and keeps one contiguous prefix, so it
  * cannot answer "row 200,000". This source reads the file itself through the Host's
@@ -8,12 +8,13 @@
  * reached that far, at a byte offset estimated from the average row length. Rows
  * read that way are real; only their *numbers* are estimates, and the caller is told
  * which it got.
+ *
+ * Nothing here knows about delimiters: a slice is turned into rows by the `parse`
+ * function the caller supplies, so a CSV splits cells and a log keeps one cell per line.
  */
-import { LIMITS } from '../../shared/limits.ts'
 import { countRows, skipLines } from './lines.ts'
 import { textUrl } from './file-url.ts'
 import { createLineCounter } from './search-scan.ts'
-import { createRowParser } from './text-pipeline.ts'
 
 /** Bytes one background index slice covers. */
 const SLICE_BYTES = 1024 * 1024
@@ -40,14 +41,23 @@ interface Slice {
 }
 
 /** What one window read produced. */
-export interface FileWindow {
+export interface RowWindow {
   /** File row (header included) the first returned row claims to be. */
   readonly startRow: number
   readonly rows: string[][]
-  /** True when {@link FileWindow.startRow} comes from the index, not an estimate. */
+  /** True when {@link RowWindow.startRow} comes from the index, not an estimate. */
   readonly exact: boolean
   /** True when a row passed the line cap and parsing stopped there. */
   readonly overlong: boolean
+}
+
+/** Turns one line-aligned slice of text into rows. */
+export type RowParse = (text: string) => { readonly rows: string[][], readonly overlong: boolean }
+
+/** How to open a file source. */
+export interface RowFileOptions {
+  /** Slice text to rows: a delimiter split for a table, one cell per line otherwise. */
+  readonly parse: RowParse
 }
 
 /** What a whole-file scan found. */
@@ -58,8 +68,8 @@ export interface FileScan {
   readonly lines: readonly number[]
 }
 
-/** A file-backed CSV: byte windows in, rows out. */
-export interface CsvFile {
+/** A file-backed row source: byte windows in, rows out. */
+export interface RowFile {
   /** Bytes in the file. */
   readonly size: number
   /** Rows counted in the scanned prefix, header included. */
@@ -75,7 +85,7 @@ export interface CsvFile {
   /** Count the next slice. Resolves false when there is nothing left to do. */
   advance(): Promise<boolean>
   /** Rows for one window; the caller may ask for any row. */
-  read(startRow: number, count: number): Promise<FileWindow>
+  read(startRow: number, count: number): Promise<RowWindow>
   /**
    * Search the whole file without blocking the page.
    *
@@ -108,19 +118,6 @@ interface Anchor {
 }
 
 /**
- * Parse slice text into rows.
- * @param text - whole lines, possibly with an open final line.
- * @param delimiter - field separator.
- */
-function parseSlice(text: string, delimiter: string): { rows: string[][], overlong: boolean } {
-  const rows: string[][] = []
-  const parser = createRowParser(delimiter, cells => { rows.push([...cells]) }, LIMITS.csvLineChars)
-  parser.push(text)
-  parser.finish()
-  return { rows, overlong: parser.overlong }
-}
-
-/**
  * Ask the Host for one slice.
  * @param url - text-route URL of the file.
  * @param offset - first byte.
@@ -142,15 +139,16 @@ async function fetchSlice(
 }
 
 /**
- * Open a file-backed CSV.
+ * Open a file-backed row source.
  * @param path - absolute path of the file.
- * @param delimiter - field separator.
+ * @param options - how a slice becomes rows.
  * @param signal - caller lifetime; aborts every request made from here on.
  * @returns the source, after its first slice has been counted.
  */
-export async function openCsvFile(path: string, delimiter: string, signal: AbortSignal): Promise<CsvFile> {
+export async function openRowFile(path: string, options: RowFileOptions, signal: AbortSignal): Promise<RowFile> {
   const url = textUrl(path)
   if (url === undefined) throw new Error('the page cannot address the workspace')
+  const parse = options.parse
 
   let size = 0
   let counted = 0
@@ -260,7 +258,7 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
       ingest(slice)
       return true
     },
-    async read(startRow: number, rowsWanted: number): Promise<FileWindow> {
+    async read(startRow: number, rowsWanted: number): Promise<RowWindow> {
       const count = Math.max(1, rowsWanted)
       // An anchor means the row can be reached exactly: the walk's anchors cover the
       // counted prefix, a scan's anchors cover the whole file once it has been searched.
@@ -274,7 +272,7 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
           if (available >= skip + count || slice.eof || length >= MAX_SLICE_BYTES) {
             const from = skipLines(slice.text, skip)
             const to = skipLines(slice.text, count, from)
-            const parsed = parseSlice(slice.text.slice(from, to), delimiter)
+            const parsed = parse(slice.text.slice(from, to))
             return { startRow, rows: parsed.rows.slice(0, count), exact: true, overlong: parsed.overlong }
           }
           length = Math.min(MAX_SLICE_BYTES, length * 2)
@@ -289,7 +287,7 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
       const slice = await fetchSlice(url, guess, length, false, signal)
       const from = end ? skipLines(slice.text, Math.max(0, countRows(slice.text, slice.eof) - count)) : 0
       const to = skipLines(slice.text, count, from)
-      const parsed = parseSlice(slice.text.slice(from, to), delimiter)
+      const parsed = parse(slice.text.slice(from, to))
       return { startRow, rows: parsed.rows.slice(0, count), exact: false, overlong: parsed.overlong }
     },
     async scan(pattern: RegExp, options: {

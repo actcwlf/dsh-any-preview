@@ -1,4 +1,4 @@
-/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+﻿/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { windowRange } from '../../kernel/window.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -11,8 +11,8 @@ import type { SearchOptions } from '../../kernel/search.ts'
 import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
-import { bandRows, fitColumns, stickyBand, windowedBodyRows } from '../../kernel/csv-window-state.ts'
-import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
+import { bandRows, fitColumns, stickyBand, windowedBodyRows } from '../../kernel/window-state.ts'
+import type { BodyRow, WindowedBody } from '../../kernel/window-state.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
 import { DELIMITER_LABEL } from './detect.ts'
 import { useCsvSource } from './source.ts'
@@ -298,3 +298,4 @@ export const csvPreview: PreviewModule = {
   title: () => t('csv.title'),
   Body: CsvBody,
 }
+

@@ -1,10 +1,14 @@
 /**
- * Window arithmetic for the CSV table.
+ * Window arithmetic for a row-windowed table.
  *
  * Rows have a fixed height, so `scrollTop` maps to a row index exactly; only the window's
  * *content* has to be read. Keeping this arithmetic pure makes the two-tier loading easy to
  * test: which window is needed, what it must cover, and what to paint while it is missing.
+ *
+ * Nothing here knows about delimiters or columns beyond "a row is a list of cells"; a log
+ * row is simply one cell.
  */
+import { toFileRow } from './row-numbering.ts'
 
 /** Which rows a viewport needs. */
 export interface WindowPlan {
@@ -197,9 +201,8 @@ export function bandRows(
 ): BodyRow[] {
   const rows: BodyRow[] = []
   for (let index = first; index < last; index += 1) {
-    // File row 0 is the header, which the table draws itself, so body row `i` is file row
-    // `i + 1` and lives at `i + 1 - startRow` inside the read rows.
-    const offset = index + 1 - startRow
+    // Body row `i` is file row `i + 1` and lives that far into the read rows.
+    const offset = toFileRow(index) - startRow
     const cells = loading || offset < 0 || offset >= read.length ? null : fitColumns(read[offset] ?? [], columns)
     rows.push({ index, cells })
   }

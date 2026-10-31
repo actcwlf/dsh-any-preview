@@ -28,15 +28,23 @@ dsh-any-preview/
     │   ├── types.ts         # PreviewModule / DocumentContent / PreviewBodyProps
     │   ├── source.ts        # 三种 content 模式 → 统一 PreviewSource
     │   ├── stream.ts        # useStreamedText：把增量文本喂给有状态消费者
-    │   ├── lines.ts         # 增量行切分（CRLF、跨块）
+    │   ├── lines.ts         # 增量行切分（CRLF、跨块）+ 行计数/跳过
     │   ├── text-pipeline.ts # 增量分隔符解析 + 有界行缓冲
+    │   ├── row-numbering.ts # 文件行（0 = 表头）↔ 表体行的唯一换算
     │   ├── csv-index.ts     # 稀疏行索引：每 N 行一个锚点
-    │   ├── csv-window.ts    # 从最近的锚点读一段行
-    │   ├── csv-window-state.ts # 窗口算术：读哪段、画哪些行、行高缩放
+    │   ├── csv-window.ts    # 从最近的锚点读一段行（文本路径）
+    │   ├── row-file.ts      # 文件源：字节锚点 + 窗口读 + 后台建索引 + 扫描
+    │   ├── window-state.ts  # 窗口算术：读哪段、画哪些行、比例滚动条
     │   └── useWindowedRows.ts  # 静止后读窗口的 hook（含 LRU）
     └── previews/
         ├── index.ts     # ★ PREVIEWS 数组：唯一的注册清单
         ├── csv/         # 流式表格（虚拟滚动；大文件用窗口）
+        │   ├── source.ts    # 行从哪来：文本缓冲 / 文件源 / 读一窗 / 扫描
+        │   ├── scroll.ts    # 视口、几何（memo）、reveal
+        │   ├── scan.ts      # 全文搜索状态机 + 箭头导航
+        │   ├── state.ts     # 两台小状态机的纯 reducer（可单测）
+        │   ├── parse.ts     # 切片 → 单元格（唯一懂分隔符的地方）
+        │   └── table.tsx    # 只负责 DOM
         ├── diff/        # 统一 diff 分类与渲染
         ├── log/         # 日志级别着色、过滤、尾部跟随
         ├── jsonl/       # 逐行 JSON：字段表格 + 坏行标出
@@ -90,14 +98,17 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 |---|---|
 | `csv-index.ts` | 稀疏行索引：每 10 000 行一个锚点，引号感知，只扫描新增后缀 |
 | `csv-window.ts` | 按锚点读窗口：定位 → 跳过 → 解析切片；末尾没有换行的最后一行也算一行 |
-| `csv-window-state.ts` | 纯算术：`planWindow`（读哪一段）、`windowedBodyRows` / `bandRows`（画哪些行 + 上下撑高）、比例几何与 `stickyBand` |
+| `window-state.ts` | 纯算术：`planWindow`（读哪一段）、`windowedBodyRows` / `bandRows`（画哪些行 + 上下撑高）、比例几何与 `stickyBand` |
 | `useWindowedRows.ts` | T1 占位 / T2 静止 200 ms 后读；按窗口号缓存（LRU，32 窗口 / 160 000 行） |
-| `csv-file.ts` | 文件源：按字节取切片、后台建字节行索引、估算偏移跳转、全文扫描（含锚点） |
+| `row-file.ts` | 文件源：按字节取切片、后台建字节行索引、估算偏移跳转、全文扫描（含锚点）；切片怎么变成行由调用方传入的 `parse` 决定 |
 | `host/text-route.ts` | `GET /api/any-preview/text`：字节区间 → 行对齐 → 解码，带 `start/end/size/eof` |
 | `previews/csv/source.ts` | 行从哪来：文本缓冲 + 字符索引 + 文件源 + 读一窗 + 扫描，合成一个 `CsvSource` |
+| `previews/csv/state.ts` | 两台状态机的纯 reducer：文件源的 idle→opening→ready/failed、扫描的 start→slice→done/stop |
 | `previews/csv/scroll.ts` | 视口与几何：滚动位置、总行数（含"拖 3 屏才换精确总数"）、比例几何、`reveal(行)` |
 | `previews/csv/scan.ts` | 全文搜索状态机：显式触发、从当前行起扫、逐片发布、可停止、并入箭头导航 |
 | `previews/csv/table.tsx` | 只负责 DOM：滚动容器、钉住窗口、表头、行号、高亮 |
+| `previews/csv/parse.ts` | 切片 → 单元格：全流程唯一懂分隔符的地方 |
+| `kernel/row-numbering.ts` | 文件行 ↔ 表体行（`toFileRow` / `toBodyRow` / `isHeaderRow`），全流程只此一处 |
 | `kernel/lines.ts` | 共用的行计数：`countNewlines` / `countRows` / `skipLines` |
 
 组件之外的这三份（`source` / `scroll` / `scan`）各有单一职责，`index.tsx` 只剩组合与状态行；
@@ -232,7 +243,7 @@ npm test
   日志级别与预算、JSONL 解析与列发现
 - `test/route.test.mjs`：假文件系统上跑 `serveMedia`，覆盖 200/206/416/HEAD/404/422
 - `test/media-decision.test.mjs`：Blob 兜底的触发条件与上限
-- `test/csv-index.test.mjs` / `test/csv-window.test.mjs` / `test/csv-window-state.test.mjs`：
+- `test/csv-index.test.mjs` / `test/csv-window.test.mjs` / `test/window-state.test.mjs` / `test/csv-state.test.mjs`：
   稀疏索引的锚点与估算、窗口读取与整串解析逐行一致、窗口算术（读哪一段、画哪些行、撑高、
   行高缩放）
 - `test/csv-window-dom.test.mjs`：用 jsdom 真正挂载 CSV 正文，验证「首屏出首窗、拖动出占位、

@@ -6,7 +6,8 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
-import type { ProportionalGeometry, WindowedBody } from '../../kernel/csv-window-state.ts'
+import { toFileRow } from '../../kernel/row-numbering.ts'
+import type { ProportionalGeometry, WindowedBody } from '../../kernel/window-state.ts'
 
 /** Everything the table renders from. */
 export interface CsvTableProps {
@@ -89,7 +90,7 @@ export function CsvTable(props: CsvTableProps) {
                     style={{ height: rowHeight, background: active ? ACTIVE_ROW : undefined }}
                   >
                     <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
-                      {estimated ? `~${String(row.index + 1)}` : row.index + 1}
+                      {estimated ? `~${String(toFileRow(row.index))}` : toFileRow(row.index)}
                     </td>
                     {row.cells.map((value, column) => (
                       <td key={column} style={bodyCell}>
@@ -148,3 +149,4 @@ const cellStyle = {
   borderBottom: '1px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
 } as const
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Ambient declarations for packages this plugin only consumes at runtime.
  *
  * The type check exists to catch mistakes in *this* code — an undefined
@@ -32,6 +32,7 @@ declare module 'react' {
   export function useCallback<T>(callback: T, deps: readonly unknown[]): T
   export function useRef<T>(initial: T): { current: T }
   export function useState<T>(initial: T | (() => T)): [T, (next: T | ((previous: T) => T)) => void]
+  export function useReducer<T, A>(reducer: (state: T, action: A) => T, initial: T): [T, (action: A) => void]
   const react: unknown
   export default react
 }
@@ -71,3 +72,4 @@ declare const Buffer: any
 declare function requestIdleCallback(callback: () => void, options?: { timeout?: number }): number
 
 declare const process: { cwd(): string, env: Record<string, string | undefined> }
+

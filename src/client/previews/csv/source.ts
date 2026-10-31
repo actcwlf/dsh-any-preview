@@ -7,7 +7,7 @@
  * "read rows [start, start+count)" and "scan the whole thing" — so the table above does
  * not care which one is live.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { PreviewBodyProps } from '../../kernel/types.ts'
 import { createRowBuffer } from '../../kernel/text-pipeline.ts'
 import type { RowBuffer } from '../../kernel/text-pipeline.ts'
@@ -15,14 +15,17 @@ import { createCsvIndex } from '../../kernel/csv-index.ts'
 import type { CsvIndex } from '../../kernel/csv-index.ts'
 import { readWindow } from '../../kernel/csv-window.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
-import { openCsvFile } from '../../kernel/csv-file.ts'
-import type { CsvFile } from '../../kernel/csv-file.ts'
+import { openRowFile } from '../../kernel/row-file.ts'
+import type { RowFile } from '../../kernel/row-file.ts'
 import { scanText } from '../../kernel/search-scan.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { detectDelimiter } from './detect.ts'
+import { parseCsvSlice } from './parse.ts'
+import { IDLE_FILE, fileState as fileStateReducer } from './state.ts'
+import type { FileEvent } from './state.ts'
 
 /** Rows the incremental buffer keeps before the windowed path takes over. */
 const ROW_BUDGET = LIMITS.csvRows
@@ -33,23 +36,6 @@ const LARGE_TEXT_CHARS = 2 * 1024 * 1024
 /** One index anchor every N rows, so a jump scans at most that many rows. */
 const INDEX_STRIDE = 10_000
 
-/** Where the file-backed source stands. `failed` means the text path keeps the table. */
-type FileStatus = 'idle' | 'opening' | 'ready' | 'failed'
-
-/** File source state the table renders from. */
-interface FileState {
-  readonly status: FileStatus
-  /** Best-known rows, header included. */
-  readonly total: number
-  /** Fraction of the file walked so far, 0..1. */
-  readonly progress: number
-  readonly complete: boolean
-}
-
-const IDLE_FILE: FileState = { status: 'idle', total: 0, progress: 0, complete: false }
-const OPENING_FILE: FileState = { status: 'opening', total: 0, progress: 0, complete: false }
-const FAILED_FILE: FileState = { status: 'failed', total: 0, progress: 0, complete: false }
-
 /** The header and body of the delivered text, widened so the grid lines up. */
 export interface CsvView {
   readonly header: readonly string[]
@@ -57,9 +43,21 @@ export interface CsvView {
   readonly columns: number
 }
 
+/**
+ * What the file source reports right now.
+ * @param file - an opened row source.
+ */
+function snapshotOf(file: RowFile): FileEvent & { readonly type: 'ready' } {
+  return {
+    type: 'ready',
+    total: file.totalRows(),
+    progress: file.size > 0 ? file.scanned / file.size : 1,
+    complete: file.complete,
+  }
+}
+
 /** Widen ragged rows so the grid lines up under the header. */
-function normalize(rows: readonly (readonly string[])[]): {
-  cells: readonly (readonly string[])[]
+function normalize(rows: readonly (readonly string[])[]): {  cells: readonly (readonly string[])[]
   columns: number
 } {
   const columns = rows.reduce((widest, row) => Math.max(widest, row.length), 0)
@@ -126,9 +124,9 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
   const indexRef = useRef<CsvIndex | null>(null)
   const delimiterRef = useRef<string>(',')
   const consumedRef = useRef(0)
-  const fileRef = useRef<CsvFile | null>(null)
+  const fileRef = useRef<RowFile | null>(null)
   const openedRef = useRef<string | null>(null)
-  const [fileState, setFileState] = useState<FileState>(IDLE_FILE)
+  const [fileState, dispatchFile] = useReducer(fileStateReducer, IDLE_FILE)
 
   const isText = content.kind === 'text'
 
@@ -186,31 +184,30 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     openedRef.current = path
     const controller = new AbortController()
     let live = true
-    setFileState(OPENING_FILE)
+    dispatchFile({ type: 'open' })
     void (async () => {
       try {
         const media = fileUrl(path)
         const bytes = media === undefined ? undefined : await fileSize(media)
         if (bytes === undefined || bytes <= LARGE_TEXT_CHARS) {
-          if (live) setFileState(FAILED_FILE)
+          if (live) dispatchFile({ type: 'fail' })
           return
         }
-        const file = await openCsvFile(path, delimiterRef.current, controller.signal)
+        const file = await openRowFile(path, {
+          // Each slice becomes rows through the CSV split; the row source itself only
+          // knows about lines, so another format passes its own parse here.
+          parse: slice => parseCsvSlice(slice, delimiterRef.current),
+        }, controller.signal)
         if (!live) {
           file.dispose()
           return
         }
         fileRef.current = file
-        setFileState({
-          status: 'ready',
-          total: file.totalRows(),
-          progress: file.size > 0 ? file.scanned / file.size : 1,
-          complete: file.complete,
-        })
+        dispatchFile(snapshotOf(file))
       } catch {
         // No route, no permission, or a path the Host will not serve: the delivered
         // text keeps the table working, so this is not an error the reader must see.
-        if (live) setFileState(FAILED_FILE)
+        if (live) dispatchFile({ type: 'fail' })
       }
     })()
     return () => {
@@ -224,26 +221,28 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
   }, [absolutePath, text.length === 0])
 
   // Walk the rest of the file in the background so the scrollbar and the row numbers
-  // can become exact. One slice per idle callback: the first screen never waits.
+  // can become exact. One slice per idle callback: the first screen never waits. Progress
+  // is published at most every 2 % — the table does not need 150 renders to show a
+  // scrollbar that is already right.
   useEffect(() => {
     if (fileState.status !== 'ready' || fileState.complete) return undefined
     let live = true
+    let published = fileState.progress
     const step = (): void => {
       const file = fileRef.current
       if (!live || file === null) return
       void file.advance().then((more) => {
         if (!live) return
-        setFileState({
-          status: 'ready',
-          total: file.totalRows(),
-          progress: file.size > 0 ? file.scanned / file.size : 1,
-          complete: file.complete,
-        })
+        const next = snapshotOf(file)
+        if (next.complete || next.progress - published >= 0.02) {
+          published = next.progress
+          dispatchFile(next)
+        }
         if (more) schedule()
       }, () => {
         // A half-indexed file still reads what it has; the text path takes over only
         // if the source could not be opened at all.
-        if (live) setFileState(current => ({ ...current, complete: true }))
+        if (live) dispatchFile({ type: 'ready', total: fileState.total, progress: published, complete: true })
       })
     }
     const schedule = (): void => {
@@ -253,7 +252,6 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     schedule()
     return () => { live = false }
   }, [fileState.status, fileState.complete])
-
   // One window, from the file when there is one and from the delivered text otherwise.
   // The callback is read through a ref by the hook, so its identity does not matter.
   const read = useCallback(async (startRow: number, count: number): Promise<WindowRead> => {
@@ -265,7 +263,7 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
       } catch (error) {
         // The file source broke mid-session (route gone, file changed): hand the table
         // back to the delivered text instead of leaving it on placeholders.
-        setFileState(FAILED_FILE)
+        dispatchFile({ type: 'fail' })
         throw error
       }
     }
@@ -312,3 +310,4 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     scan: searchable ? scan : undefined,
   }
 }
+
