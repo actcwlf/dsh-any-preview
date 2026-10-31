@@ -87,6 +87,7 @@ export function EntryView(props: EntryViewProps) {
   const [failure, setFailure] = useState<string | undefined>(undefined)
   const [existing, setExisting] = useState<string | undefined>(undefined)
   const [autoOpened, setAutoOpened] = useState(false)
+  const [hexView, setHexView] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -170,6 +171,7 @@ export function EntryView(props: EntryViewProps) {
         <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL}>
           {extracting ? t('archive.extracting') : t('archive.extractOpen')}
         </button>
+        <button type="button" onClick={() => setHexView(true)} style={SMALL}>{t('archive.viewHex')}</button>
       </div>
       {notice !== undefined && <div style={NOTE}>{notice}</div>}
       {failure !== undefined && <div style={FAIL}>{failure}</div>}
@@ -202,13 +204,20 @@ export function EntryView(props: EntryViewProps) {
   } else if (looksTextual(loaded.bytes)) {
     const text = new TextDecoder('utf-8', { fatal: false }).decode(loaded.bytes.subarray(0, MAX_TEXT_BYTES))
     body = <pre style={PRE}>{text}</pre>
-  } else {
+  } else if (hexView) {
+    // Hex is a choice, not the landing state: a binary member is usually opened to
+    // extract it, and the panel is where that happens.
     body = (
       <>
-        <div style={LOADING}>{t('sevenzip.binaryHint')}</div>
+        <div style={PANEL}>
+          <button type="button" onClick={() => setHexView(false)} style={SMALL}>{t('common.back')}</button>
+          <span style={NOTE_INLINE}>{t('sevenzip.binaryHint')}</span>
+        </div>
         <pre style={PRE}>{hexDump(loaded.bytes.subarray(0, MAX_HEX_BYTES))}</pre>
       </>
     )
+  } else {
+    body = panel
   }
 
   return (
@@ -251,6 +260,7 @@ const SMALL = {
 const NOTE = { marginTop: 8, color: 'var(--dsw-alias-label-secondary)' } as const
 const FAIL = { marginTop: 8, color: 'rgb(248, 81, 73)' } as const
 const PATH_TEXT = { marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' as const } as const
+const NOTE_INLINE = { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)' } as const
 const LOADING = { padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' } as const
 const PRE = {
   margin: 0, padding: '8px 12px', fontSize: 12,
