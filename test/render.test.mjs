@@ -275,3 +275,18 @@ test('every preview body renders without throwing', { skip: !available }, async 
   }
   assert.deepEqual(failures, [], `bodies that threw:\n${failures.join('\n')}`)
 })
+test('csv body renders a header and its rows', async () => {
+  const { seats } = await mount()
+  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')
+  assert.ok(seat, 'the csv preview is registered')
+  const text = 'id,name\n1,alpha\n2,beta\n'
+  const html = renderToStaticMarkup(React.createElement(seat.component, {
+    content: { kind: 'text', text, eof: true },
+    resourceAddress: 'dsh-resource://file/session/s/run.csv',
+    wrap: false,
+  }))
+  assert.match(html, /id/u)
+  assert.match(html, /alpha/u)
+  assert.match(html, /beta/u)
+  assert.match(html, /2 行/u, 'the summary counts data rows')
+})
