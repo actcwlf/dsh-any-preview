@@ -119,3 +119,14 @@ export async function writeExtracted(
   const result = await response.json() as { path: string }
   return result.path
 }
+/** Whether an earlier extraction of this member is still on disk. */
+export async function checkExtracted(entryName: string, targetDir: string): Promise<string | undefined> {
+  const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'check', entry: entryName, targetDir }),
+  })
+  if (!response.ok) return undefined
+  const result = await response.json() as { exists: boolean, path: string | null }
+  return result.exists ? (result.path ?? undefined) : undefined
+}

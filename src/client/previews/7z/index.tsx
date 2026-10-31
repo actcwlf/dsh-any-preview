@@ -5,7 +5,7 @@ import { errorText } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL } from '../../kernel/layout.ts'
-import { isSupported, readSevenZip, readSevenZipEntry, writeExtracted } from '../../kernel/sevenzip.ts'
+import { checkExtracted, isSupported, readSevenZip, readSevenZipEntry, writeExtracted } from '../../kernel/sevenzip.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
 import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
@@ -101,6 +101,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const [dir, setDir] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | undefined>(undefined)
+  const [existing, setExisting] = useState<string | undefined>(undefined)
   const [failure, setFailure] = useState<string | undefined>(undefined)
 
   useEffect(() => {
@@ -133,7 +134,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
     }
   }
 
-  const extract = async (): Promise<void> => {
+  const extract = async (force = false): Promise<void> => {
     if (opened === undefined) return
     if (dir.trim() === '') {
       setFailure(t('archive.dirRequired'))
@@ -143,7 +144,8 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
     setFailure(undefined)
     setNotice(undefined)
     try {
-      const path = await writeExtracted(opened.entry.name, opened.bytes, dir)
+      const path = await writeExtracted(opened.entry.name, opened.bytes, dir, force)
+      setExisting(path)
       const address = extractedAddress(resourceAddress, opened.entry.name, dir, defaultDir)
       const openedInPreview = address !== undefined && openResourceAddress(address)
       setNotice(openedInPreview
@@ -164,6 +166,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
     try {
       const bytes = await readSevenZipEntry(url, listing.archive, entry)
       setOpened({ entry, bytes, rendered: renderEntry(entry.name, bytes) })
+      setExisting(await checkExtracted(entry.name, dir).catch(() => undefined))
     } catch (error) {
       setOpened({ entry, bytes: new Uint8Array(), rendered: { kind: 'error', text: errorText(error, 'common.error') } })
     } finally {
@@ -225,8 +228,8 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
             <span style={{ flex: '1 1 auto' }} />
             {opened.bytes.length > 0 && (
               <>
-                <button type="button" onClick={() => { void extract() }} disabled={busy} style={ACTION}>
-                  {t('archive.extract')}
+                <button type="button" onClick={() => { void extract(existing !== undefined) }} disabled={busy} style={ACTION}>
+                  {existing !== undefined ? t('archive.reextract', { name: opened.entry.name }) : t('archive.extract')}
                 </button>
                 <button type="button" onClick={() => { void choose() }} style={ACTION}>
                   {t('archive.chooseDir')}
