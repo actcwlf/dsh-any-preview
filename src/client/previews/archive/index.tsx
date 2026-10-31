@@ -25,19 +25,8 @@ import { logPreview } from '../log/index.tsx'
 import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
+import { EntryView } from './EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from './paths.ts'
-
-/** Formats this package renders from content alone, without a file address. */
-const CONTENT_MODULES: readonly PreviewModule[] = [
-  csvPreview, diffPreview, emlPreview, fontPreview, jsonlPreview, logPreview,
-]
-
-function contentModuleFor(name: string): PreviewModule | undefined {
-  const dot = name.lastIndexOf('.')
-  if (dot < 0) return undefined
-  const extension = name.slice(dot + 1).toLowerCase()
-  return CONTENT_MODULES.find(module => module.extensions.includes(extension))
-}
 
 /** One request to the extraction route; `action` selects extract, check or clean. */
 async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
@@ -53,171 +42,6 @@ async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
   return await response.json() as T
 }
 
-/** One member: rendered by its own format when we have one, else explained. */
-function EntryView({ entry, url, resourceAddress, archivePath, onOpened, onBack }: {
-  readonly entry: ArchiveEntry
-  readonly url: string | undefined
-  readonly resourceAddress: string
-  readonly archivePath: string
-  readonly onOpened: (entry: ArchiveEntry) => void
-  readonly onBack: () => void
-}) {
-  const module = contentModuleFor(entry.name)
-  const defaultDir = defaultTargetDir(archivePath)
-  const [loaded, setLoaded] = useState<{ status: 'loading' | 'ready' | 'error', bytes?: Uint8Array, text?: string, message?: string }>({ status: 'loading' })
-  const [dir, setDir] = useState(defaultDir)
-  const [extracting, setExtracting] = useState(false)
-  const [notice, setNotice] = useState<string | undefined>(undefined)
-  const [failure, setFailure] = useState<string | undefined>(undefined)
-  const [existing, setExisting] = useState<string | undefined>(undefined)
-
-  useEffect(() => {
-    if (url === undefined) return
-    let alive = true
-    setLoaded({ status: 'loading' })
-    void readEntryBytesFromUrl(url, entry)
-      .then((bytes) => {
-        if (!alive) return
-        const text = module?.load === 'bytes-complete' ? undefined : decodeText(bytes)
-        setLoaded({ status: 'ready', bytes, text })
-      })
-      .catch((error: unknown) => {
-        if (alive) setLoaded({ status: 'error', message: errorText(error, 'archive.entryFailed') })
-      })
-    return () => { alive = false }
-  }, [url, entry, module])
-
-  // Look for a copy from an earlier visit, so reopening does not ask again.
-  useEffect(() => {
-    let alive = true
-    void postExtract<{ exists: boolean, path: string | null }>({ action: 'check', entry: entry.name, targetDir: dir })
-      .then((result) => { if (alive) setExisting(result.exists ? result.path ?? undefined : undefined) })
-      .catch(() => { /* route not loaded yet: the panel still offers extraction */ })
-    return () => { alive = false }
-  }, [entry.name, dir])
-
-  const choose = async (): Promise<void> => {
-    setFailure(undefined)
-    try {
-      const chosen = await chooseDirectory(new AbortController().signal)
-      // Cancelling keeps the current directory: only a real choice replaces it.
-      if (chosen !== undefined && chosen.trim() !== '') setDir(chosen)
-    } catch (error) {
-      setFailure(errorText(error, 'archive.chooseFailed'))
-    }
-  }
-
-  const extract = async (force = false): Promise<void> => {
-    if (dir.trim() === '') {
-      setFailure(t('archive.dirRequired'))
-      return
-    }
-    setExtracting(true)
-    setFailure(undefined)
-    setNotice(undefined)
-    try {
-      const result = await postExtract<{ path: string }>({
-        archive: archivePath,
-        entry: entry.name,
-        targetDir: dir,
-        force,
-      })
-      setExisting(result.path)
-      onOpened(entry)
-      const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
-      setNotice(address !== undefined && openResourceAddress(address)
-        ? t('archive.extractedOpened', { path: result.path })
-        : t('archive.extractedTo', { path: result.path }))
-    } catch (error) {
-      setFailure(errorText(error, 'archive.extractFailed'))
-    } finally {
-      setExtracting(false)
-    }
-  }
-
-  const openExisting = (): void => {
-    const address = extractedAddress(resourceAddress, entry.name, dir, defaultDir)
-    if (address !== undefined && openResourceAddress(address)) {
-      setNotice(t('archive.opened'))
-      return
-    }
-    setNotice(t('archive.fileAt', { path: existing ?? dir }))
-  }
-
-  // An entry that was extracted before opens itself: the extra panel and the
-  // extra click were pure friction once the file already exists on disk.
-  const autoOpened = useRef<string | undefined>(undefined)
-  useEffect(() => {
-    if (existing === undefined) return
-    if (autoOpened.current === existing) return
-    autoOpened.current = existing
-    onOpened(entry)
-    openExisting()
-  })
-
-  const panel = (
-    <div style={panelStyle}>
-      <div style={{ color: 'var(--dsw-alias-label-secondary)', marginBottom: 8 }}>
-        {loaded.status === 'error'
-          ? loaded.message
-          : t('archive.needsExtract')}
-      </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          value={dir}
-          onChange={event => setDir(event.target.value)}
-          aria-label={t('archive.dirLabel')}
-          style={pathInputStyle}
-        />
-        <button type="button" onClick={() => { void choose() }} style={smallButtonStyle}>{t('common.choose')}</button>
-        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={smallButtonStyle}>
-          {extracting ? t('archive.extracting') : t('archive.extractOpen')}
-        </button>
-      </div>
-      {notice !== undefined && <div style={{ marginTop: 8, color: 'var(--dsw-alias-label-secondary)' }}>{notice}</div>}
-      {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
-    </div>
-  )
-
-  const extractedNote = (
-    <div style={panelStyle}>
-      <div>{notice ?? t('archive.openedNote')}</div>
-      <div style={{ marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' }}>{existing}</div>
-      {failure !== undefined && <div style={{ marginTop: 8, color: 'rgb(248, 81, 73)' }}>{failure}</div>}
-    </div>
-  )
-
-  let body: ReactNode
-  if (loaded.status === 'loading') {
-    body = <div style={{ padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' }}>{t('archive.extracting')}</div>
-  } else if (loaded.status === 'error') {
-    body = existing !== undefined ? extractedNote : panel
-  } else if (module !== undefined && module.load === 'bytes-complete' && loaded.bytes !== undefined) {
-    body = <module.Body content={{ kind: 'bytes', data: loaded.bytes }} resourceAddress="" wrap={false} />
-  } else if (module !== undefined && loaded.text !== undefined) {
-    body = <module.Body content={{ kind: 'text', text: loaded.text, eof: true }} resourceAddress="" wrap={false} />
-  } else if (loaded.text !== undefined) {
-    body = <pre style={preStyle}>{loaded.text}</pre>
-  } else {
-    body = existing !== undefined ? extractedNote : panel
-  }
-
-  return (
-    <PreviewChrome>
-      <div style={barStyle}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' }}>
-          <button type="button" onClick={onBack} style={backStyle}>{t('common.back')}</button>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{entry.name}</span>
-        </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
-      </div>
-      <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' }}>
-        {body}
-      </div>
-    </PreviewChrome>
-  )
-}
-
 export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   const { meta, absolutePath, version } = useDocument(content, resourceAddress, useResource)
   const size = meta?.size ?? 0
@@ -225,10 +49,12 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
   const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
   const [barNotice, setBarNotice] = useState<string | undefined>(undefined)
+  const [dir, setDir] = useState('')
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
+  const defaultDir = typeof absolutePath === 'string' ? defaultTargetDir(absolutePath) : ''
   const name = typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() ?? '' : ''
   const lower = name.toLowerCase()
 
@@ -300,14 +126,24 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   if (selected !== undefined) {
     return (
       <EntryView
-        entry={selected}
-        url={url}
-        resourceAddress={resourceAddress}
-        archivePath={absolutePath ?? ''}
-        onOpened={setLastEntry}
-        onBack={() => setSelected(undefined)}
-      />
-    )
+      entry={selected}
+      resourceAddress={resourceAddress}
+      targetDir={dir}
+      onTargetDir={setDir}
+      defaultDir={defaultTargetDir(absolutePath ?? '')}
+      loadBytes={() => url === undefined
+        ? Promise.reject(new Error('archive has no readable url'))
+        : readEntryBytesFromUrl(url, selected)}
+      write={(_bytes, force) => postExtract<{ path: string }>({
+        archive: absolutePath, entry: selected.name, targetDir: dir, force,
+      }).then(result => result.path)}
+      check={() => postExtract<{ exists: boolean, path: string | null }>({
+        action: 'check', entry: selected.name, targetDir: dir,
+      }).then(result => (result.exists ? result.path ?? undefined : undefined))}
+      addressOf={() => extractedAddress(resourceAddress, selected.name, dir, defaultTargetDir(absolutePath ?? ''))}
+      onOpened={() => setLastEntry(selected)}
+      onBack={() => setSelected(undefined)}
+    />    )
   }
 
   return (
