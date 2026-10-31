@@ -4,7 +4,7 @@ import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { ACTIVE_ROW, DOCUMENT_BODY, PANE_FILL } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, PANE_FILL } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -80,7 +80,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
         ? t('common.truncated')
         : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : undefined}
     >
-      <div ref={setScroller} style={{ ...DOCUMENT_BODY, flex: '1 1 auto', overflow: 'auto' }}>
+      <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr>
@@ -170,7 +170,7 @@ const indexStyle = {
   left: 0,
   // Opaque and body-coloured: it slides under the header, so it cannot be transparent,
   // and a brighter surface would paint a strip down the pane.
-  background: 'var(--dsw-alias-bg-document-preview)',
+  background: 'var(--dsw-alias-bg-base)',
   userSelect: 'none' as const,
 } as const
 

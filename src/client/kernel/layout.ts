@@ -15,10 +15,10 @@ export const PANE_ROOT: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   overflow: 'hidden',
-  // Transparent on purpose: the host's own preview leaves its header on the pane surface
-  // and tints only the scrolling body (`bg-document-preview`). Painting the whole pane
-  // tinted turns the toolbar grey and reads as a block pasted into the app.
-  background: 'transparent',
+  // Opaque on purpose. The owner renders its own "load more" row under this box for a
+  // document that still has pages (it cannot know a preview reads the file itself), so a
+  // transparent pane shows that button through the title bar.
+  background: 'var(--dsw-alias-bg-base)',
 }
 
 /** A centred placeholder that fills the same box. */
@@ -28,12 +28,7 @@ export const PANE_FILL: CSSProperties = {  position: 'absolute',
   placeItems: 'center',
   fontSize: 12,
   color: 'var(--dsw-alias-label-secondary)',
-  background: 'var(--dsw-alias-bg-document-preview)',
-}
-
-/** The scrolling body's surface: the host's document tint, not the app's base white. */
-export const DOCUMENT_BODY: CSSProperties = {
-  background: 'var(--dsw-alias-bg-document-preview)',
+  background: 'var(--dsw-alias-bg-base)',
 }
 
 /** Background tint for the row the search navigation points at. */

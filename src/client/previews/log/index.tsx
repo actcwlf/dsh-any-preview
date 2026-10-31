@@ -4,7 +4,7 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { ACTIVE_ROW, DOCUMENT_BODY, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { followAfterScroll, isAtBottom } from './follow.ts'
 import { scrollToRow } from '../../kernel/scroll.ts'
@@ -92,7 +92,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
             })
             if (next !== follow) setFollow(next)
           }}
-          style={{ ...DOCUMENT_BODY, flex: '1 1 auto', overflow: 'auto' }}
+          style={{ flex: '1 1 auto', overflow: 'auto' }}
         >
         <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (

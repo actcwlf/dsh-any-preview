@@ -1,11 +1,11 @@
-﻿/**
+/**
  * The table itself: a scroller holding either the exact rows or the pinned window, with
  * the header, the row numbers and the highlight. No state beyond the row box lives here.
  */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { Marked } from '../../kernel/marks.tsx'
-import { ACTIVE_ROW, DOCUMENT_BODY } from '../../kernel/layout.ts'
+import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import { toFileRow } from '../../kernel/row-numbering.ts'
 import type { ProportionalGeometry, WindowedBody } from '../../kernel/window-state.ts'
 
@@ -55,7 +55,7 @@ export function CsvTable(props: CsvTableProps) {
       onScroll={event => onScroll(event.currentTarget.scrollTop)}
       // The pinned table changes under the browser's scroll anchoring; it must not
       // "correct" our offset behind our back.
-      style={{ ...DOCUMENT_BODY, flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
+      style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
     >
       <div style={content}>
         <div style={pinnedBlock}>
@@ -89,7 +89,7 @@ export function CsvTable(props: CsvTableProps) {
                     data-row-index={row.index}
                     style={{ height: rowHeight, background: active ? ACTIVE_ROW : undefined }}
                   >
-                    <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
+                    <td style={active ? activeIndexCell : indexCell}>
                       {estimated ? `~${String(toFileRow(row.index))}` : toFileRow(row.index)}
                     </td>
                     {row.cells.map((value, column) => (
@@ -115,7 +115,10 @@ export function CsvTable(props: CsvTableProps) {
 
 const shared = {
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
+  // A wash of the ink colour rather than a layer token: the layer palette is white in
+  // the light theme, so it cannot make a header band. 4 % of the label colour is a
+  // subtle grey in light and a subtle lift in dark.
+  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent)',
 } as const
 
 const headerStyle = {
@@ -142,9 +145,9 @@ const indexStyle = {
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   position: 'sticky' as const,
   left: 0,
-  // Opaque, and the same surface as the body: it slides under the header, so it cannot
-  // be transparent, and a brighter colour would draw a strip down the pane.
-  background: 'var(--dsw-alias-bg-document-preview)',
+  // Opaque, and the same surface as the rows: it slides under the header, so it cannot
+  // be transparent, and a different colour would draw a strip down the pane.
+  background: 'var(--dsw-alias-bg-base)',
   userSelect: 'none' as const,
 } as const
 
@@ -152,5 +155,17 @@ const cellStyle = {
   padding: '0 12px',
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
+} as const
+
+/**
+ * The sticky row-number cell of the highlighted row.
+ *
+ * `ACTIVE_ROW` is a translucent wash, and this cell has to stay opaque so numbers do not
+ * show through it when the table scrolls sideways: the wash goes on as an image layer
+ * over the solid surface instead of being the background itself.
+ */
+const activeIndexCell = {
+  ...indexStyle,
+  backgroundImage: `linear-gradient(${ACTIVE_ROW}, ${ACTIVE_ROW})`,
 } as const
 
