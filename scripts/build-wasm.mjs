@@ -40,6 +40,7 @@ const SOURCES = [
 const EXPORTS = [
   'memory', 'malloc', 'free', 'reset_heap', 'lzma_decode', 'lzma2_decode', 'crc32_buf',
   'bcj_x86', 'delta_decode', 'bcj2_decode',
+  'dec_open', 'dec_push', 'dec_finish', 'dec_close',
 ]
 
 /** Locate a toolchain: emsdk first, then PATH. */

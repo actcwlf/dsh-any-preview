@@ -156,6 +156,95 @@ uint32_t crc32_buf(const uint8_t *data, uint32_t length) {
   return crc ^ 0xFFFFFFFFu;
 }
 
+
+/* ---- streaming sessions ------------------------------------------------- */
+
+#define DEC_SLOTS 8
+
+typedef struct {
+  int used;
+  int kind; /* 0 = LZMA1, 1 = LZMA2 */
+  CLzmaDec lzma;
+  CLzma2Dec lzma2;
+  ELzmaStatus status;
+} DecSlot;
+
+static DecSlot g_slots[DEC_SLOTS];
+
+/** Open a decoding session; returns its handle or -1 when no slot is free. */
+int32_t dec_open(const uint8_t *props, uint32_t propsLen, uint32_t kind) {
+  for (int index = 0; index < DEC_SLOTS; index++) {
+    DecSlot *slot = &g_slots[index];
+    if (slot->used) continue;
+    slot->kind = (int)kind;
+    slot->status = LZMA_STATUS_NOT_SPECIFIED;
+    if (kind == 0) {
+      LzmaDec_Construct(&slot->lzma);
+      if (LzmaDec_Allocate(&slot->lzma, props, propsLen, &g_alloc) != SZ_OK) return -1;
+      LzmaDec_Init(&slot->lzma);
+    } else {
+      Lzma2Dec_Construct(&slot->lzma2);
+      if (Lzma2Dec_Allocate(&slot->lzma2, props[0], &g_alloc) != SZ_OK) return -1;
+      Lzma2Dec_Init(&slot->lzma2);
+    }
+    slot->used = 1;
+    return index;
+  }
+  return -1;
+}
+
+/**
+ * Feed one chunk and drain whatever output fits.
+ * @param consumed - input bytes actually used
+ * @returns output bytes written, or -2 on corrupt data
+ */
+int32_t dec_push(int32_t handle, const uint8_t *in, uint32_t inLen,
+                 uint8_t *out, uint32_t outCap, uint32_t *consumed) {
+  DecSlot *slot;
+  SizeT src = inLen;
+  SizeT dst = outCap;
+  SRes result;
+
+  if (handle < 0 || handle >= DEC_SLOTS) return -2;
+  slot = &g_slots[handle];
+  if (!slot->used) return -2;
+
+  result = slot->kind == 0
+    ? LzmaDec_DecodeToBuf(&slot->lzma, out, &dst, in, &src, LZMA_FINISH_ANY, &slot->status)
+    : Lzma2Dec_DecodeToBuf(&slot->lzma2, out, &dst, in, &src, LZMA_FINISH_ANY, &slot->status);
+  if (consumed != 0) *consumed = (uint32_t)src;
+  if (result != SZ_OK) return -2;
+  return (int32_t)dst;
+}
+
+/** Drain the tail after the last input chunk. */
+int32_t dec_finish(int32_t handle, uint8_t *out, uint32_t outCap) {
+  DecSlot *slot;
+  SizeT src = 0;
+  SizeT dst = outCap;
+  SRes result;
+
+  if (handle < 0 || handle >= DEC_SLOTS) return -2;
+  slot = &g_slots[handle];
+  if (!slot->used) return -2;
+
+  result = slot->kind == 0
+    ? LzmaDec_DecodeToBuf(&slot->lzma, out, &dst, (const Byte *)"", &src, LZMA_FINISH_END, &slot->status)
+    : Lzma2Dec_DecodeToBuf(&slot->lzma2, out, &dst, (const Byte *)"", &src, LZMA_FINISH_END, &slot->status);
+  if (result != SZ_OK) return -2;
+  return (int32_t)dst;
+}
+
+/** Close a session and release its dictionary. */
+void dec_close(int32_t handle) {
+  DecSlot *slot;
+  if (handle < 0 || handle >= DEC_SLOTS) return;
+  slot = &g_slots[handle];
+  if (!slot->used) return;
+  if (slot->kind == 0) LzmaDec_Free(&slot->lzma, &g_alloc);
+  else Lzma2Dec_Free(&slot->lzma2, &g_alloc);
+  slot->used = 0;
+}
 /* ---- filters ------------------------------------------------------------ */
 
 int32_t bcj2_decode(const uint8_t *mainBuf, uint32_t mainLen,
