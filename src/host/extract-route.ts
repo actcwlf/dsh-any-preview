@@ -26,7 +26,9 @@ export type ExtractRouteContext = RouteContext
 
 interface ExtractRequest {
   /** `extract` (default), `check` for an existing copy, `clean` for the directory. */
-  readonly action?: 'extract' | 'check' | 'clean'
+  readonly action?: 'extract' | 'check' | 'clean' | 'write'
+  /** Base64 payload for `write`: the already-decoded member bytes. */
+  readonly data?: string
   /** Rewrite even when an identical extraction is present. */
   readonly force?: boolean
   readonly archive?: string
@@ -155,6 +157,13 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
     if (action === 'check') {
       const path = await extractedPathOf(entry, targetDir)
       return json({ exists: path !== undefined, path: path ?? null })
+    }
+
+    if (action === 'write') {
+      if (typeof body.data !== 'string') return failure(400, 'data is required')
+      const decoded = Buffer.from(body.data, 'base64')
+      const written = await writeEntryBytesTo(new Uint8Array(decoded), entry, targetDir, force === true)
+      return json({ path: written })
     }
 
     if (typeof archive !== 'string' || !isAbsolute(archive)) return failure(400, 'absolute archive path required')
