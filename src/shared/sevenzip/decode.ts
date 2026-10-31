@@ -32,6 +32,13 @@ export interface Decoder {
   ): number
   bcj_x86(data: number, size: number, pc: number): number
   delta_decode(data: number, size: number, distance: number): number
+  bcj2_decode(
+    main: number, mainLen: number,
+    call: number, callLen: number,
+    jump: number, jumpLen: number,
+    rc: number, rcLen: number,
+    out: number, outCap: number,
+  ): number
 }
 
 /** Error codes the decode exports return. */
@@ -54,7 +61,7 @@ function chainOf(folder: SevenZipFolder): { data: SevenZipCoder, filters: SevenZ
 
 /** True when this decoder can run the folder's coder chain. */
 export function canDecode(folder: SevenZipFolder): boolean {
-  return chainOf(folder) !== undefined
+  return isBcj2Folder(folder) || chainOf(folder) !== undefined
 }
 
 /** Copy bytes into the wasm heap. */
@@ -109,13 +116,28 @@ function runFilters(decoder: Decoder, filters: readonly SevenZipCoder[], pointer
  * @param folder - the folder definition from the header
  * @param packed - the packed bytes the folder's streams occupy
  */
-export function decodeFolder(decoder: Decoder, folder: SevenZipFolder, packed: Uint8Array): Uint8Array {
+/** True when the folder is a data coder feeding a BCJ2 filter. */
+function isBcj2Folder(folder: SevenZipFolder): boolean {
+  if (folder.coders.length !== 2) return false
+  const [data, filter] = folder.coders
+  if (data === undefined || filter === undefined) return false
+  return DATA_CODERS.has(data.id) && filter.id === '0303011b'
+}
+
+/**
+ * Decode one folder.
+ * @param decoder - loaded lib/lzma.wasm
+ * @param folder - the folder definition from the header
+ * @param packed - the folder's packed streams, in the order of its unbound inputs
+ */
+export function decodeFolder(decoder: Decoder, folder: SevenZipFolder, packed: readonly Uint8Array[]): Uint8Array {
+  if (isBcj2Folder(folder)) return decodeBcj2(decoder, folder, packed)
   const chain = chainOf(folder)
-  if (chain === undefined) throw new Error('7z: unsupported coder chain (AES / BCJ2 / multi-stream)')
+  if (chain === undefined) throw new Error('7z: unsupported coder chain (AES / multi-stream)')
 
   decoder.reset_heap()
   try {
-    const { pointer, length } = runDataCoder(decoder, chain.data, packed, Math.max(1, folder.size))
+    const { pointer, length } = runDataCoder(decoder, chain.data, packed[0] ?? new Uint8Array(), Math.max(1, folder.size))
     runFilters(decoder, chain.filters, pointer, length)
     return new Uint8Array(decoder.memory.buffer).slice(pointer, pointer + length)
   } finally {
@@ -123,6 +145,32 @@ export function decodeFolder(decoder: Decoder, folder: SevenZipFolder, packed: U
   }
 }
 
+
+/** Decode a folder whose chain is one data coder feeding BCJ2. */
+function decodeBcj2(decoder: Decoder, folder: SevenZipFolder, packed: readonly Uint8Array[]): Uint8Array {
+  const data = folder.coders[0]
+  const mainInput = packed[0]
+  if (data === undefined || mainInput === undefined) throw new Error('7z: BCJ2 folder is missing its main stream')
+
+  decoder.reset_heap()
+  try {
+    const main = runDataCoder(decoder, data, mainInput, Math.max(1, folder.size))
+    const extra = [1, 2, 3].map(index => packed[index] ?? new Uint8Array())
+    const pointers = extra.map(bytes => write(decoder, bytes))
+    const out = decoder.malloc(Math.max(1, folder.size))
+    const written = decoder.bcj2_decode(
+      main.pointer, main.length,
+      pointers[0] ?? 0, extra[0]?.length ?? 0,
+      pointers[1] ?? 0, extra[1]?.length ?? 0,
+      pointers[2] ?? 0, extra[2]?.length ?? 0,
+      out, Math.max(1, folder.size),
+    )
+    if (written < 0) throw new Error(ERRORS[written] ?? `7z: BCJ2 decode failed (${String(written)})`)
+    return new Uint8Array(decoder.memory.buffer).slice(out, out + written)
+  } finally {
+    decoder.reset_heap()
+  }
+}
 /** Read the packed bytes a folder needs, given the file's pack streams. */
 export function folderPackedBytes(
   folder: SevenZipFolder,

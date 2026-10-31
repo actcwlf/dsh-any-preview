@@ -53,7 +53,7 @@ export async function readSevenZip(url: string): Promise<SevenZipArchive> {
     if (streams === undefined || folder === undefined || stream === undefined) {
       throw new Error('7z: encoded header is incomplete')
     }
-    next = decodeFolder(await decoder(), folder, await readPacked(url, stream))
+    next = decodeFolder(await decoder(), folder, [await readPacked(url, stream)])
   }
 
   const archive = parseHeader(next)
@@ -77,7 +77,8 @@ export async function readSevenZipEntry(
   if (folder === undefined || stream === undefined) throw new Error('7z: entry has no stream')
   if (!canDecode(folder)) throw new Error('7z: unsupported coder chain (AES or filters)')
 
-  const output = decodeFolder(await decoder(), folder, await readPacked(url, stream))
+  const packs = await Promise.all(folder.packs.map(index => readPacked(url, archive.packStreams[index] ?? stream)))
+  const output = decodeFolder(await decoder(), folder, packs)
   let offset = 0
   for (let index = 0; index < entry.stream; index++) offset += folder.sizes[index] ?? 0
   return output.slice(offset, offset + entry.size)

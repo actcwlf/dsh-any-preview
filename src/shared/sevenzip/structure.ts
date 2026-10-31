@@ -297,7 +297,9 @@ function parseStreamsInfo(reader: Reader): {
         } else if (sub === ID.codersUnPackSize) {
           // One size per coder output; the last one is the folder's real size.
           for (const folder of folders) {
-            for (let out = 0; out < Math.max(1, folder.outputs); out++) folder.size = reader.number()
+            const values: number[] = []
+            for (let out = 0; out < Math.max(1, folder.outputs); out++) values.push(reader.number())
+            folder.size = values[values.length - 1] ?? 0
           }
         } else if (sub === ID.crc) {
           const defined = reader.bits2(folders.length)
@@ -422,8 +424,12 @@ function parseFolder(reader: Reader): SevenZipFolder {
   }
 
   // Every input that no bind pair feeds comes from a packed stream.
+  // When several inputs are unbound, the indices of the packed streams are stored
+  // (all of them); with exactly one, the index is implied.
   const packedCount = totalIn - bindPairCount
-  for (let index = 0; index < packedCount - 1; index++) reader.number()
+  if (packedCount > 1) {
+    for (let index = 0; index < packedCount; index++) reader.number()
+  }
 
   const supported = coders.every(coder =>
     coder.id === '030101' || coder.id === '21' || coder.id === '00'

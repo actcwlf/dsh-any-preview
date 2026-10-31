@@ -441,7 +441,7 @@ async function inspectSevenZip(read: Reader): Promise<InspectResult> {
       throw new Error('7z: encoded header is incomplete')
     }
     const bytes = await read(32 + stream.offset, stream.size)
-    header = decodeFolder(await sevenZipDecoder(), folder, bytes)
+    header = decodeFolder(await sevenZipDecoder(), folder, [bytes])
   }
 
   const archive = parseHeader(header)

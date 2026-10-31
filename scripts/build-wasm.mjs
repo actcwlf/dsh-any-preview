@@ -39,7 +39,7 @@ const SOURCES = [
 /** Exports the client depends on; asserted after the build. */
 const EXPORTS = [
   'memory', 'malloc', 'free', 'reset_heap', 'lzma_decode', 'lzma2_decode', 'crc32_buf',
-  'bcj_x86', 'delta_decode',
+  'bcj_x86', 'delta_decode', 'bcj2_decode',
 ]
 
 /** Locate a toolchain: emsdk first, then PATH. */

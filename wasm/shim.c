@@ -11,6 +11,7 @@
 #include "Lzma2Dec.h"
 #include "Bra.h"
 #include "Delta.h"
+#include "Bcj2.h"
 
 
 /* ---- errno -------------------------------------------------------------- */
@@ -156,6 +157,29 @@ uint32_t crc32_buf(const uint8_t *data, uint32_t length) {
 }
 
 /* ---- filters ------------------------------------------------------------ */
+
+int32_t bcj2_decode(const uint8_t *mainBuf, uint32_t mainLen,
+                    const uint8_t *callBuf, uint32_t callLen,
+                    const uint8_t *jumpBuf, uint32_t jumpLen,
+                    const uint8_t *rcBuf, uint32_t rcLen,
+                    uint8_t *out, uint32_t outCap) {
+  CBcj2Dec state;
+  SRes result;
+  Bcj2Dec_Init(&state);
+  state.bufs[BCJ2_STREAM_MAIN] = (const Byte *)mainBuf;
+  state.lims[BCJ2_STREAM_MAIN] = (const Byte *)mainBuf + mainLen;
+  state.bufs[BCJ2_STREAM_CALL] = (const Byte *)callBuf;
+  state.lims[BCJ2_STREAM_CALL] = (const Byte *)callBuf + callLen;
+  state.bufs[BCJ2_STREAM_JUMP] = (const Byte *)jumpBuf;
+  state.lims[BCJ2_STREAM_JUMP] = (const Byte *)jumpBuf + jumpLen;
+  state.bufs[BCJ2_STREAM_RC] = (const Byte *)rcBuf;
+  state.lims[BCJ2_STREAM_RC] = (const Byte *)rcBuf + rcLen;
+  state.dest = out;
+  state.destLim = out + outCap;
+  result = Bcj2Dec_Decode(&state);
+  if (result != SZ_OK) return -2;
+  return (int32_t)(state.dest - out);
+}
 
 /**
  * x86 BCJ decode, applied to a whole unpacked stream.
