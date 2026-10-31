@@ -133,8 +133,19 @@ git log --oneline master..HEAD
 
 ## 9. 相关但独立的事项
 
-- `samples/huge.csv`（22.8 MB，300,001 行）是本地验证夹具，**未提交**；需要时用 `tmp-7z/gen-csv.mjs` 重新生成。
-  `test/csv-window-dom.test.mjs` 在文件存在时会跑第 20 万行的用例，否则跳过（`DSH_HUGE_CSV` 可指定别的路径）；
+- 本地验证夹具（都在 `F:\DSH\workspace\ext_preview\samples\`，**未提交**），用
+  `node tmp-7z/gen-csv.mjs <rows> <path>` 生成（默认 300 000 行 → `samples/huge.csv`）：
+
+  | 文件 | 规模 | 用来验 |
+  |---|---|---|
+  | `huge.csv` | 22.8 MB / 300 000 行 | 普通大文件，22 px 行高 |
+  | `huge-1m.csv` | 73.4 MB / 1 000 000 行 | 缩放滚动条（行高 16.78 px），索引约 2 s |
+  | `huge-2m.csv` | 150 MB / 2 000 000 行 | 索引最久（约 4 s）；行高 8.39 px，正文会被压扁（>76 万行的既有设计） |
+
+  三份的最底部都核对过：行号 `1000000`/`2000000`，内容就是文件最后一行；表体总高正好
+  16 777 216 px（浏览器元素高度上限）。
+  `test/csv-window-dom.test.mjs` 在 `samples/huge.csv` 存在时会跑第 20 万行的用例，否则跳过
+  （`DSH_HUGE_CSV` 可指定别的路径）；
 - 7z 相关能力（BCJ/BCJ2/流式解压）已在 master，与本分支无关；
 - `docs/internals.md` 已补「CSV 窗口化」一节。
 
