@@ -29,9 +29,14 @@ const hugeCsv = process.env.DSH_HUGE_CSV ?? new URL('../../samples/huge.csv', im
 const hugeAvailable = available && existsSync(hugeCsv)
 
 const React = available ? anchorRequire('react') : undefined
-const { createRoot } = available ? anchorRequire('react-dom/client') : {}
-// React 18.3 exposes act itself; older checkouts keep it in the test utilities.
-const act = available ? (React.act ?? anchorRequire('react-dom/test-utils').act) : undefined
+/**
+ * `react-dom` must be required *after* the DOM globals exist: it captures
+ * `canUseDOM` at import time, and without a DOM React's delegated events (input,
+ * click) never fire — only element-attached ones like scroll do.
+ */
+let createRoot
+/** React's own act, from the react-dom copy the DOM was built for. */
+let act
 /** Each mount needs its own module instance, so the bundle registers a fresh body. */
 let mounts = 0
 
@@ -71,6 +76,10 @@ async function mountCsv() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   // Warming the 3D chunk is a browser-only concern; keep it out of the test's timer queue.
   globalThis.requestIdleCallback = () => 0
+  // Only now is it safe to load react-dom: it decides at import time whether there is a
+  // DOM, and a copy loaded earlier never delegates input/click events.
+  createRoot = anchorRequire('react-dom/client').createRoot
+  act = React.act
 
   let captured
   window.__ModuleLoader__ = { load: (entry) => { captured = entry } }
@@ -406,6 +415,50 @@ test('the table never goes blank while the file is being indexed', { skip: !avai
   // Regression: an index slice used to invalidate the window cache, and the read that
   // would have refilled it never ran again — the table then showed placeholders forever.
   assert.equal(blanks, 0, `the table went blank while indexing: ${samples.join(',')}`)
+})
+
+test('a scan hit past the loaded rows is one click away', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const host = installHost(csvOf(120_000))
+  t.after(host.restore)
+  globalThis.requestIdleCallback = () => 0
+  // The owner delivered its first page only (5,000 rows); the match is at row 100,000.
+  const view = await render(component, csvOf(5_000), { path: '/data/big.csv' })
+  t.after(view.dispose)
+  await tick(SETTLE)
+
+  /** Type into the search field the way a reader would. */
+  const search = async (value) => {
+    const input = view.container.querySelector('input[type="search"]')
+    assert.ok(input, 'the search field is mounted')
+    const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+    await act(async () => {
+      setter.call(input, value)
+      input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+    })
+  }
+  const nextButton = () => view.container.querySelector('button[title="下一个匹配"]')
+
+  await search('user_100000')
+  // The scan walks the file; the row search cannot see this match at all.
+  await tick(600)
+  assert.match(view.container.textContent ?? '', /共 1 处匹配/u)
+  const next = nextButton()
+  assert.equal(next?.disabled, false, 'the arrow is enabled by the scan result')
+
+  await act(async () => { next.click() })
+  await tick(SETTLE)
+  const rows = view.painted()
+  const hit = rows.find(row => row.index === 99_999)
+  assert.ok(hit, `the hit row is painted, painted ${String(rows[0]?.index)}..${String(rows[rows.length - 1]?.index)}`)
+  assert.equal(hit.cells[2], 'user_100000')
+  assert.match(view.container.querySelector('tr[data-row-index="99999"]')?.getAttribute('style') ?? '', /rgba\(255, 196, 0/u,
+    'the hit row is marked')
+
+  // A query that matches every row keeps the count whole and caps what is navigable.
+  await search('user_')
+  await tick(800)
+  assert.match(view.container.textContent ?? '', /共 120,000 处匹配（可跳转前 5,000 处）/u)
 })
 
 test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !hugeAvailable }, async (t) => {

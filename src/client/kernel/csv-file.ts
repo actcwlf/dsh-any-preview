@@ -11,6 +11,7 @@
  */
 import { LIMITS } from '../../shared/limits.ts'
 import { textUrl } from './file-url.ts'
+import { createLineCounter } from './search-scan.ts'
 import { createRowParser } from './text-pipeline.ts'
 
 /** Bytes one background index slice covers. */
@@ -48,6 +49,14 @@ export interface FileWindow {
   readonly overlong: boolean
 }
 
+/** What a whole-file scan found. */
+export interface FileScan {
+  /** Matches in the whole file. */
+  readonly matches: number
+  /** Zero-based line of each collected match, in order (line 0 is the header). */
+  readonly lines: readonly number[]
+}
+
 /** A file-backed CSV: byte windows in, rows out. */
 export interface CsvFile {
   /** Bytes in the file. */
@@ -66,6 +75,20 @@ export interface CsvFile {
   advance(): Promise<boolean>
   /** Rows for one window; the caller may ask for any row. */
   read(startRow: number, count: number): Promise<FileWindow>
+  /**
+   * Search the whole file without blocking the page.
+   *
+   * Slices are line-aligned, so a match that stays inside a row is never split; a match
+   * across rows is found in the row it starts in. Because the walk is in order it also
+   * leaves an anchor per slice behind, which is what makes a jump to a match exact.
+   * @param pattern - compiled expression; global, so `lastIndex` advances.
+   * @param options - abort signal, progress callback, and how many match lines to keep.
+   */
+  scan(pattern: RegExp, options: {
+    readonly signal: AbortSignal
+    readonly onProgress?: (fraction: number) => void
+    readonly lineLimit?: number
+  }): Promise<FileScan>
   /** Forget everything read so far. */
   dispose(): void
 }
@@ -140,47 +163,6 @@ async function fetchSlice(
 }
 
 /**
- * Scan the whole file for a pattern, one slice at a time.
- *
- * Slices are line-aligned, so a pattern that stays inside a row can never straddle
- * two of them; a pattern that runs across rows still finds each match inside the row
- * it starts in.
- * @param path - absolute path of the file.
- * @param pattern - compiled expression; global, so `lastIndex` advances.
- * @param options - abort signal and progress callback.
- * @returns the match count.
- */
-export async function scanCsvFile(
-  path: string,
-  pattern: RegExp,
-  options: { readonly signal: AbortSignal, readonly onProgress?: (fraction: number) => void },
-): Promise<{ matches: number }> {
-  const url = textUrl(path)
-  if (url === undefined) throw new Error('the page cannot address the workspace')
-  let matches = 0
-  let offset = 0
-  for (;;) {
-    const slice = await fetchSlice(url, offset, SLICE_BYTES, true, options.signal)
-    if (slice.text.length > 0) {
-      pattern.lastIndex = 0
-      for (;;) {
-        const found = pattern.exec(slice.text)
-        if (found === null) break
-        matches += 1
-        if (found[0].length === 0) pattern.lastIndex += 1
-      }
-    }
-    options.onProgress?.(Math.min(1, slice.end / Math.max(1, slice.size)))
-    if (slice.eof || slice.end <= slice.start) break
-    offset = slice.end
-    // Yield so a search over a 22 MB file never blocks input for long.
-    await new Promise(resolve => { setTimeout(resolve, 0) })
-  }
-  options.onProgress?.(1)
-  return { matches }
-}
-
-/**
  * Open a file-backed CSV.
  * @param path - absolute path of the file.
  * @param delimiter - field separator.
@@ -198,6 +180,10 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
   let revision = 0
   let disposed = false
   const anchors: Anchor[] = []
+  /** Anchors left by a scan; the walk may not have reached them yet. */
+  const scanAnchors: Anchor[] = []
+  /** Rows a scan has counted so far, which is how far its anchors are trustworthy. */
+  let scanCounted = 0
 
   /**
    * Count one slice and remember where it started.
@@ -215,14 +201,23 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
   /** Rows per byte: the whole-file average once sampled, the scanned prefix before. */
   let bytesPerRow = (): number => (counted > 0 && scanned > 0 ? scanned / counted : 1)
 
-  /** The nearest anchor at or before `row`. */
-  const anchorBefore = (row: number): Anchor | undefined => {
+  /** The last anchor of one list at or before `row`. */
+  const lastBefore = (list: readonly Anchor[], row: number): Anchor | undefined => {
     let found: Anchor | undefined
-    for (const anchor of anchors) {
+    for (const anchor of list) {
       if (anchor.row > row) break
       found = anchor
     }
     return found
+  }
+
+  /** The nearest anchor at or before `row`, from either the walk or a scan. */
+  const anchorBefore = (row: number): Anchor | undefined => {
+    const walked = row < counted ? lastBefore(anchors, row) : undefined
+    const searched = row < scanCounted ? lastBefore(scanAnchors, row) : undefined
+    if (walked === undefined) return searched
+    if (searched === undefined) return walked
+    return searched.row > walked.row ? searched : walked
   }
 
   /** Best-known total rows, header included. */
@@ -288,7 +283,9 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
     },
     async read(startRow: number, rowsWanted: number): Promise<FileWindow> {
       const count = Math.max(1, rowsWanted)
-      const anchor = startRow < counted ? anchorBefore(startRow) : undefined
+      // An anchor means the row can be reached exactly: the walk's anchors cover the
+      // counted prefix, a scan's anchors cover the whole file once it has been searched.
+      const anchor = anchorBefore(startRow)
       if (anchor !== undefined) {
         const skip = startRow - anchor.row
         let length = Math.min(MAX_SLICE_BYTES, Math.max(MIN_READ_BYTES, Math.ceil((skip + count) * bytesPerRow() * 2)))
@@ -316,9 +313,45 @@ export async function openCsvFile(path: string, delimiter: string, signal: Abort
       const parsed = parseSlice(slice.text.slice(from, to), delimiter)
       return { startRow, rows: parsed.rows.slice(0, count), exact: false, overlong: parsed.overlong }
     },
+    async scan(pattern: RegExp, options: {
+      readonly signal: AbortSignal
+      readonly onProgress?: (fraction: number) => void
+      readonly lineLimit?: number
+    }): Promise<FileScan> {
+      const counter = createLineCounter(options.lineLimit)
+      let matches = 0
+      let line = 0
+      let from = 0
+      for (;;) {
+        const slice = await fetchSlice(url, from, SLICE_BYTES, true, options.signal)
+        if (slice.text.length > 0) {
+          scanAnchors.push({ row: line, byte: slice.start })
+          counter.nextSlice(line)
+          pattern.lastIndex = 0
+          for (;;) {
+            const found = pattern.exec(slice.text)
+            if (found === null) break
+            matches += 1
+            counter.record(slice.text, found.index)
+            if (found[0].length === 0) pattern.lastIndex += 1
+          }
+          line += countRows(slice.text, false)
+          scanCounted = line
+        }
+        options.onProgress?.(Math.min(1, slice.end / Math.max(1, slice.size)))
+        if (slice.eof || slice.end <= slice.start) break
+        from = slice.end
+        // Yield so a search over a huge file never blocks input for long.
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      }
+      options.onProgress?.(1)
+      return { matches, lines: counter.lines }
+    },
     dispose(): void {
       disposed = true
       anchors.length = 0
+      scanAnchors.length = 0
+      scanCounted = 0
     },
   }
 }

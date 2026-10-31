@@ -23,7 +23,7 @@ import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
 import { readWindow } from '../../kernel/csv-window.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
-import { openCsvFile, scanCsvFile } from '../../kernel/csv-file.ts'
+import { openCsvFile } from '../../kernel/csv-file.ts'
 import type { CsvFile } from '../../kernel/csv-file.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -85,6 +85,19 @@ interface FileState {
 const IDLE_FILE: FileState = { status: 'idle', revision: 0, total: 0, progress: 0, complete: false }
 const OPENING_FILE: FileState = { status: 'opening', revision: 0, total: 0, progress: 0, complete: false }
 const FAILED_FILE: FileState = { status: 'failed', revision: 0, total: 0, progress: 0, complete: false }
+
+/** No match rows yet; a stable identity so the scan effect does not churn. */
+const NO_ROWS: readonly number[] = []
+
+/** A full-file scan: how far it got, how many matches, and where the first ones are. */
+interface DeepScan {
+  /** 0..1. */
+  readonly progress: number
+  /** Matches in the whole file, which may be more than {@link DeepScan.rows}. */
+  readonly matches: number
+  /** Body rows of the first matches, in order, so the arrows can jump to them. */
+  readonly rows: readonly number[]
+}
 
 /** Widen ragged rows so the grid lines up under the header. */
 function normalize(rows: readonly (readonly string[])[]): {
@@ -155,7 +168,8 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
-  const [deep, setDeep] = useState<{ progress: number, matches: number } | undefined>(undefined)
+  const [deep, setDeep] = useState<DeepScan | undefined>(undefined)
+  const [deepIndex, setDeepIndex] = useState(0)
   // A file the owner has not finished handing over may be a big one, and a big one's row
   // pitch is compressed. Start on the loading line for it instead of painting the natural
   // pitch for a frame and then squeezing it.
@@ -207,6 +221,24 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     [view],
   )
   const found = useSearch(texts, options)
+
+  // Navigation. The row search only sees the rows loaded so far, so on a large file it
+  // can only reach matches near the top. Once the whole file has been scanned, its match
+  // rows are what the arrows walk — the scan locates them, so a hit at row 200,000 is one
+  // click away.
+  const deepRows = deep !== undefined && deep.progress >= 1 ? deep.rows : NO_ROWS
+  const navigatingDeep = deepRows.length > 0
+  const activeIndex = navigatingDeep ? Math.min(deepIndex, deepRows.length - 1) : found.index
+  const activeRow = navigatingDeep ? deepRows[activeIndex] : found.activeRow
+  const matchCount = navigatingDeep ? deepRows.length : found.matches.length
+  const nextMatch = (): void => {
+    if (navigatingDeep) setDeepIndex((activeIndex + 1) % deepRows.length)
+    else found.next()
+  }
+  const prevMatch = (): void => {
+    if (navigatingDeep) setDeepIndex((activeIndex - 1 + deepRows.length) % deepRows.length)
+    else found.prev()
+  }
 
   // Windowing takes over once the delivered text is large, the moment the row budget
   // would hide rows, or as soon as the file itself is the source: from here on there
@@ -421,15 +453,21 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   // Reveal the navigated match by its position in the visible set. In a windowed table
   // search indices are already body rows, so the same arithmetic finds them.
   useEffect(() => {
-    const row = found.activeRow
+    const row = activeRow
     const element = scrollerRef.current
     if (row === undefined || element === null) return
     const position = windowed ? row : (filter ? visibleIndices.indexOf(row) : row)
     if (position < 0) return
-    const top = Math.max(0, position * mappingPitch - element.clientHeight / 2)
+    // In the proportional mode a scroll pixel is worth `pitch` rows, so the match has to
+    // be placed by rows, not by half a viewport: `clientHeight / 2` pixels is far more
+    // than half a screen of rows there, and would push the match below the fold.
+    const wanted = geometry === undefined
+      ? Math.max(0, position * mappingPitch - element.clientHeight / 2)
+      : Math.max(0, (position - geometry.visibleRows / 2) * mappingPitch)
+    const top = geometry === undefined ? wanted : Math.min(wanted, geometry.maxScroll)
     element.scrollTop = top
     setScrollTop(top)
-  }, [found.activeRow, filter, visibleIndices, windowed, mappingPitch])
+  }, [activeRow, filter, visibleIndices, windowed, mappingPitch, geometry])
 
   // A large file cannot be searched from the parsed rows alone: the row budget keeps
   // only its head. With a file source the whole file is scanned slice by slice; without
@@ -439,12 +477,13 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   useEffect(() => {
     const query = options.query.trim()
     const file = fileMode ? fileRef.current : null
+    setDeepIndex(0)
     if (query === '' || source.kind !== 'text' || (file === null && text.length < LARGE_TEXT_CHARS)) {
       setDeep(undefined)
       return
     }
     const controller = new AbortController()
-    setDeep({ progress: 0, matches: 0 })
+    setDeep({ progress: 0, matches: 0, rows: NO_ROWS })
     const flags = options.caseSensitive ? 'gu' : 'giu'
     let pattern: RegExp
     try {
@@ -456,13 +495,17 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
       return
     }
     const onProgress = (progress: number): void => {
-      setDeep(current => ({ progress, matches: current?.matches ?? 0 }))
+      setDeep(current => ({ progress, matches: current?.matches ?? 0, rows: current?.rows ?? NO_ROWS }))
     }
-    const scan = file !== null && absolutePath !== undefined
-      ? scanCsvFile(absolutePath, pattern, { signal: controller.signal, onProgress })
+    const scan = file !== null
+      ? file.scan(pattern, { signal: controller.signal, onProgress })
       : scanText(text, pattern, { signal: controller.signal, onProgress })
     void scan.then((result) => {
-      if (!controller.signal.aborted) setDeep({ progress: 1, matches: result.matches })
+      if (controller.signal.aborted) return
+      // Line 0 is the header, so a match's body row is one less; a header hit has none.
+      const rows: number[] = []
+      for (const line of result.lines) if (line > 0) rows.push(line - 1)
+      setDeep({ progress: 1, matches: result.matches, rows })
     }).catch(() => { /* aborted, or the file went away */ })
     return () => { controller.abort() }
   }, [options.query, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
@@ -526,7 +569,12 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   // the non-windowed path, or the background walk that will make the row count exact.
   const status = deep !== undefined
     ? (deep.progress >= 1
-        ? t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') })
+        ? (deep.rows.length > 0 && deep.rows.length < deep.matches
+          ? t('csv.scanDoneCapped', {
+            count: deep.matches.toLocaleString('en-US'),
+            shown: deep.rows.length.toLocaleString('en-US'),
+          })
+          : t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') }))
         : t('csv.scanProgress', { percent: Math.round(deep.progress * 100), count: deep.matches.toLocaleString('en-US') }))
     : buffer.overlong || win.overlong
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
@@ -549,11 +597,11 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
           compact={compact}
           options={options}
           onChange={setOptions}
-          matches={found.matches.length}
-          index={found.index}
+          matches={matchCount}
+          index={activeIndex}
           total={dataRows}
-          onPrev={found.prev}
-          onNext={found.next}
+          onPrev={prevMatch}
+          onNext={nextMatch}
           filter={filter}
           onFilter={setFilter}
           filterable={!windowed}
@@ -594,7 +642,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
                       </tr>
                     )
                   }
-                  const active = row.index === found.activeRow
+                  const active = row.index === activeRow
                   return (
                     <tr
                       key={row.index}
