@@ -30,6 +30,8 @@ export const LIMITS = {
   epubChapters: 200,
   /** Table rows the CSV viewer will virtualize. */
   csvRows: 20_000,
+  /** Longest single CSV line kept; longer input stops parsing to avoid unbounded growth. */
+  csvLineChars: 8 * 1024 * 1024,
   /** reST source characters parsed. */
   rstChars: 2 * MB,
   /** Notebook source characters parsed. */

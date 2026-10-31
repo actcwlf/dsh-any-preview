@@ -63,7 +63,7 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   // in an effect would show an empty first frame and break server rendering.
   if (source.kind === 'text' && bufferRef.current === null && text.length > 0) {
     delimiterRef.current = detectDelimiter(text)
-    bufferRef.current = createRowBuffer(delimiterRef.current, MAX_ROWS)
+    bufferRef.current = createRowBuffer(delimiterRef.current, MAX_ROWS, LIMITS.csvLineChars)
   }
   const buffer = bufferRef.current
   if (buffer !== null && source.kind === 'text') {
@@ -154,7 +154,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     const windowIndices = visibleIndices.slice(first, last)
 
   // Only a real condition is worth a label here: the row budget.
-  const status = buffer.truncated
+  const status = buffer.overlong
+    ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
+    : buffer.truncated
     ? t('csv.truncated', { limit: MAX_ROWS.toLocaleString('en-US') })
     : ''
 

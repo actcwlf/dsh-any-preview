@@ -14,6 +14,8 @@ export interface RowParser {
   push(chunk: string): void
   /** Flush the trailing field/row. Idempotent. */
   finish(): void
+  /** True once a single line exceeded the cap; parsing stopped there. */
+  readonly overlong: boolean
 }
 
 /**
@@ -22,7 +24,7 @@ export interface RowParser {
  * @param onRow - receives each completed row.
  * @returns the parser.
  */
-export function createRowParser(delimiter: string, onRow: (cells: readonly string[]) => void): RowParser {
+export function createRowParser(delimiter: string, onRow: (cells: readonly string[]) => void, maxLineChars = Number.POSITIVE_INFINITY): RowParser {
   let row: string[] = []
   let field = ''
   let quoted = false
@@ -30,6 +32,10 @@ export function createRowParser(delimiter: string, onRow: (cells: readonly strin
   // next chunk decides, so the decision is deferred instead of guessed.
   let pendingQuote = false
   let done = false
+  // A single unterminated line can be arbitrarily long (some exporters emit one line
+  // per file). Stopping at a cap keeps the viewer from growing without bound.
+  let lineChars = 0
+  let overlong = false
 
   const endField = (): void => {
     row.push(field)
@@ -55,6 +61,12 @@ export function createRowParser(delimiter: string, onRow: (cells: readonly strin
         }
       }
       for (; index < chunk.length; index += 1) {
+        if (lineChars > maxLineChars) {
+          overlong = true
+          done = true
+          return
+        }
+        lineChars += 1
         const char = chunk[index]!
         if (quoted) {
           if (char !== '"') {
@@ -85,10 +97,14 @@ export function createRowParser(delimiter: string, onRow: (cells: readonly strin
         if (char === '\r') continue
         if (char === '\n') {
           endRow()
+          lineChars = 0
           continue
         }
         field += char
       }
+    },
+    get overlong(): boolean {
+      return overlong
     },
     finish(): void {
       if (done) return
@@ -110,6 +126,8 @@ export interface RowBuffer {
   readonly rows: readonly (readonly string[])[]
   /** Whether the input had more rows than the budget allowed. */
   readonly truncated: boolean
+  /** Whether a single line exceeded the cap. */
+  readonly overlong: boolean
   /** Whether `finish` ran. */
   readonly complete: boolean
 }
@@ -120,7 +138,7 @@ export interface RowBuffer {
  * @param maxRows - row budget, header included.
  * @returns the buffer.
  */
-export function createRowBuffer(delimiter: string, maxRows: number): RowBuffer {
+export function createRowBuffer(delimiter: string, maxRows: number, maxLineChars = Number.POSITIVE_INFINITY): RowBuffer {
   const rows: string[][] = []
   let truncated = false
   let complete = false
@@ -131,12 +149,13 @@ export function createRowBuffer(delimiter: string, maxRows: number): RowBuffer {
       return
     }
     rows.push([...cells])
-  })
+  }, maxLineChars)
 
   return {
     push(chunk: string): void {
       if (truncated || complete) return
       parser.push(chunk)
+      if (parser.overlong) truncated = true
     },
     finish(): void {
       if (complete) return
@@ -148,6 +167,9 @@ export function createRowBuffer(delimiter: string, maxRows: number): RowBuffer {
     },
     get truncated(): boolean {
       return truncated
+    },
+    get overlong(): boolean {
+      return parser.overlong
     },
     get complete(): boolean {
       return complete
