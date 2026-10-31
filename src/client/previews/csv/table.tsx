@@ -118,7 +118,10 @@ const shared = {
   // A wash of the ink colour rather than a layer token: the layer palette is white in
   // the light theme, so it cannot make a header band. 4 % of the label colour is a
   // subtle grey in light and a subtle lift in dark.
-  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, transparent)',
+  //
+  // It is mixed with the pane colour, not with transparent: this band is sticky, so a
+  // translucent one lets the rows scrolling underneath show through it.
+  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, var(--dsw-alias-bg-base))',
 } as const
 
 const headerStyle = {
