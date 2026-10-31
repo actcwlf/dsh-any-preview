@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip } from '../src/host/inspect-tool.ts'
 
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
@@ -53,4 +53,38 @@ test('a GGUF header summarises from the fixture', () => {
   assert.ok(result.facts.some(fact => fact.includes('general.architecture = llama')))
   assert.ok(result.schema.some(line => line.startsWith('blk.0.attn_q.weight: Q4_0')))
   assert.equal(result.truncated, false)
+})
+
+function readerFor(name) {
+  const bytes = new Uint8Array(readFileSync(join(samples, name)))
+  return {
+    size: bytes.length,
+    read: async (offset, length) => bytes.slice(offset, offset + length),
+  }
+}
+
+test('a JSONL result reports objects, fields and invalid lines', () => {
+  const text = '{"a":1,"b":"x"}\n{"a":2}\nnot json\n'
+  const result = inspectJsonl(new TextEncoder().encode(text), false)
+  assert.equal(result.kind, 'jsonl')
+  assert.match(result.summary, /2 objects/u)
+  assert.ok(result.schema.some(line => line.startsWith('a: present in 2/2')))
+  assert.ok(result.notes.some(note => note.includes('1 of the first 3')))
+})
+
+test('a zip result reports counts and the largest members', async () => {
+  const { size, read } = readerFor('binary.zip')
+  const result = await inspectZip(size, read)
+  assert.equal(result.kind, 'zip')
+  assert.match(result.summary, /ZIP/u)
+  assert.ok(result.facts.some(fact => fact.startsWith('files:')))
+  assert.ok(result.schema.length > 0)
+})
+
+test('a SQLite result reports schema objects', async () => {
+  const { read } = readerFor('sample.db')
+  const result = await inspectSqlite(read)
+  assert.equal(result.kind, 'sqlite')
+  assert.match(result.summary, /SQLite/u)
+  assert.ok(result.schema.some(line => line.startsWith('table ')))
 })

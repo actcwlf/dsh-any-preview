@@ -12,6 +12,8 @@
 import { extname, isAbsolute, join } from 'node:path'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
+import { collectSchema, parseSqliteHeader } from '../client/previews/sqlite/parse.ts'
+import { findEocd, parseZipDirectory, u16, u32 } from '../shared/zip/parse.ts'
 
 /** Header window for binary formats. */
 const HEAD_BYTES = 4 * 1024 * 1024
@@ -175,6 +177,125 @@ function inspectCsv(bytes: Uint8Array, truncatedRead: boolean, size: number): In
   }
 }
 
+/** A reader over one file's bytes, supplied by the caller. */
+type Reader = (offset: number, length: number) => Promise<Uint8Array>
+
+/** Describe a line-delimited JSON file from its first bytes. */
+function inspectJsonl(bytes: Uint8Array, truncatedRead: boolean): InspectResult {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  const lines = text.split(/\r?\n/u).filter(line => line.trim() !== '')
+  if (lines.length === 0) throw new Error('file is empty')
+
+  const counts = new Map<string, number>()
+  let objects = 0
+  let invalid = 0
+  for (const line of lines.slice(0, 500)) {
+    try {
+      const value: unknown = JSON.parse(line)
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        objects += 1
+        for (const key of Object.keys(value as Record<string, unknown>)) {
+          counts.set(key, (counts.get(key) ?? 0) + 1)
+        }
+      } else {
+        invalid += 1
+      }
+    } catch {
+      invalid += 1
+    }
+  }
+
+  const sampled = Math.min(lines.length, 500)
+  const fields = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, MAX_ITEMS)
+  const notes: string[] = []
+  if (invalid > 0) notes.push(`${String(invalid)} of the first ${String(sampled)} lines are not JSON objects`)
+  if (sampled < lines.length) notes.push(`only the first ${String(sampled)} lines were sampled`)
+  if (truncatedRead) notes.push('only the first 1 MB was read')
+
+  return {
+    kind: 'jsonl',
+    summary: `JSONL · ${String(objects)} objects sampled · ${String(fields.length)} distinct fields`,
+    facts: [
+      `sampled lines: ${String(sampled)}`,
+      `objects: ${String(objects)}`,
+      `invalid lines: ${String(invalid)}`,
+    ],
+    schema: fields.map(([key, count]) => `${key}: present in ${String(count)}/${String(objects)} objects`),
+    notes,
+    next: ['read(offset=1, limit=20) 查看原始记录', 'grep(pattern="…") 按字段值定位'],
+    truncated: truncatedRead || sampled < lines.length,
+  }
+}
+
+/** Describe a zip archive from its tail and central directory. */
+async function inspectZip(size: number, read: Reader): Promise<InspectResult> {
+  const tailLength = Math.min(size, 66_000)
+  const tail = await read(size - tailLength, tailLength)
+  const eocd = findEocd(tail)
+  if (eocd < 0) throw new Error('zip: no end-of-central-directory record')
+
+  const entries = u16(tail, eocd + 10)
+  const directorySize = u32(tail, eocd + 12)
+  const directoryOffset = u32(tail, eocd + 16)
+  if (directorySize === 0 || directoryOffset === 0) throw new Error('zip: empty central directory')
+
+  const directory = await read(directoryOffset, directorySize)
+  const listed = parseZipDirectory(directory)
+  const files = listed.filter(entry => !entry.directory)
+  const totalSize = files.reduce((sum, entry) => sum + entry.size, 0)
+  const totalCompressed = files.reduce((sum, entry) => sum + entry.compressedSize, 0)
+
+  const largest = [...files].sort((a, b) => b.size - a.size).slice(0, 5)
+  const notes: string[] = []
+  if (entries > listed.length) notes.push(`central directory lists ${String(listed.length)} of ${String(entries)} entries`)
+  if (totalSize > 0) notes.push(`compressed ${(totalCompressed / 1024 / 1024).toFixed(2)} MB into ${(totalSize / 1024 / 1024).toFixed(2)} MB`)
+
+  return {
+    kind: 'zip',
+    summary: `ZIP · ${String(files.length)} files · ${(totalSize / 1024 / 1024).toFixed(2)} MB uncompressed`,
+    facts: [
+      `entries: ${String(listed.length)}`,
+      `files: ${String(files.length)}`,
+      `directories: ${String(listed.length - files.length)}`,
+      `uncompressed total: ${(totalSize / 1024 / 1024).toFixed(2)} MB`,
+    ],
+    schema: largest.map(entry => `${entry.name}: ${(entry.size / 1024).toFixed(0)} KB`),
+    notes,
+    next: ['在面板中打开压缩包可直接列出条目', '若需按扩展名预览某个条目，先解压到工作区'],
+    truncated: listed.length < entries,
+  }
+}
+
+/** Describe a SQLite database from its header and schema table. */
+async function inspectSqlite(read: Reader): Promise<InspectResult> {
+  const header = parseSqliteHeader(await read(0, 100))
+  if (header === undefined) throw new Error('not a SQLite database (magic mismatch)')
+
+  const schema = await collectSchema({
+    header,
+    readPage: pageNumber => read((pageNumber - 1) * header.pageSize, header.pageSize),
+  })
+
+  const objects = schema.objects
+  const tables = objects.filter(object => object.type === 'table')
+  const indexes = objects.filter(object => object.type === 'index')
+  const views = objects.filter(object => object.type === 'view')
+
+  return {
+    kind: 'sqlite',
+    summary: `SQLite · ${String(tables.length)} tables · ${String(indexes.length)} indexes`,
+    facts: [
+      `tables: ${String(tables.length)}`,
+      `indexes: ${String(indexes.length)}`,
+      `views: ${String(views.length)}`,
+      `triggers: ${String(objects.filter(object => object.type === 'trigger').length)}`,
+    ],
+    schema: objects.slice(0, MAX_ITEMS).map(object => `${object.type} ${object.name}: ${object.sql ?? ''}`.trim()),
+    notes: objects.length > MAX_ITEMS ? [`${String(objects.length)} objects, first ${String(MAX_ITEMS)} shown`] : [],
+    next: ['在面板中打开数据库可看到每个对象完整的 CREATE 语句'],
+    truncated: schema.truncated || objects.length > MAX_ITEMS,
+  }
+}
 /**
  * Register the inspect tool when the profile provides a tool registry.
  * @param ctx - Host context carrying `fs` and optionally `tools`.
@@ -246,6 +367,20 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             return inspectCsv(new Uint8Array(head), size > TEXT_BYTES, size)
           }
 
+          const read: Reader = async (offset, length) =>
+            new Uint8Array(await ctx.fs.readByteRange(target, { offset, length }, signal))
+
+          if (suffix === 'jsonl' || suffix === 'ndjson') {
+            const length = Math.min(size, TEXT_BYTES)
+            return inspectJsonl(new Uint8Array(await read(0, length)), size > TEXT_BYTES)
+          }
+
+          if (suffix === 'zip') return inspectZip(size, read)
+
+          if (suffix === 'sqlite' || suffix === 'sqlite3' || suffix === 'db' || suffix === 'db3') {
+            return inspectSqlite(read)
+          }
+
           if (suffix === 'gguf') {
             const length = Math.min(size, HEAD_BYTES)
             const head = await ctx.fs.readByteRange(target, { offset: 0, length }, signal)
@@ -263,4 +398,4 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 }
 
 // Exported for tests: pure, no fs involved.
-export { detectDelimiter, inferType, inspectCsv, inspectGguf }
+export { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite }
