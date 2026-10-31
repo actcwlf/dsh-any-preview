@@ -11,6 +11,7 @@ import { contentModuleFor } from '../../kernel/content-modules.ts'
 import { errorText } from '../../kernel/errors.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
+import { useLocale } from '../../useLocale.ts'
 import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
 import type { ReactNode } from 'react'
 
@@ -78,6 +79,7 @@ type Loaded =
   | { status: 'error', message: string }
 
 export function EntryView(props: EntryViewProps) {
+  useLocale()
   const { entry, targetDir, onTargetDir, defaultDir, loadBytes, write, check, addressOf, onOpened, onBack } = props
   const module = contentModuleFor(entry.name)
 

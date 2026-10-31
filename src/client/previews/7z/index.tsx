@@ -11,6 +11,7 @@ import {
 import { openResourceAddress } from '../../runtime.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
+import { useLocale } from '../../useLocale.ts'
 import { ArchiveList } from '../archive/ArchiveList.tsx'
 import { EntryView } from '../archive/EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from '../archive/paths.ts'
@@ -23,6 +24,7 @@ type Listing =
   | { status: 'ready', archive: SevenZipArchive }
 
 export function SevenZipBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  useLocale()
   // The resource address is not a path: binary previews ask the document hook for
   // the absolute path and build the byte URL from that.
   const { absolutePath } = useDocument(content, resourceAddress, useResource)
