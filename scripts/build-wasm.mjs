@@ -31,10 +31,16 @@ const SOURCES = [
   'wasm/lzma/Lzma2Dec.c',
   'wasm/lzma/Bcj2.c',
   'wasm/lzma/CpuArch.c',
+  'wasm/lzma/Bra.c',
+  'wasm/lzma/Bra86.c',
+  'wasm/lzma/Delta.c',
 ]
 
 /** Exports the client depends on; asserted after the build. */
-const EXPORTS = ['memory', 'malloc', 'free', 'reset_heap', 'lzma_decode', 'lzma2_decode', 'crc32_buf']
+const EXPORTS = [
+  'memory', 'malloc', 'free', 'reset_heap', 'lzma_decode', 'lzma2_decode', 'crc32_buf',
+  'bcj_x86', 'delta_decode',
+]
 
 /** Locate a toolchain: emsdk first, then PATH. */
 function toolchain() {

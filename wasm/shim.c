@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include "LzmaDec.h"
 #include "Lzma2Dec.h"
+#include "Bra.h"
+#include "Delta.h"
 
 
 /* ---- errno -------------------------------------------------------------- */
@@ -151,4 +153,26 @@ uint32_t crc32_buf(const uint8_t *data, uint32_t length) {
     }
   }
   return crc ^ 0xFFFFFFFFu;
+}
+
+/* ---- filters ------------------------------------------------------------ */
+
+/**
+ * x86 BCJ decode, applied to a whole unpacked stream.
+ * @param data - decoded bytes, modified in place
+ * @param size - byte count
+ * @param pc - virtual address of the first byte
+ */
+int32_t bcj_x86(uint8_t *data, uint32_t size, uint32_t pc) {
+  UInt32 state = Z7_BRANCH_CONV_ST_X86_STATE_INIT_VAL;
+  z7_BranchConvSt_X86_Dec((Byte *)data, size, pc, &state);
+  return (int32_t)size;
+}
+
+/** Delta decode: distance comes from the coder properties (distance - 1). */
+int32_t delta_decode(uint8_t *data, uint32_t size, uint32_t distance) {
+  Byte state[DELTA_STATE_SIZE];
+  Delta_Init(state);
+  Delta_Decode(state, (unsigned)distance, (Byte *)data, size);
+  return (int32_t)size;
 }

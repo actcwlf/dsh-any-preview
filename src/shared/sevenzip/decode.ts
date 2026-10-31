@@ -1,11 +1,18 @@
 /**
  * Decoding for 7z: turn one folder into bytes using lib/lzma.wasm.
  *
- * The module is injected rather than imported, so this file stays usable from the
- * host, the tests and the browser. Only single-coder chains of LZMA, LZMA2 or Copy
- * are supported today; anything else (AES, BCJ, BCJ2) is reported as unsupported.
+ * The decoder is injected rather than imported, so this file stays usable from the
+ * host, the tests and the browser. A folder is a chain of coders: one data coder
+ * (LZMA, LZMA2 or Copy) optionally followed by the x86 BCJ or Delta filter. AES and
+ * BCJ2 are refused rather than mis-decoded.
  */
 import type { SevenZipCoder, SevenZipFolder, SevenZipPackStream } from './structure.ts'
+
+/** Codec ids that produce the data stream. */
+const DATA_CODERS = new Set(['030101', '21', '00'])
+
+/** Filter ids applied after the data coder. */
+const FILTER_CODERS = new Set(['03030103', '03'])
 
 /** The subset of lib/lzma.wasm this module calls. */
 export interface Decoder {
@@ -23,21 +30,31 @@ export interface Decoder {
     input: number, inputLength: number,
     output: number, outputCapacity: number,
   ): number
+  bcj_x86(data: number, size: number, pc: number): number
+  delta_decode(data: number, size: number, distance: number): number
 }
 
-/** Error codes lzma_decode returns. */
+/** Error codes the decode exports return. */
 const ERRORS: Readonly<Record<number, string>> = {
   '-1': '7z: allocator or properties rejected the block',
   '-2': '7z: compressed data is corrupt',
   '-3': '7z: output buffer was too small',
 }
 
+/** Split a folder's coders into the data coder and its filters. */
+function chainOf(folder: SevenZipFolder): { data: SevenZipCoder, filters: SevenZipCoder[] } | undefined {
+  const data = folder.coders.find(coder => DATA_CODERS.has(coder.id))
+  const filters = folder.coders.filter(coder => FILTER_CODERS.has(coder.id))
+  if (data === undefined) return undefined
+  if (data.inStreams !== 1 || data.outStreams !== 1) return undefined
+  if (filters.length + (folder.coders.length - filters.length) !== folder.coders.length) return undefined
+  if (folder.coders.length !== filters.length + 1) return undefined
+  return { data, filters }
+}
+
 /** True when this decoder can run the folder's coder chain. */
 export function canDecode(folder: SevenZipFolder): boolean {
-  if (folder.coders.length !== 1) return false
-  const coder = folder.coders[0]
-  if (coder === undefined) return false
-  return coder.id === '030101' || coder.id === '21' || coder.id === '00'
+  return chainOf(folder) !== undefined
 }
 
 /** Copy bytes into the wasm heap. */
@@ -48,9 +65,12 @@ function write(decoder: Decoder, bytes: Uint8Array): number {
   return pointer
 }
 
-/** Decode one packed stream with a single coder. */
-function runCoder(decoder: Decoder, coder: SevenZipCoder, input: Uint8Array, capacity: number): Uint8Array {
-  if (coder.id === '00') return input.slice(0, capacity)
+/** Run the data coder, leaving the result in the heap. */
+function runDataCoder(decoder: Decoder, coder: SevenZipCoder, input: Uint8Array, capacity: number): { pointer: number, length: number } {
+  if (coder.id === '00') {
+    const pointer = write(decoder, input.subarray(0, capacity))
+    return { pointer, length: Math.min(input.length, capacity) }
+  }
 
   const properties = coder.properties
   const propsPointer = write(decoder, properties)
@@ -63,23 +83,41 @@ function runCoder(decoder: Decoder, coder: SevenZipCoder, input: Uint8Array, cap
     : decoder.lzma2_decode(propsPointer, properties.length, inputPointer, input.length, outputPointer, capacity)
 
   if (written < 0) throw new Error(ERRORS[written] ?? `7z: decode failed (${String(written)})`)
-  return new Uint8Array(decoder.memory.buffer).slice(outputPointer, outputPointer + written)
+  return { pointer: outputPointer, length: written }
+}
+
+/** Apply the folder's filters in place on the decoded buffer. */
+function runFilters(decoder: Decoder, filters: readonly SevenZipCoder[], pointer: number, length: number): void {
+  for (const filter of filters) {
+    if (filter.id === '03030103') {
+      decoder.bcj_x86(pointer, length, 0)
+      continue
+    }
+    if (filter.id === '03') {
+      // Delta properties hold the distance minus one.
+      const distance = (filter.properties[0] ?? 0) + 1
+      decoder.delta_decode(pointer, length, distance)
+      continue
+    }
+    throw new Error(`7z: unsupported filter ${filter.name}`)
+  }
 }
 
 /**
  * Decode one folder.
  * @param decoder - loaded lib/lzma.wasm
  * @param folder - the folder definition from the header
- * @param packed - the packed bytes the folder's streams occupy, in order
+ * @param packed - the packed bytes the folder's streams occupy
  */
 export function decodeFolder(decoder: Decoder, folder: SevenZipFolder, packed: Uint8Array): Uint8Array {
-  if (!canDecode(folder)) throw new Error('7z: unsupported coder chain (solid with filters, or AES)')
-  const coder = folder.coders[0]
-  if (coder === undefined) throw new Error('7z: folder has no coder')
+  const chain = chainOf(folder)
+  if (chain === undefined) throw new Error('7z: unsupported coder chain (AES / BCJ2 / multi-stream)')
 
   decoder.reset_heap()
   try {
-    return runCoder(decoder, coder, packed, Math.max(1, folder.size))
+    const { pointer, length } = runDataCoder(decoder, chain.data, packed, Math.max(1, folder.size))
+    runFilters(decoder, chain.filters, pointer, length)
+    return new Uint8Array(decoder.memory.buffer).slice(pointer, pointer + length)
   } finally {
     decoder.reset_heap()
   }
@@ -91,6 +129,7 @@ export function folderPackedBytes(
   packStreams: readonly SevenZipPackStream[],
   read: (offset: number, length: number) => Uint8Array,
 ): Uint8Array {
+  void folder
   const stream = packStreams[0]
   if (stream === undefined) throw new Error('7z: folder has no packed stream')
   const bytes = read(stream.offset, stream.size)

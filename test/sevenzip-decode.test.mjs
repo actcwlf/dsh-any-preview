@@ -85,3 +85,30 @@ test('an AES folder is refused instead of decoded incorrectly', { skip }, async 
   const api = await decoder()
   assert.throws(() => decodeFolder(api, folder, new Uint8Array([1, 2, 3])), /unsupported coder chain/u)
 })
+
+test('an x86 BCJ folder decodes back to the original executable', { skip }, async () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'sample-bcj.7z')))
+  const layout = readLayout(bytes)
+  assert.ok(layout)
+  const start = 32 + layout.nextHeaderOffset
+  let header = bytes.subarray(start, start + layout.nextHeaderSize)
+  const api = await decoder()
+  if (isEncodedHeader(header)) {
+    const streams = parseEncodedHeader(header)
+    assert.ok(streams)
+    const packed = folderPackedBytes(streams.folders[0], streams.packStreams, fileReader(bytes))
+    header = decodeFolder(api, streams.folders[0], packed)
+  }
+  const archive = parseHeader(header)
+  assert.ok(archive)
+  const folder = archive.folders[0]
+  assert.ok(folder)
+  assert.deepEqual(folder.coders.map(coder => coder.name), ['LZMA2', 'BCJ'])
+  assert.equal(canDecode(folder), true)
+
+  const packed = folderPackedBytes(folder, archive.packStreams, fileReader(bytes))
+  const output = decodeFolder(api, folder, packed)
+  const original = new Uint8Array(readFileSync(join(samples, 'tool.exe')))
+  assert.equal(output.length, original.length)
+  assert.deepEqual(Array.from(output), Array.from(original))
+})
