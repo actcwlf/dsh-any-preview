@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { errorText } from '../../kernel/errors.ts'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { fileUrl } from '../../kernel/file-url.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL } from '../../kernel/layout.ts'
 import { isSupported, readSevenZip, readSevenZipEntry } from '../../kernel/sevenzip.ts'
@@ -25,8 +26,11 @@ function previewText(bytes: Uint8Array): string {
   return text
 }
 
-export function SevenZipBody({ resourceAddress }: PreviewBodyProps) {
-  const url = fileUrl(resourceAddress) ?? ''
+export function SevenZipBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
+  // The resource address is not a path: binary previews ask the document hook for
+  // the absolute path and build the byte URL from that.
+  const { absolutePath } = useDocument(content, resourceAddress, useResource)
+  const url = typeof absolutePath === 'string' ? (fileUrl(absolutePath) ?? '') : ''
   const [listing, setListing] = useState<Listing>({ status: 'loading' })
   const [open, setOpen] = useState<{ entry: SevenZipEntry, text: string, truncated: boolean } | undefined>(undefined)
   const [busy, setBusy] = useState(false)
