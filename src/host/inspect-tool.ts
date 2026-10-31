@@ -16,6 +16,9 @@ import { parseNotebook } from '../client/previews/ipynb/parse.ts'
 import { parseHeaderJson, readHeaderLength } from '../client/previews/safetensors/parse.ts'
 import { collectSchema, parseSqliteHeader } from '../client/previews/sqlite/parse.ts'
 import { parseRst } from '../shared/inspect/rst.ts'
+import { isEncodedHeader, parseEncodedHeader, parseHeader, readLayout } from '../shared/sevenzip/structure.ts'
+import { decodeFolder } from '../shared/sevenzip/decode.ts'
+import type { Decoder } from '../shared/sevenzip/decode.ts'
 import { outlineOf } from '../shared/inspect/document.ts'
 import { findEocd, parseZipDirectory, u16, u32 } from '../shared/zip/parse.ts'
 
@@ -410,6 +413,71 @@ async function inspectEpub(size: number, read: Reader): Promise<InspectResult> {
     truncated: entries.length > MAX_ITEMS,
   }
 }
+/** Load lib/lzma.wasm once, for archives whose header is compressed. */
+let cachedDecoder: Promise<Decoder> | undefined
+async function sevenZipDecoder(): Promise<Decoder> {
+  cachedDecoder ??= (async () => {
+    const { readFile } = await import('node:fs/promises')
+    const { fileURLToPath } = await import('node:url')
+    const path = fileURLToPath(new URL('../../lib/lzma.wasm', import.meta.url))
+    const module = await WebAssembly.compile(await readFile(path))
+    const instance = await WebAssembly.instantiate(module, {})
+    return instance.exports as unknown as Decoder
+  })()
+  return cachedDecoder
+}
+
+/** Describe a 7z archive: entries, sizes, and whether it can be opened. */
+async function inspectSevenZip(read: Reader): Promise<InspectResult> {
+  const layout = readLayout(await read(0, 32))
+  if (layout === undefined) throw new Error('not a 7z archive (signature mismatch)')
+
+  let header = await read(32 + layout.nextHeaderOffset, layout.nextHeaderSize)
+  if (isEncodedHeader(header)) {
+    const streams = parseEncodedHeader(header)
+    const folder = streams?.folders[0]
+    const stream = streams?.packStreams[0]
+    if (streams === undefined || folder === undefined || stream === undefined) {
+      throw new Error('7z: encoded header is incomplete')
+    }
+    const bytes = await read(32 + stream.offset, stream.size)
+    header = decodeFolder(await sevenZipDecoder(), folder, bytes)
+  }
+
+  const archive = parseHeader(header)
+  if (archive === undefined) throw new Error('7z: header could not be parsed')
+
+  const files = archive.entries.filter(entry => !entry.directory)
+  const total = files.reduce((sum, entry) => sum + entry.size, 0)
+  const largest = [...files].sort((a, b) => b.size - a.size).slice(0, MAX_ITEMS)
+  const encrypted = archive.encrypted
+  const solid = archive.solid
+
+  const notes: string[] = []
+  if (solid) notes.push('solid: entries share a folder, so opening one decodes all of them')
+  if (encrypted) notes.push('encrypted: AES-256 folders cannot be decoded without a password')
+  if (files.length > MAX_ITEMS) notes.push(`${String(files.length)} files, ${String(MAX_ITEMS)} listed`)
+
+  return {
+    kind: '7z',
+    summary: `7z · ${String(files.length)} files · ${(total / 1024).toFixed(1)} KB uncompressed${solid ? ' · solid' : ''}`,
+    facts: [
+      `files: ${String(files.length)}`,
+      `directories: ${String(archive.entries.length - files.length)}`,
+      `uncompressed total: ${(total / 1024).toFixed(1)} KB`,
+      `folders: ${String(archive.folders.length)}`,
+      `encrypted: ${encrypted ? 'yes' : 'no'}`,
+      `solid: ${solid ? 'yes' : 'no'}`,
+    ],
+    schema: largest.map(entry => `${entry.name}: ${(entry.size / 1024).toFixed(1)} KB`),
+    notes,
+    next: [
+      '在面板中打开可直接列出条目并按需解码',
+      encrypted ? '"解压后用主预览查看" 是当前对加密包的处理' : 'read(offset=…) 无法直接读压缩内容，需先解压',
+    ],
+    truncated: files.length > MAX_ITEMS,
+  }
+}
 /**
  * Register the inspect tool when the profile provides a tool registry.
  * @param ctx - Host context carrying `fs` and optionally `tools`.
@@ -495,6 +563,8 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             return inspectSqlite(read)
           }
 
+          if (suffix === '7z') return inspectSevenZip(read)
+
           if (suffix === 'safetensors') return inspectSafetensors(size, read)
 
           if (suffix === 'ipynb') {
@@ -528,5 +598,5 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 // Exported for tests: pure, no fs involved.
 export {
   detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite,
-  inspectSafetensors, inspectRst, inspectNotebook, inspectEpub,
+  inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip,
 }

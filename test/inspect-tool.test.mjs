@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip } from '../src/host/inspect-tool.ts'
 
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
@@ -124,4 +124,29 @@ test('an EPUB reports chapters from its archive shape', async () => {
   assert.equal(result.kind, 'epub')
   assert.match(result.summary, /EPUB/u)
   assert.ok(result.facts.some(fact => fact.startsWith('chapters')))
+})
+
+function sevenZipReader(name) {
+  const bytes = new Uint8Array(readFileSync(join(samples, name)))
+  return async (offset, length) => bytes.slice(offset, offset + length)
+}
+
+test('a 7z archive is summarised with its files and solid flag', async () => {
+  const result = await inspectSevenZip(sevenZipReader('sample-noheader.7z'))
+  assert.equal(result.kind, '7z')
+  assert.match(result.summary, /3 files/u)
+  assert.ok(result.facts.some(fact => fact === 'solid: yes'))
+  assert.ok(result.schema.some(line => line.startsWith('alpha.txt:')))
+})
+
+test('a compressed 7z header is decoded before summarising', async () => {
+  const result = await inspectSevenZip(sevenZipReader('sample-solid.7z'))
+  assert.equal(result.kind, '7z')
+  assert.match(result.summary, /3 files/u)
+})
+
+test('an encrypted 7z archive says so', async () => {
+  const result = await inspectSevenZip(sevenZipReader('sample-encrypted.7z'))
+  assert.ok(result.facts.some(fact => fact === 'encrypted: yes'))
+  assert.ok(result.notes.some(note => note.includes('encrypted')))
 })
