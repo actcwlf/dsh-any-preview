@@ -40,3 +40,34 @@ test('a window past the end returns what exists, not an error', () => {
   const window = readWindow(text, index, 8, 100, ',')
   assert.equal(window.rows.length, 3, 'rows 8, 9 and 10 remain')
 })
+
+test('a last line without a newline is still a row', () => {
+  const text = 'id,name\n1,alpha\n2,beta'
+  const index = createCsvIndex(1)
+  index.push(text)
+  assert.equal(index.rows, 2, 'the index counts newlines, so it sees two rows')
+  const window = readWindow(text, index, 0, 10, ',')
+  assert.deepEqual(window.rows.map(row => row[0]), ['id', '1', '2'])
+  const tail = readWindow(text, index, 2, 10, ',')
+  assert.deepEqual(tail.rows, [['2', 'beta']])
+})
+
+test('a window that starts on the unterminated last row finds nothing', () => {
+  const text = 'id,name\n1,alpha'
+  const index = createCsvIndex(1)
+  index.push(text)
+  const window = readWindow(text, index, 2, 10, ',')
+  assert.deepEqual(window.rows, [])
+})
+
+test('one enormous row stops the window parse instead of growing without bound', () => {
+  const text = `id,note\n1,${'x'.repeat(200)}\n2,ok\n`
+  const index = createCsvIndex(1)
+  index.push(text)
+  const window = readWindow(text, index, 0, 10, ',', 64)
+  assert.equal(window.overlong, true)
+  assert.ok(window.rows.length <= 2, `stopped after ${String(window.rows.length)} rows`)
+  const plain = readWindow(text, index, 0, 10, ',')
+  assert.equal(plain.overlong, false)
+  assert.equal(plain.rows.length, 3)
+})

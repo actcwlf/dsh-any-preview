@@ -24,6 +24,11 @@ export interface SearchBarProps {
   readonly filter: boolean
   /** Toggle filtering. */
   readonly onFilter: (next: boolean) => void
+  /**
+   * Whether the caller can filter at all. A windowed table holds only one screen of
+   * rows, so hiding the rest is not something it can do honestly.
+   */
+  readonly filterable?: boolean
   /** Placeholder copy. */
   readonly placeholder?: string
   /** Trailing content, e.g. a follow-tail toggle. */
@@ -38,7 +43,7 @@ export interface SearchBarProps {
 
 export function SearchBar({
   options, onChange, matches, index, onPrev, onNext, filter, onFilter,
-  placeholder, children, compact = false,
+  filterable = true, placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
   const active = options.query.trim() !== ''
@@ -94,10 +99,12 @@ export function SearchBar({
       {!compact && (
         <>
           {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
-          <label style={labelStyle}>
-            <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
-            {t('search.onlyMatches')}
-          </label>
+          {filterable && (
+            <label style={labelStyle}>
+              <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
+              {t('search.onlyMatches')}
+            </label>
+          )}
         </>
       )}
       {children}

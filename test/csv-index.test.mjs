@@ -47,3 +47,13 @@ test('rowOffsetsIn lists absolute starts inside a window', () => {
   const offsets = rowOffsetsIn(text, 0, 3, 0)
   assert.deepEqual(offsets, [2, 4])
 })
+
+test('scanned follows the text consumed, character for character', () => {
+  const index = createCsvIndex(2)
+  index.push('a\nb\n')
+  assert.equal(index.scanned, 4)
+  index.push('a\nb\nc\nd\n')
+  assert.equal(index.scanned, 8)
+  index.push('a\nb\nc\nd\n')
+  assert.equal(index.scanned, 8, 'a repeated push scans nothing new')
+})

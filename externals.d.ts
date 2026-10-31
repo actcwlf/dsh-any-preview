@@ -29,6 +29,7 @@ declare module 'react' {
   }
   export function useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void
   export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T
+  export function useCallback<T>(callback: T, deps: readonly unknown[]): T
   export function useRef<T>(initial: T): { current: T }
   export function useState<T>(initial: T | (() => T)): [T, (next: T | ((previous: T) => T)) => void]
   const react: unknown

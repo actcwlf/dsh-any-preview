@@ -40,7 +40,6 @@ export interface CsvIndex {
  */
 export function createCsvIndex(stride = 10_000): CsvIndex {
   const anchors: CsvAnchor[] = [{ row: 0, offset: 0 }]
-  let offset = 0
   let rows = 0
   let rowStart = 0
   let consumed = 0
@@ -77,7 +76,7 @@ export function createCsvIndex(stride = 10_000): CsvIndex {
     },
     get anchors(): readonly CsvAnchor[] { return anchors },
     get rows(): number { return rows },
-    get scanned(): number { return offset },
+    get scanned(): number { return consumed },
     anchorBefore(row: number): CsvAnchor | undefined {
       let low = 0
       let high = anchors.length - 1
