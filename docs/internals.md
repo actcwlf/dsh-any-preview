@@ -307,3 +307,35 @@ const COMPACT_WIDTH = 420   // chrome 自身宽度（ResizeObserver 实测）
 2. **从文件尾部往前改**，避免索引位移；
 3. 一个文件有多个返回分支时（`archive` 有两个），逐个 open 配对各自的 close；
 4. 改完立刻 `typecheck` + 全量测试，再提交。
+## 压缩包：一个 UI，两种容器
+
+zip/tar 与 7z 的差别只在"字节从哪来、怎么写盘"，交互必须完全一致。为此抽出两个
+共享组件，**新增容器格式不得另写界面**：
+
+```
+previews/archive/EntryView.tsx   条目页：富渲染 / 解压面板 / 自动打开 / 重新解压
+previews/archive/ArchiveList.tsx 列表页：摘要 / 提示 / 重新解压 / 清理解压 / 表头
+kernel/content-modules.ts        按扩展名挑"能只靠内容渲染"的预览（csv/md/jsonl/…）
+```
+
+### 容器要提供的三件事
+
+| 能力 | zip | 7z |
+|---|---|---|
+| `loadBytes()` | 范围读 + `DecompressionStream` | wasm 解码 + 按 `folder.sizes` 切片 |
+| `write(bytes, force)` | Host 路由 `extract` | Host 路由 `write`（base64，浏览器已解码） |
+| `check()` / `addressOf()` | 路由 `check` + `extractedAddress` | 同左 |
+
+列表额外需要 `onReextract` / `onClean` 两个回调——**不要**在组件内部假设解压由谁执行。
+
+### 为什么"重新解压"必须在列表栏
+
+解压成功后文件在主预览打开，侧栏的压缩包面板回到列表页；条目页的「重新解压」只存在于
+"无法内嵌渲染"的分支，文本条目根本看不到。列表栏因此是唯一能强制重写的入口。
+
+### 条目内容的取舍
+
+- 有对应 `CONTENT_MODULES` → 交给该预览渲染（csv 出表格、md 出 markdown）；
+- 否则按可读性判断：像文本就给 `<pre>`，否则给前 4 KB 的十六进制并提示"解压后用主预览查看"。
+
+判定用 `looksTextual()`（控制字符比例 < 5%），避免把二进制当作文本渲染成乱码。
