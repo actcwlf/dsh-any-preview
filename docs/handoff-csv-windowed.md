@@ -380,6 +380,62 @@ React 的**委托**事件（input/click）永远不触发——只有挂在元�
 按钮或按过回车，所以一直没暴露；现在"输入查询 → 回车 → 点箭头 → 点终止"都是真被测到的。
 
 
+## 16. 架构整理：拆开那个 749 行的组件
+
+做格式通用化之前先梳理了一遍（问题清单见讨论记录），落地的是这几项：
+
+### 16.1 修一个交互死锁：比例模式下"有命中就滚不动"
+
+```
+800 000 行（比例模式）→ 搜到第 400 000 行：揭示到 8 388 227
+手动滚到 90%（应为 15 098 846）→ 实际仍停在 8 388 227，绘制带仍在 399 975..400 023
+```
+
+根因：`geometry` 每帧新建对象，而揭示效果把它当依赖 → 效果每帧重跑 → 任何重渲染都把
+`scrollTop` 写回命中行。精确模式（≤727 000 行）里 `geometry` 恒为 `undefined`，所以之前的
+用例没撞上。修法：`geometry` 用 `useMemo`（依赖 `windowed / bodyRows / rowHeight / scrollLimit /
+viewportHeight`），并把揭示挪进 `scroll.ts` 的 `reveal()`，`index.tsx` 只在 `activeRow` 变化时调它。
+
+回归用例「an active search hit does not pin the view in the proportional mode」：搜到命中 →
+滚到 90% → 断言绘制带跟到 600 000 之后、且不再停在命中行。**故意去掉 `useMemo` 验证过它会失败**
+（painted 399 980），所以这条用例是有效的。
+
+### 16.2 拆成四块（行为不变，12 条 DOM 用例全绿）
+
+| 文件 | 职责 | 状态 |
+|---|---|---|
+| `previews/csv/source.ts` | 文本缓冲 + 字符索引 + 分隔符 + 文件打开/后台建索引 + 读一窗 + 扫描 | `fileState` + 4 个 ref |
+| `previews/csv/scroll.ts` | 滚动位置、总行数（拖 3 屏才换精确值）、`geometry`（memo）、`currentRow`、`reveal` | 2 个 state |
+| `previews/csv/scan.ts` | 全文搜索状态机：显式触发 / 从当前行起扫 / 逐片发布 / 停止 / 并入箭头导航 | 3 个 state |
+| `previews/csv/table.tsx` | 只画 DOM：滚动容器、钉住窗口、表头、行号、高亮 | 无 |
+| `previews/csv/index.tsx` | 组合 + 过滤 + 状态行（749 → 约 300 行） | 2 个 state |
+
+对外契约：`CsvSource`（行从哪来）、`RowScroll`（视口与几何）、`WholeFileScan`（扫描 + 导航）。
+这三份都是纯函数式的钩子，只有需要浏览器的部分（measure、scroll）才碰 DOM。
+
+### 16.3 收掉重复与死代码
+
+- 新增 `kernel/lines.ts` 的 `countNewlines` / `countRows` / `skipLines`，`csv-file.ts` 不再自带
+  一份；`search-scan.ts` 的 `LineCounter` 保留（它额外算"命中的行号"）。
+- 删除从未被调用的 `csv-index.rowOffsetsIn`（只有它自己的测试在用）及其测试。
+- 删掉 `fileState` 的惰性初值：没有任何地方读 `opening`，那段注释还在解释"行距会被压缩"（行距
+  已恒为 22 px）。`OPENING_FILE` 常量保留（打开时确实会置这个状态）。
+- `csv/window.ts` 顶部"以后把 text 换成 ranged read"的注释改成现在时。
+
+### 16.4 还留着的事（按收益排序）
+
+1. **两台状态机收进 reducer**：`file: idle → opening → ready → complete|failed` 和
+   `scan: idle → running → done|stopped` 现在是布尔位分散在两个钩子里，`useReducer` + 事件能
+   让它们在单测里直接跑（目前只能靠 DOM 集成测试）；
+2. **改名 + 参数化**（上一轮讨论的第 1 步）：`csv-file.ts` → `row-file.ts`（`parse: 'line' | 'csv'`）、
+   `csv-window-state.ts` → `window-state.ts`，为 log/jsonl 复用做准备；
+3. **行号换算收口**："文件行 ↔ 表体行"的 ±1 仍在 5 处（`read` 的 startRow、扫描的 `line - 1`、
+   `bandRows` 的偏移、`~` 标签、`origin()`），值得收成一对 `toBody` / `toFile`；
+4. **表头高度进几何**：`visibleRows` 没算 27 px 表头，100 % 时差一行、顶部行被表头压住一截
+   （纯外观）；
+5. **后台建索引每片一次 setState**（150 MB = 150 次整组件渲染），进度按 5 片或 100 ms 节流即可。
+
+
 
 
 

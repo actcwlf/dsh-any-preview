@@ -1,7 +1,7 @@
 /** The sparse CSV row index: anchors, quote awareness and estimation. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { createCsvIndex, rowOffsetsIn } from '../src/client/kernel/csv-index.ts'
+import { createCsvIndex } from '../src/client/kernel/csv-index.ts'
 
 test('anchors land on row boundaries every stride', () => {
   const index = createCsvIndex(2)
@@ -40,12 +40,6 @@ test('estimateRows scales the observed density', () => {
   index.push('ab\ncd\n')
   const rows = index.estimateRows(100)
   assert.ok(rows > 30 && rows < 70, `estimated ${String(rows)}`)
-})
-
-test('rowOffsetsIn lists absolute starts inside a window', () => {
-  const text = 'a\nb\nc\n'
-  const offsets = rowOffsetsIn(text, 0, 3, 0)
-  assert.deepEqual(offsets, [2, 4])
 })
 
 test('scanned follows the text consumed, character for character', () => {

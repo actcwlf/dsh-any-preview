@@ -53,6 +53,22 @@ async function tick(ms) {
 }
 
 /**
+ * Tick until `check` passes. The suite shares one process and one event loop, so a scan
+ * that publishes as it goes has no reliable duration; waiting on the outcome is stable.
+ * @param {() => boolean} check - condition to wait for.
+ * @param {number} timeout - milliseconds after which the wait gives up.
+ * @returns {Promise<boolean>} whether the condition became true.
+ */
+async function waitFor(check, timeout = 6_000) {
+  const started = Date.now()
+  for (;;) {
+    if (check()) return true
+    if (Date.now() - started > timeout) return false
+    await tick(50)
+  }
+}
+
+/**
  * Install a DOM, load the built bundle into it, and return the registered CSV seat.
  * @returns {Promise<{window: object, component: Function}>} what to mount.
  */
@@ -475,6 +491,39 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   await enter()
   await tick(800)
   assert.match(view.container.textContent ?? '', /共 120,000 处匹配（可跳转前 5,000 处）/u)
+})
+
+test('an active search hit does not pin the view in the proportional mode', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const rows = 800_000
+  const view = await render(component, csvOf(rows))
+  t.after(view.dispose)
+  await tick(SETTLE)
+  // The table is past the scroll limit, so the bar is proportional.
+  const contentHeight = Number.parseFloat(view.content.style.height)
+  assert.ok(Math.abs(contentHeight - 16_777_216) < 1, 'proportional mode')
+
+  const input = view.container.querySelector('input[type="search"]')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'user_400000')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  // The scan publishes as it goes; wait for the revealed band instead of guessing a
+  // duration, since the whole suite shares one process and one event loop.
+  const revealed = await waitFor(() => view.painted().some(row => row.index === 399_999))
+  assert.ok(revealed, `the hit is revealed, painted ${String(view.painted()[0]?.index)}`)
+
+  // A reader scrolling away from a hit must stay where they scroll: the reveal runs on
+  // the navigated row, not on every render.
+  await view.scrollToFraction(0.9)
+  await tick(SETTLE)
+  const moved = view.painted()
+  assert.ok(moved[0].index > 600_000, `the band followed the scroll, painted ${String(moved[0]?.index)}`)
+  assert.ok(!moved.some(row => row.index === 399_999), 'and no longer sits on the hit')
 })
 
 test('stopping a scan keeps the hits it had already found', { skip: !available }, async (t) => {

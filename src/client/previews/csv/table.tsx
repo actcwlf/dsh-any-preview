@@ -1,0 +1,150 @@
+/**
+ * The table itself: a scroller holding either the exact rows or the pinned window, with
+ * the header, the row numbers and the highlight. No state beyond the row box lives here.
+ */
+import { useLocale } from '../../useLocale.ts'
+import { t } from '../../i18n.ts'
+import { Marked } from '../../kernel/marks.tsx'
+import { ACTIVE_ROW } from '../../kernel/layout.ts'
+import type { ProportionalGeometry, WindowedBody } from '../../kernel/csv-window-state.ts'
+
+/** Everything the table renders from. */
+export interface CsvTableProps {
+  /** Stable ref callback for the scroller (the owner restores its offset on attach). */
+  readonly bindScroller: (element: HTMLDivElement | null) => void
+  /** Scroll offset, mirrored into React so a window can be planned. */
+  readonly onScroll: (top: number) => void
+  /** Present only when the bar is proportional and the table is pinned. */
+  readonly geometry: ProportionalGeometry | undefined
+  /** Visible height, used to size the pinned block. */
+  readonly viewportHeight: number
+  readonly header: readonly string[]
+  readonly columns: number
+  /** Rows to paint plus the filler that holds the scrollbar's length. */
+  readonly body: WindowedBody
+  /** Scroll offset of the painted band inside the pinned block, when pinned. */
+  readonly bandOffset: number | undefined
+  readonly activeRow: number | undefined
+  readonly pattern: RegExp | undefined
+  /** True when the row numbers come from an estimate, so they carry a marker. */
+  readonly estimated: boolean
+  readonly rowHeight: number
+}
+
+/**
+ * Render the scrollable table.
+ * @param props - rows, geometry and the few flags that change how a row looks.
+ */
+export function CsvTable(props: CsvTableProps) {
+  useLocale()
+  const {
+    bindScroller, onScroll, geometry, viewportHeight, header, columns, body, bandOffset,
+    activeRow, pattern, estimated, rowHeight,
+  } = props
+  const lineBox = { lineHeight: `${String(rowHeight - 2)}px` } as const
+  const indexCell = { ...indexStyle, ...lineBox }
+  const bodyCell = { ...cellStyle, ...lineBox }
+  const pinned = geometry !== undefined
+  const pinnedBlock = pinned ? { position: 'sticky' as const, top: 0, height: viewportHeight } : undefined
+  const content = pinned ? { height: geometry.contentHeight, position: 'relative' as const } : undefined
+
+  return (
+    <div
+      ref={bindScroller}
+      onScroll={event => onScroll(event.currentTarget.scrollTop)}
+      // The pinned table changes under the browser's scroll anchoring; it must not
+      // "correct" our offset behind our back.
+      style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
+    >
+      <div style={content}>
+        <div style={pinnedBlock}>
+          <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
+            <thead>
+              <tr>
+                <th style={cornerStyle} />
+                {header.map((value, column) => (
+                  <th key={column} style={headerStyle}>{value || t('csv.column', { index: column + 1 })}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody style={bandOffset === undefined ? undefined : { transform: `translateY(${String(-bandOffset)}px)` }}>
+              {body.topPad > 0 && (
+                <tr style={{ height: body.topPad }}>
+                  <td colSpan={columns + 1} style={spacerCell} />
+                </tr>
+              )}
+              {body.rows.map((row) => {
+                if (row.cells === null) {
+                  return (
+                    <tr key={row.index} style={{ height: rowHeight }}>
+                      <td colSpan={columns + 1} style={spacerCell} />
+                    </tr>
+                  )
+                }
+                const active = row.index === activeRow
+                return (
+                  <tr
+                    key={row.index}
+                    data-row-index={row.index}
+                    style={{ height: rowHeight, background: active ? ACTIVE_ROW : undefined }}
+                  >
+                    <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
+                      {estimated ? `~${String(row.index + 1)}` : row.index + 1}
+                    </td>
+                    {row.cells.map((value, column) => (
+                      <td key={column} style={bodyCell}>
+                        <Marked text={value} pattern={pattern} emphasis={active} />
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+              {body.bottomPad > 0 && (
+                <tr style={{ height: body.bottomPad }}>
+                  <td colSpan={columns + 1} style={spacerCell} />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const shared = {
+  borderBottom: '1px solid var(--dsw-alias-border-l2)',
+  background: 'var(--dsw-alias-bg-layer-2)',
+} as const
+
+const headerStyle = {
+  ...shared,
+  position: 'sticky' as const,
+  top: 0,
+  zIndex: 1,
+  padding: '5px 12px',
+  textAlign: 'left' as const,
+  fontWeight: 600,
+  color: 'var(--dsw-alias-label-primary)',
+}
+
+const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
+
+const spacerCell = { padding: 0, border: 'none' } as const
+
+const indexStyle = {
+  padding: '0 10px',
+  textAlign: 'right' as const,
+  color: 'var(--dsw-alias-label-tertiary)',
+  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  position: 'sticky' as const,
+  left: 0,
+  background: 'var(--dsw-alias-bg-base)',
+  userSelect: 'none' as const,
+} as const
+
+const cellStyle = {
+  padding: '0 12px',
+  borderBottom: '1px solid var(--dsw-alias-border-l1)',
+  color: 'var(--dsw-alias-label-primary)',
+} as const

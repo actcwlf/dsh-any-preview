@@ -95,24 +95,3 @@ export function createCsvIndex(stride = 10_000): CsvIndex {
     },
   }
 }
-
-/** Row starts inside one window, honouring quotes; offsets are absolute. */
-export function rowOffsetsIn(text: string, fromRow: number, toRow: number, startOffset: number): number[] {
-  const offsets: number[] = []
-  let offset = startOffset
-  let row = fromRow
-  let quoted = false
-  for (let index = 0; index < text.length && row < toRow; index += 1) {
-    const char = text[index] ?? ''
-    if (char === '"') {
-      if (quoted && text[index + 1] === '"') { index += 1; continue }
-      quoted = !quoted
-    }
-    if (char === '\n' && !quoted) {
-      row += 1
-      if (row >= toRow) break
-      offsets.push(offset + index + 1)
-    }
-  }
-  return offsets
-}

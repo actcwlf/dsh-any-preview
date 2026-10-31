@@ -10,6 +10,7 @@
  * which it got.
  */
 import { LIMITS } from '../../shared/limits.ts'
+import { countRows, skipLines } from './lines.ts'
 import { textUrl } from './file-url.ts'
 import { createLineCounter } from './search-scan.ts'
 import { createRowParser } from './text-pipeline.ts'
@@ -104,35 +105,6 @@ export interface CsvFile {
 interface Anchor {
   readonly row: number
   readonly byte: number
-}
-
-/**
- * Count the rows a slice holds.
- * @param text - slice text, whole lines except at end of file.
- * @param eof - whether the slice reached the end of the file.
- */
-export function countRows(text: string, eof: boolean): number {
-  let rows = 0
-  for (let index = text.indexOf('\n'); index !== -1; index = text.indexOf('\n', index + 1)) rows += 1
-  // The last line of a file that does not end in a newline is still a row.
-  return rows + (eof && text.length > 0 && !text.endsWith('\n') ? 1 : 0)
-}
-
-/**
- * Character offset just past the `rows`-th newline from `from`.
- * @param text - text to walk.
- * @param rows - lines to step over.
- * @param from - character to start at.
- * @returns the offset of the next line, or the end of the text.
- */
-export function skipLines(text: string, rows: number, from = 0): number {
-  let index = from
-  for (let seen = 0; seen < rows; seen += 1) {
-    const next = text.indexOf('\n', index)
-    if (next === -1) return text.length
-    index = next + 1
-  }
-  return index
 }
 
 /**

@@ -82,7 +82,7 @@ Body 不直接读 owner 的 `content`，而是经 `kernel/source.ts` 归一化�
 CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内的行，上下用撑高的空行维持
 滚动条长度。
 
-### CSV 窗口化（`kernel/csv-*`、`kernel/useWindowedRows.ts`）
+### CSV 窗口化（`previews/csv/*`、`kernel/csv-*`、`kernel/useWindowedRows.ts`）
 
 文本超过 2 MB、或行缓冲被行数上限截断时，表格改为「稀疏索引 + 窗口」：
 
@@ -90,10 +90,19 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 |---|---|
 | `csv-index.ts` | 稀疏行索引：每 10 000 行一个锚点，引号感知，只扫描新增后缀 |
 | `csv-window.ts` | 按锚点读窗口：定位 → 跳过 → 解析切片；末尾没有换行的最后一行也算一行 |
-| `csv-window-state.ts` | 纯算术：`planWindow`（读哪一段）、`windowedBodyRows`（画哪些行 + 上下撑高）、`scaledRowHeight` |
+| `csv-window-state.ts` | 纯算术：`planWindow`（读哪一段）、`windowedBodyRows` / `bandRows`（画哪些行 + 上下撑高）、比例几何与 `stickyBand` |
 | `useWindowedRows.ts` | T1 占位 / T2 静止 200 ms 后读；按窗口号缓存（LRU，32 窗口 / 160 000 行） |
-| `csv-file.ts` | 文件源：按字节取切片、后台建字节行索引、估算偏移跳转、全文扫描 |
+| `csv-file.ts` | 文件源：按字节取切片、后台建字节行索引、估算偏移跳转、全文扫描（含锚点） |
 | `host/text-route.ts` | `GET /api/any-preview/text`：字节区间 → 行对齐 → 解码，带 `start/end/size/eof` |
+| `previews/csv/source.ts` | 行从哪来：文本缓冲 + 字符索引 + 文件源 + 读一窗 + 扫描，合成一个 `CsvSource` |
+| `previews/csv/scroll.ts` | 视口与几何：滚动位置、总行数（含"拖 3 屏才换精确总数"）、比例几何、`reveal(行)` |
+| `previews/csv/scan.ts` | 全文搜索状态机：显式触发、从当前行起扫、逐片发布、可停止、并入箭头导航 |
+| `previews/csv/table.tsx` | 只负责 DOM：滚动容器、钉住窗口、表头、行号、高亮 |
+| `kernel/lines.ts` | 共用的行计数：`countNewlines` / `countRows` / `skipLines` |
+
+组件之外的这三份（`source` / `scroll` / `scan`）各有单一职责，`index.tsx` 只剩组合与状态行；
+**`geometry` 必须 `useMemo`**：揭示效果依赖它，每帧新对象会让"滚动后又被拉回命中行"（见
+`handoff` §16）。
 
 要点：
 
