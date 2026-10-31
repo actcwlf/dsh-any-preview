@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Extract one archive member to disk so the standard preview can open it.
  *
  * The Host filesystem service reads bytes but has no binary write, so the write
@@ -74,6 +74,33 @@ export async function extractEntryTo(
   return path
 }
 
+
+/**
+ * Write bytes the client decoded itself, e.g. a member of a 7z archive.
+ * @param data - the decoded member.
+ * @param entryName - member name, reduced to a safe base name.
+ * @param targetDir - absolute destination directory.
+ * @param force - rewrite even when an identical copy exists.
+ * @returns the written file's absolute path.
+ */
+export async function writeEntryBytesTo(
+  data: Uint8Array,
+  entryName: string,
+  targetDir: string,
+  force = false,
+): Promise<string> {
+  if (data.byteLength > MAX_ENTRY_BYTES) {
+    throw new Error(`条目解压后 ${String(data.byteLength)} 字节，超过上限`)
+  }
+  const path = join(targetDir, safeEntryName(entryName))
+  if (!force) {
+    const existing = await stat(path).catch(() => undefined)
+    if (existing !== undefined && existing.isFile() && existing.size === data.byteLength) return path
+  }
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(path, data)
+  return path
+}
 /** Whether a previous extraction of this member is still on disk. */
 export async function extractedPathOf(entryName: string, targetDir: string): Promise<string | undefined> {
   const path = join(targetDir, safeEntryName(entryName))
