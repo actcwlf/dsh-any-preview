@@ -12,3 +12,6 @@ samples/
 *.mkv
 *.wav
 *.mp3
+tmp-wasm/
+tmp-emcc/
+.emsdk-config

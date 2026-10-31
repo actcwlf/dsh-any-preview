@@ -78,3 +78,40 @@ emcc lzma/C/LzmaDec.c -O3 -flto \
 2. 在 `src/shared/assets.ts` 已有 `lzma.wasm` 一项，无需改动；
 3. 客户端调用 `loadWasm('lzma.wasm')`，实现 7z 目录解析 + 按块解码；
 4. 加一条测试：`loadWasm` 在 404 时抛出，能力关闭。
+
+## 实现现状（本仓库已构建）
+
+`lib/lzma.wasm` 已存在，**16.6 KB**，由 `node scripts/build-wasm.mjs` 生成：
+
+```
+clang --target=wasm32-unknown-unknown -nostdlib -O3 -I wasm/include -I wasm/lzma -c …
+wasm-ld --no-entry --export-memory --initial-memory=134217728 --max-memory=402653184 …
+```
+
+**不使用 emscripten 运行时**，原因有两条：
+
+1. 体积——emscripten 版本 200–400 KB，freestanding 版本 16.6 KB；
+2. 工程——emcc 在 Windows 上跨盘（emsdk 在 D:、仓库在 F:）会抛
+   `ValueError: path is on mount 'D:'`，且其临时目录在沙箱内无法写入。
+
+### 实际导出（与上文契约的差异）
+
+| 导出 | 说明 |
+|---|---|
+| `memory` | 线性内存 |
+| `malloc(size)` / `free(ptr)` | **自带的 bump 分配器**（96 MB 静态 arena），`free` 是空操作 |
+| `reset_heap()` | 把分配器指针归零；一次解码结束后调用即可复用内存 |
+| `lzma_decode(props, propsLen, in, inLen, out, outCap)` | LZMA1；返回写入字节数，`-1` 分配失败、`-2` 数据损坏 |
+| `lzma2_decode(props, propsLen, in, inLen, out, outCap)` | LZMA2（`props` 为 1 字节字典码） |
+| `crc32_buf(data, len)` | IEEE CRC32，用于校验条目 |
+
+`wasm/include/` 提供三个最小头文件（`stdlib.h`、`string.h`、`errno.h`），
+`wasm/shim.c` 提供 `memcpy`/`memset`/`memmove`/`memcmp` 与分配器。
+
+### 已验证
+
+`test/wasm-decode.test.mjs`（3 项，未构建时自动跳过）：
+
+- 导出齐全；
+- 用 Python `lzma` 生成的 raw LZMA1 夹具（`test/fixtures/lzma1.json`）解码后与原文逐字节一致；
+- 篡改一个字节后返回负错误码，而不是错误数据。

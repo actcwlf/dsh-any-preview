@@ -1,49 +1,100 @@
 #!/usr/bin/env node
 /**
- * Placeholder builder for the future decode wasm.
+ * Build lib/lzma.wasm from the LZMA SDK sources in wasm/lzma.
  *
- * There is no codec in this repository yet, and no emscripten toolchain in the
- * usual build environment, so this script explains the contract and exits
- * non-zero when asked to actually build. Keeping it here means the delivery
- * path (lib/<name>.wasm -> asset route -> loadWasm) is already wired when the
- * decoder arrives.
+ * The module is freestanding on purpose: no emscripten runtime, no libc, no
+ * filesystem. `wasm/include` supplies the three headers the SDK expects, and
+ * wasm/shim.c supplies memcpy/memset and a bump allocator. That keeps the artifact
+ * near 17 KB instead of the 200-400 KB an emscripten build would produce, and it
+ * removes the cross-drive temp-directory problems emcc hits on Windows.
+ *
+ * Requires clang + wasm-ld with a wasm32 target:
+ *   - emsdk: set EMSDK to its root (default D:\infrastructure\emsdk), or
+ *   - any LLVM with wasm32 support on PATH.
+ *
+ * Usage: node scripts/build-wasm.mjs
  */
-import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, rmSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const wasm = join(root, 'lib', 'lzma.wasm')
-const source = join(root, 'wasm', 'lzma')
+const root = fileURLToPath(new URL('..', import.meta.url))
+const outDir = join(root, 'lib')
+const outFile = join(outDir, 'lzma.wasm')
+const buildDir = join(root, 'tmp-wasm')
 
-if (existsSync(wasm) && process.argv.includes('--check')) {
-  process.stdout.write(`present: ${wasm}\n`)
-  process.exit(0)
+/** Sources, in link order. 7zCrc is absent: crc32 lives in the shim. */
+const SOURCES = [
+  'wasm/shim.c',
+  'wasm/lzma/LzmaDec.c',
+  'wasm/lzma/Lzma2Dec.c',
+  'wasm/lzma/Bcj2.c',
+  'wasm/lzma/CpuArch.c',
+]
+
+/** Exports the client depends on; asserted after the build. */
+const EXPORTS = ['memory', 'malloc', 'free', 'reset_heap', 'lzma_decode', 'lzma2_decode', 'crc32_buf']
+
+/** Locate a toolchain: emsdk first, then PATH. */
+function toolchain() {
+  const emsdk = process.env.EMSDK ?? 'D:\\infrastructure\\emsdk'
+  const clang = join(emsdk, 'upstream', 'bin', 'clang.exe')
+  const wasmLd = join(emsdk, 'upstream', 'bin', 'wasm-ld.exe')
+  if (existsSync(clang) && existsSync(wasmLd)) return { clang, wasmLd }
+  return { clang: 'clang', wasmLd: 'wasm-ld' }
 }
 
-process.stdout.write([
-  'Decode wasm is not built: this repository ships no codec yet.',
-  '',
-  `  source directory: ${source}`,
-  `  output:           ${wasm}`,
-  '',
-  'Required exports: alloc, free, decode, last_error, memory.',
-  'Suggested build (LZMA SDK, no filesystem, no CLI):',
-  '',
-  '  emcc lzma/C/LzmaDec.c -O3 -flto -sSTANDALONE_WASM=1 \\',
-  '    -sALLOW_MEMORY_GROWTH=1 \\',
-  '    -sEXPORTED_FUNCTIONS=_alloc,_free,_decode,_last_error \\',
-  '    -Wl,--no-entry -o lib/lzma.wasm',
-  '',
-  'The asset route already serves any name listed in src/shared/assets.ts,',
-  'so no build wiring is needed once the file exists.',
-  '',
-].join('\n'))
+function run(command, args) {
+  // stdio is inherited on purpose: the sandbox denies piped child output (EPERM).
+  const result = spawnSync(command, args, { cwd: root, stdio: 'inherit' })
+  if (result.status !== 0) {
+    process.stderr.write(`${command} failed:\n${result.stderr ?? ''}\n`)
+    process.exit(result.status ?? 1)
+  }
+  return result
+}
 
-const emcc = spawnSync('emcc', ['--version'], { stdio: 'ignore' })
-if (emcc.status !== 0) {
-  process.stderr.write('emcc not found: install emscripten or build elsewhere.\n')
+const { clang, wasmLd } = toolchain()
+const version = spawnSync(clang, ['--version'], { stdio: 'ignore' })
+if (version.status !== 0) {
+  process.stderr.write(`no wasm toolchain found (tried ${clang}). Set EMSDK or put clang on PATH.\n`)
   process.exit(1)
 }
-process.stdout.write('emcc is available; see wasm/README.md for the contract.\n')
+
+rmSync(buildDir, { recursive: true, force: true })
+mkdirSync(buildDir, { recursive: true })
+mkdirSync(outDir, { recursive: true })
+
+const objects = []
+for (const source of SOURCES) {
+  const object = join(buildDir, `${source.replace(/[\\/]/gu, '_').replace(/\.c$/u, '')}.o`)
+  run(clang, [
+    '--target=wasm32-unknown-unknown', '-nostdlib', '-fno-builtin', '-O3',
+    '-I', 'wasm/include', '-I', 'wasm/lzma', '-c', source, '-o', object,
+  ])
+  objects.push(object)
+}
+
+run(wasmLd, [
+  '--no-entry', '--export-memory',
+  '--initial-memory=134217728', '--max-memory=402653184',
+  ...EXPORTS.filter(name => name !== 'memory').map(name => `--export=${name}`),
+  '-o', outFile, ...objects,
+])
+
+const { readFileSync } = await import('node:fs')
+const bytes = readFileSync(outFile)
+const module = new WebAssembly.Module(bytes)
+const present = new Set(WebAssembly.Module.exports(module).map(entry => entry.name))
+const missing = EXPORTS.filter(name => !present.has(name))
+if (missing.length > 0) {
+  process.stderr.write(`lzma.wasm is missing exports: ${missing.join(', ')}\n`)
+  process.exit(1)
+}
+
+const kilobytes = statSync(outFile).size / 1024
+process.stdout.write(`lib/lzma.wasm: ${kilobytes.toFixed(1)} KB, exports ok (${EXPORTS.join(', ')})\n`)
+
+// The object files are only an intermediate; the artifact is what ships.
+rmSync(buildDir, { recursive: true, force: true })
