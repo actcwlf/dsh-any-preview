@@ -67,6 +67,9 @@ export const zh = {
   'zip.unsupportedMethod': '暂不支持压缩方法 {method}',
 
   'archive.title': '压缩包',
+  'archive.extract': '解压',
+  'archive.chooseDir': '选择目录',
+  'sevenzip.binaryHint': '二进制内容，仅显示前 4 KB 的十六进制；解压后可用主预览查看',
   'sevenzip.title': '7z 压缩包',
   'sevenzip.loading': '正在读取 7z 目录…',
   'sevenzip.summary': '{count} 个文件',
@@ -249,6 +252,9 @@ export const en: Record<MessageKey, string> = {
   'zip.unsupportedMethod': 'Compression method {method} is not supported',
 
   'archive.title': 'Archive',
+  'archive.extract': 'Extract',
+  'archive.chooseDir': 'Choose folder',
+  'sevenzip.binaryHint': 'Binary content; the first 4 KB are shown as hex. Extract it to use the main preview.',
   'sevenzip.title': '7z archive',
   'sevenzip.loading': 'Reading the 7z directory…',
   'sevenzip.summary': '{count} files',

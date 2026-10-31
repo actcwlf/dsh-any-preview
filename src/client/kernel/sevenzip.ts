@@ -87,3 +87,35 @@ export async function readSevenZipEntry(
 export function isSupported(archive: SevenZipArchive): boolean {
   return archive.encrypted === false && archive.folders.every(folder => canDecode(folder))
 }
+
+/** Base64 for a byte array, chunked so large entries do not blow the call stack. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
+  }
+  return btoa(binary)
+}
+
+/**
+ * Write already-decoded bytes to disk through the extraction route.
+ *
+ * 7z decodes in the browser, so the Host receives the finished member rather than
+ * the archive. Naming, size limits and reuse of an identical file match zip's path.
+ */
+export async function writeExtracted(
+  entryName: string,
+  bytes: Uint8Array,
+  targetDir: string,
+  force = false,
+): Promise<string> {
+  const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'write', entry: entryName, targetDir, data: toBase64(bytes), force }),
+  })
+  if (!response.ok) throw new Error(await response.text())
+  const result = await response.json() as { path: string }
+  return result.path
+}
