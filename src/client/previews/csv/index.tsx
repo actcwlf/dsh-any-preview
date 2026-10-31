@@ -18,7 +18,7 @@ import { scanText } from '../../kernel/search-scan.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
 import { createCsvIndex } from '../../kernel/csv-index.ts'
 import type { CsvIndex } from '../../kernel/csv-index.ts'
-import { fitColumns, rowMetrics, scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
+import { bandRows, fitColumns, logicalRow, proportionalGeometry, stickyBand, windowedBodyRows } from '../../kernel/csv-window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
 import { readWindow } from '../../kernel/csv-window.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
@@ -39,9 +39,6 @@ const LARGE_TEXT_CHARS = 2 * 1024 * 1024
 /** A drag this many screens long may replace an estimated total with the exact one. */
 const EXACT_SWITCH_SCREENS = 3
 
-/** How long the size probe may take before the delivered text takes over. */
-const PROBE_TIMEOUT_MS = 4_000
-
 /** One index anchor every N rows, so a jump scans at most that many rows. */
 const INDEX_STRIDE = 10_000
 
@@ -49,14 +46,14 @@ const INDEX_STRIDE = 10_000
 const WINDOW_ROWS = 5_000
 const SETTLE_MS = 200
 
-/** Fixed row height; only a table past the browser's scroll limit scales it down. */
+/** Fixed row height; the table never squeezes its rows. */
 const ROW_HEIGHT = 22
 
-/** Browsers stop growing an element's scroll height near 2^24 px (about 762,000 rows). */
+/**
+ * Browsers stop growing an element's scroll height near 2^24 px (about 727,000 rows at
+ * 22px). Past that the scrollbar turns proportional instead of the rows shrinking.
+ */
 const SCROLL_LIMIT_PX = 16_777_216
-
-/** Floor for the scaled row height, so the far end of a huge file stays visible. */
-const MIN_ROW_HEIGHT = 6
 
 /** Rows rendered above and below the viewport to cover fast scrolling. */
 const OVERSCAN = 8
@@ -244,11 +241,19 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     adoptRef.current.shown = 0
   }
 
-  // Past the browser's scroll-height limit the rows shrink proportionally instead of
-  // the table being cut: the scrollbar still spans every row of the file.
-  const rowHeight = windowed
-    ? scaledRowHeight(Math.max(0, totalRows - 1), ROW_HEIGHT, SCROLL_LIMIT_PX, MIN_ROW_HEIGHT)
-    : ROW_HEIGHT
+  // A table taller than the browser's scroll limit keeps its natural row height and gets
+  // a proportional scrollbar instead: the content is a fixed-height spacer and a scroll
+  // position selects a row. Shrinking the rows to fit is what made 2,000,000 rows render
+  // as 8px slivers — a table row is never shorter than its line box, so the scrollbar
+  // stopped matching the row numbers entirely.
+  const bodyRows = windowed ? Math.max(0, totalRows - 1) : 0
+  const geometry = windowed && bodyRows * ROW_HEIGHT > SCROLL_LIMIT_PX
+    ? proportionalGeometry(bodyRows, viewportHeight, ROW_HEIGHT, SCROLL_LIMIT_PX)
+    : undefined
+  // The hook plans windows from a scroll offset; in the proportional mode a pixel is
+  // worth `pitch` rows rather than one row's height.
+  const mappingPitch = geometry === undefined ? ROW_HEIGHT : geometry.pitch
+  const logical = geometry === undefined ? 0 : logicalRow(scrollTop, geometry, bodyRows)
 
   // One window, from the file when there is one and from the delivered text otherwise.
   // The callback is read through a ref by the hook, so its identity does not matter.
@@ -284,7 +289,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     scrollTop,
     viewportHeight,
     totalRows,
-    rowHeight,
+    rowHeight: mappingPitch,
     windowSize: WINDOW_ROWS,
     settleMs: SETTLE_MS,
   })
@@ -329,13 +334,6 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     const controller = new AbortController()
     let live = true
     setFileState(OPENING_FILE)
-    // A probe that never answers must not leave the pane on its loading line.
-    const giveUp = setTimeout(() => {
-      if (!live) return
-      live = false
-      controller.abort()
-      setFileState(FAILED_FILE)
-    }, PROBE_TIMEOUT_MS)
     void (async () => {
       try {
         const media = fileUrl(path)
@@ -362,10 +360,9 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
         // text keeps the table working, so this is not an error the reader must see.
         if (live) setFileState(FAILED_FILE)
       }
-    })().finally(() => { clearTimeout(giveUp) })
+    })()
     return () => {
       live = false
-      clearTimeout(giveUp)
       controller.abort()
       fileRef.current?.dispose()
       fileRef.current = null
@@ -429,10 +426,10 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     if (row === undefined || element === null) return
     const position = windowed ? row : (filter ? visibleIndices.indexOf(row) : row)
     if (position < 0) return
-    const top = Math.max(0, position * rowHeight - element.clientHeight / 2)
+    const top = Math.max(0, position * mappingPitch - element.clientHeight / 2)
     element.scrollTop = top
     setScrollTop(top)
-  }, [found.activeRow, filter, visibleIndices, windowed, rowHeight])
+  }, [found.activeRow, filter, visibleIndices, windowed, mappingPitch])
 
   // A large file cannot be searched from the parsed rows alone: the row budget keeps
   // only its head. With a file source the whole file is scanned slice by slice; without
@@ -470,13 +467,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     return () => { controller.abort() }
   }, [options.query, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
 
-  // A file the owner has not finished handing over may be a big one, whose row pitch is
-  // compressed (2,000,000 rows at 22px would pass the browser's height limit). Painting
-  // the delivered rows first would show them at the natural pitch and then squeeze them
-  // a moment later — the "style change" on open. Wait for the size instead.
-  const measuring = fileState.status === 'opening' && absolutePath !== undefined && !eof
-
-  if (buffer === null || view === null || measuring) {
+  if (buffer === null || view === null) {
     const empty = source.kind === 'text' && eof && text.length === 0
     return (
       <div style={PANE_FILL}>
@@ -486,39 +477,35 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   }
 
   const dataRows = windowed ? Math.max(0, totalRows - 1) : view.body.length
-  // The row box follows the (possibly scaled) pitch, and the text with it: a table row
-  // is never shorter than its line box, so a squeezed row needs a squeezed line box and
-  // a font that fits it — otherwise the browser lays rows out taller than planned and
-  // the scrollbar stops lining up with the row numbers.
-  const metrics = rowMetrics(rowHeight)
-  const lineBox = {
-    lineHeight: `${String(metrics.lineHeight)}px`,
-    fontSize: `${String(metrics.fontSize)}px`,
-    ...(metrics.separator ? {} : { borderBottom: 'none' }),
-  } as const
+  // Rows keep their one natural box: the proportional mode moves the scrollbar, not the
+  // typography.
+  const lineBox = { lineHeight: `${String(ROW_HEIGHT - 2)}px` } as const
   const indexCell = { ...indexStyle, ...lineBox }
   const bodyCell = { ...cellStyle, ...lineBox }
-  const headerCell = {
-    ...headerStyle,
-    padding: metrics.separator ? '5px 12px' : '2px 10px',
-    fontSize: metrics.separator ? 12 : Math.max(10, metrics.fontSize + 2),
-  }
-  const cornerCell = { ...headerCell, left: 0, zIndex: 2, width: 1 }
 
   // What to paint, in body-row coordinates. A `null` cell list is a row whose window
   // has not been read yet: it keeps its height and shows nothing.
-  const body = windowed
-    ? windowedBodyRows(
-      win.rows,
-      win.startRow,
-      totalRows,
-      // Always the viewport band: a window holds 5,000 rows, the table paints a screen.
-      windowRange({ scrollTop, viewportHeight, rowCount: Math.max(0, totalRows - 1), rowHeight, overscan: OVERSCAN }),
-      rowHeight,
-      win.loading,
-      view.columns,
-    )
-    : plainBodyRows(visibleIndices, view.body, scrollTop, viewportHeight)
+  const band = geometry === undefined
+    ? undefined
+    : stickyBand(logical, bodyRows, geometry.visibleRows, ROW_HEIGHT, OVERSCAN)
+  const body = band === undefined
+    ? windowed
+      ? windowedBodyRows(
+        win.rows,
+        win.startRow,
+        totalRows,
+        // Always the viewport band: a window holds 5,000 rows, the table paints a screen.
+        windowRange({ scrollTop, viewportHeight, rowCount: Math.max(0, totalRows - 1), rowHeight: ROW_HEIGHT, overscan: OVERSCAN }),
+        ROW_HEIGHT,
+        win.loading,
+        view.columns,
+      )
+      : plainBodyRows(visibleIndices, view.body, scrollTop, viewportHeight)
+    : {
+      rows: bandRows(win.rows, win.startRow, band.first, band.first + band.count, win.loading, view.columns),
+      topPad: 0,
+      bottomPad: 0,
+    }
   const topPad = body.topPad
   const bottomPad = body.bottomPad
   // While a window is being read, rows the delivered text already holds fill in: the
@@ -578,56 +565,62 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
       <div
         ref={bindScroller}
         onScroll={event => setScrollTop(event.currentTarget.scrollTop)}
-        style={{ flex: '1 1 auto', overflow: 'auto' }}
+        // The pinned table changes under the browser's scroll anchoring; it must not
+        // "correct" our offset behind our back.
+        style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
       >
-        <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
-          <thead>
-            <tr>
-              <th style={cornerCell} />
-              {view.header.map((value, column) => (
-                <th key={column} style={headerCell}>{value || t('csv.column', { index: column + 1 })}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {topPad > 0 && (
-              <tr style={{ height: topPad }}>
-                <td colSpan={view.columns + 1} style={spacerCell} />
-              </tr>
-            )}
-            {painted.map((row) => {
-              if (row.cells === null) {
-                return (
-                  <tr key={row.index} style={{ height: metrics.height }}>
-                    <td colSpan={view.columns + 1} style={spacerCell} />
-                  </tr>
-                )
-              }
-              const active = row.index === found.activeRow
-              return (
-                <tr
-                  key={row.index}
-                  data-row-index={row.index}
-                  style={{ height: metrics.height, background: active ? ACTIVE_ROW : undefined }}
-                >
-                  <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
-                    {estimated ? `~${String(row.index + 1)}` : row.index + 1}
-                  </td>
-                  {row.cells.map((value, column) => (
-                    <td key={column} style={bodyCell}>
-                      <Marked text={value} pattern={found.pattern} emphasis={active} />
-                    </td>
+        <div style={geometry === undefined ? undefined : { height: geometry.contentHeight, position: 'relative' }}>
+          <div style={geometry === undefined ? undefined : { position: 'sticky', top: 0, height: viewportHeight }}>
+            <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
+              <thead>
+                <tr>
+                  <th style={cornerStyle} />
+                  {view.header.map((value, column) => (
+                    <th key={column} style={headerStyle}>{value || t('csv.column', { index: column + 1 })}</th>
                   ))}
                 </tr>
-              )
-            })}
-            {bottomPad > 0 && (
-              <tr style={{ height: bottomPad }}>
-                <td colSpan={view.columns + 1} style={spacerCell} />
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </thead>
+              <tbody style={band === undefined ? undefined : { transform: `translateY(${String(-band.offset)}px)` }}>
+                {topPad > 0 && (
+                  <tr style={{ height: topPad }}>
+                    <td colSpan={view.columns + 1} style={spacerCell} />
+                  </tr>
+                )}
+                {painted.map((row) => {
+                  if (row.cells === null) {
+                    return (
+                      <tr key={row.index} style={{ height: ROW_HEIGHT }}>
+                        <td colSpan={view.columns + 1} style={spacerCell} />
+                      </tr>
+                    )
+                  }
+                  const active = row.index === found.activeRow
+                  return (
+                    <tr
+                      key={row.index}
+                      data-row-index={row.index}
+                      style={{ height: ROW_HEIGHT, background: active ? ACTIVE_ROW : undefined }}
+                    >
+                      <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
+                        {estimated ? `~${String(row.index + 1)}` : row.index + 1}
+                      </td>
+                      {row.cells.map((value, column) => (
+                        <td key={column} style={bodyCell}>
+                          <Marked text={value} pattern={found.pattern} emphasis={active} />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+                {bottomPad > 0 && (
+                  <tr style={{ height: bottomPad }}>
+                    <td colSpan={view.columns + 1} style={spacerCell} />
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </PreviewChrome>
   )
@@ -648,6 +641,8 @@ const headerStyle = {
   fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)',
 }
+
+const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
 
 const spacerCell = { padding: 0, border: 'none' } as const
 

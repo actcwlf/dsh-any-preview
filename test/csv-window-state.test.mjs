@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  cacheCapacity, planWindow, rowMetrics, scaledRowHeight, windowedBodyRows,
+  cacheCapacity, logicalRow, planWindow, proportionalGeometry, stickyBand, windowedBodyRows,
 } from '../src/client/kernel/csv-window-state.ts'
 
 const ROW = 22
@@ -106,56 +106,51 @@ test('an empty table paints nothing', () => {
   assert.equal(body.bottomPad, 0)
 })
 
-test('rows keep their natural height below the browser scroll limit', () => {
-  assert.equal(scaledRowHeight(0, ROW, 16_777_216, 6), ROW)
-  assert.equal(scaledRowHeight(1000, ROW, 16_777_216, 6), ROW)
-  // 762,600 rows is where 22px rows exactly reach 2^24.
-  assert.equal(scaledRowHeight(762_000, ROW, 16_777_216, 6), ROW)
+test('a table past the scroll limit gets a proportional scrollbar', () => {
+  const bodyRows = 2_000_000
+  const geometry = proportionalGeometry(bodyRows, 720, ROW, 16_777_216)
+  assert.equal(geometry.contentHeight, 16_777_216, 'the content stays inside the cap')
+  assert.equal(geometry.maxScroll, 16_777_216 - 720)
+  assert.equal(geometry.visibleRows, Math.floor(720 / ROW))
+  // A scroll pixel is worth `pitch` rows, so the row at the top is exact.
+  assert.ok(Math.abs(geometry.pitch - geometry.maxScroll / (bodyRows - geometry.visibleRows)) < 1e-9)
 })
 
-test('a huge table shrinks its rows so its end stays reachable', () => {
-  const rows = 1_000_000
-  const height = scaledRowHeight(rows, ROW, 16_777_216, 6)
-  assert.ok(height < ROW)
-  assert.ok(rows * height <= 16_777_216 + 1)
-  // Proportional: the scrollbar spans the same fraction of the file either way.
-  assert.ok(Math.abs(height / ROW - 16_777_216 / (rows * ROW)) < 1e-9)
+test('the proportional mapping starts at the first row and ends on the last screen', () => {
+  const bodyRows = 2_000_000
+  const geometry = proportionalGeometry(bodyRows, 720, ROW, 16_777_216)
+  assert.equal(logicalRow(0, geometry, bodyRows), 0)
+  // Full scroll must land on the last screen, not `visibleRows` short of it.
+  assert.equal(logicalRow(geometry.maxScroll, geometry, bodyRows), bodyRows - geometry.visibleRows)
+  assert.equal(logicalRow(geometry.maxScroll / 2, geometry, bodyRows), (bodyRows - geometry.visibleRows) / 2)
+  // Out-of-range scroll offsets clamp instead of running past the file.
+  assert.equal(logicalRow(-100, geometry, bodyRows), 0)
+  assert.equal(logicalRow(1e12, geometry, bodyRows), bodyRows - geometry.visibleRows)
 })
 
-test('the scaled row height never collapses below the floor', () => {
-  assert.equal(scaledRowHeight(50_000_000, ROW, 16_777_216, 6), 6)
+test('the pinned band covers the viewport and reaches the last row', () => {
+  const bodyRows = 2_000_000
+  const geometry = proportionalGeometry(bodyRows, 720, ROW, 16_777_216)
+  const top = stickyBand(0, bodyRows, geometry.visibleRows, ROW, 8)
+  assert.equal(top.first, 0)
+  assert.equal(top.offset, 0)
+  assert.ok(top.count >= geometry.visibleRows)
+
+  const middle = stickyBand(1_000_000.5, bodyRows, geometry.visibleRows, ROW, 8)
+  assert.equal(middle.first, 1_000_000 - 8)
+  assert.equal(middle.count, geometry.visibleRows + 8 + 8 + 1)
+  assert.ok(Math.abs(middle.offset - (8 * ROW + 0.5 * ROW)) < 1e-9, 'the fractional row lines up')
+
+  const end = stickyBand(bodyRows - geometry.visibleRows, bodyRows, geometry.visibleRows, ROW, 8)
+  assert.equal(end.first + end.count, bodyRows, 'every row to the last is painted')
+  assert.equal(end.offset, 8 * ROW)
 })
 
-test('a natural row keeps the current line box, separator and font', () => {
-  assert.deepEqual(rowMetrics(ROW), { height: ROW, lineHeight: 20, fontSize: 12, separator: true })
-})
-
-test('a compressed row carries its own line box and font', () => {
-  // 1,000,000 rows: 16.78px pitch, still room for the 1px rule and a 12px font.
-  const million = rowMetrics(16_777_216 / 1_000_000)
-  assert.equal(million.separator, true)
-  assert.ok(million.lineHeight + 1 <= million.height)
-  assert.equal(million.fontSize, 12)
-  // 2,000,000 rows: 8.39px pitch. No room for the rule, and the font must fit the box.
-  const twoMillion = rowMetrics(16_777_216 / 2_000_000)
-  assert.equal(twoMillion.separator, false)
-  assert.ok(Math.abs(twoMillion.lineHeight - twoMillion.height) < 1e-9, 'the line box is the row')
-  assert.ok(twoMillion.fontSize <= twoMillion.lineHeight, 'the glyphs fit the box')
-  assert.ok(twoMillion.fontSize <= 12)
-})
-
-test('every row box fits inside its planned height', () => {
-  for (const height of [22, 16.78, 12, 10, 8.39, 6, 1]) {
-    const metrics = rowMetrics(height)
-    const occupied = metrics.lineHeight + (metrics.separator ? 1 : 0)
-    assert.ok(occupied <= metrics.height + 1e-9, `height ${String(height)}: line box ${String(occupied)}`)
-    // Below the 5px font floor a box cannot hold text at all; the row box still holds.
-    if (metrics.lineHeight >= 5) {
-      assert.ok(metrics.fontSize <= metrics.lineHeight, `height ${String(height)}: font ${String(metrics.fontSize)}`)
-    }
-  }
-})
-
-test('a squeezed row keeps a floor font instead of vanishing', () => {
-  assert.equal(rowMetrics(6).fontSize, 5)
+test('a band never paints past either end of the table', () => {
+  const negative = stickyBand(-5, 100, 10, ROW, 4)
+  assert.equal(negative.first, 0)
+  assert.equal(negative.offset, 0)
+  const beyond = stickyBand(1_000, 100, 10, ROW, 4)
+  assert.ok(beyond.first + beyond.count <= 100)
+  assert.ok(beyond.offset >= 0)
 })

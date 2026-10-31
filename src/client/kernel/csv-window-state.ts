@@ -61,55 +61,97 @@ export function cacheCapacity(windowSize: number): number {
 }
 
 /**
- * Row height for a table of `rows` body rows.
+ * Scroll geometry for a file too tall to position row by row.
  *
- * An element's scroll height stops growing near 2^24 px in current browsers, so past
- * about 762,000 rows at 22px the rows shrink proportionally: the scrollbar then still
- * spans the real row count and the file's end stays reachable. Below the cap the height
- * is exactly `rowHeight`, so ordinary files are not scaled at all.
- * @param rows - body rows in the table.
+ * An element's scroll height stops growing near 2^24 px, so a table past about 727,000
+ * rows at 22px cannot map its scrollbar to rows one-to-one any more. Shrinking the rows
+ * to fit would make the text unreadable (and a table row cannot be shorter than its line
+ * box), so the table keeps its natural row height and the *scrollbar* becomes
+ * proportional: the content is a fixed-height spacer, and a scroll position selects a
+ * row instead of a pixel offset. The file's end stays reachable and the row numbers stay
+ * exact; the content moves `rowHeight / pitch` pixels per scrolled pixel, which is the
+ * trade-off this mode is for.
+ * @param bodyRows - body rows in the table (header excluded).
+ * @param viewportHeight - visible height in pixels.
  * @param rowHeight - natural height of one row in pixels.
  * @param limitPx - the scroll height the browser will honour.
- * @param minHeight - floor, so a huge table does not collapse to a hairline.
  */
-export function scaledRowHeight(rows: number, rowHeight: number, limitPx: number, minHeight: number): number {
-  const natural = rows * rowHeight
-  if (rows <= 0 || natural <= limitPx) return rowHeight
-  return Math.max(minHeight, (limitPx / natural) * rowHeight)
+export interface ProportionalGeometry {
+  /** Height the scroller's content gets; fixed, and inside the browser's cap. */
+  readonly contentHeight: number
+  /** Scrollable distance in pixels. */
+  readonly maxScroll: number
+  /** Scroll pixels per body row. */
+  readonly pitch: number
+  /** Body rows that fit in the viewport at the natural height. */
+  readonly visibleRows: number
 }
-
-/** What one row's box and text need so the browser lays it out at the planned height. */
-export interface RowMetrics {
-  /** Height the row must occupy; the pitch the scrollbar math uses. */
-  readonly height: number
-  /** Line box inside each cell. A table row cannot be shorter than this. */
-  readonly lineHeight: number
-  /** Font size that fits the line box without glyphs bleeding into the next row. */
-  readonly fontSize: number
-  /** Whether the 1px separator fits; a squeezed row cannot spare the pixel. */
-  readonly separator: boolean
-}
-
-/** Row height below which the 1px separator costs more than it is worth. */
-const SEPARATOR_MIN_HEIGHT = 14
 
 /**
- * Fit a row's box and text to the planned height.
- *
- * A table row's `height` is a *minimum*: the browser grows it to the line box plus the
- * border. Planning 8.4px rows while the cells keep a 10px line box and a 1px rule makes
- * the browser lay them out at 11px, so the scroll position no longer matches the row
- * numbers. Everything here therefore follows the pitch: the line box equals the height
- * (minus the separator when there is room), and the font shrinks to fit the line box.
- * @param height - planned row pitch in pixels.
- * @param baseFont - font size of the table at its natural height.
+ * Compute the proportional scroller's geometry.
+ * @param bodyRows - body rows in the table (header excluded).
+ * @param viewportHeight - visible height in pixels.
+ * @param rowHeight - natural height of one row in pixels.
+ * @param limitPx - the scroll height the browser will honour.
  */
-export function rowMetrics(height: number, baseFont = 12): RowMetrics {
-  const separator = height >= SEPARATOR_MIN_HEIGHT
-  // Two spare pixels at natural sizes keep the current 20px line box at a 22px row.
-  const lineHeight = Math.max(1, height - (separator ? 2 : 0))
-  const fontSize = Math.min(baseFont, Math.max(5, lineHeight - 1))
-  return { height, lineHeight, fontSize, separator }
+export function proportionalGeometry(
+  bodyRows: number,
+  viewportHeight: number,
+  rowHeight: number,
+  limitPx: number,
+): ProportionalGeometry {
+  const contentHeight = Math.max(viewportHeight + 1, limitPx)
+  const visibleRows = Math.max(1, Math.floor(viewportHeight / rowHeight))
+  const maxScroll = Math.max(0, contentHeight - viewportHeight)
+  // The last screen must be reachable: progress 1 has to land on row `bodyRows - visibleRows`.
+  const travel = Math.max(1, bodyRows - visibleRows)
+  return { contentHeight, maxScroll, pitch: maxScroll / travel, visibleRows }
+}
+
+/**
+ * Body row a scroll offset asks for, as a fraction: the pinned window uses the integer
+ * part as its top row and the fraction as the pixel shift that keeps motion smooth.
+ * @param scrollTop - scroller offset in pixels.
+ * @param geometry - geometry for this table.
+ * @param bodyRows - body rows in the table (header excluded).
+ */
+export function logicalRow(scrollTop: number, geometry: ProportionalGeometry, bodyRows: number): number {
+  if (geometry.maxScroll <= 0) return 0
+  const progress = Math.min(1, Math.max(0, scrollTop / geometry.maxScroll))
+  return progress * Math.max(0, bodyRows - geometry.visibleRows)
+}
+
+/** Rows the pinned window paints, and how far up its block is shifted. */
+export interface StickyBand {
+  /** First painted body row. */
+  readonly first: number
+  /** Rows painted, clamped to the table. */
+  readonly count: number
+  /** Pixels the block is translated up by, so the fractional row lines up. */
+  readonly offset: number
+}
+
+/**
+ * Place the pinned band for one logical scroll position.
+ * @param logicalTop - body row at the viewport's top, as a fraction.
+ * @param bodyRows - body rows in the table (header excluded).
+ * @param visibleRows - body rows the viewport shows.
+ * @param rowHeight - natural height of one row in pixels.
+ * @param overscan - extra rows painted above and below.
+ */
+export function stickyBand(
+  logicalTop: number,
+  bodyRows: number,
+  visibleRows: number,
+  rowHeight: number,
+  overscan: number,
+): StickyBand {
+  const top = Math.min(Math.max(0, bodyRows - visibleRows), Math.max(0, logicalTop))
+  const base = Math.floor(top)
+  const fraction = top - base
+  const first = Math.max(0, base - overscan)
+  const count = Math.max(0, Math.min(bodyRows - first, visibleRows + (base - first) + overscan + 1))
+  return { first, count, offset: (base - first) * rowHeight + fraction * rowHeight }
 }
 
 /** One painted row: its body index and its cells, or no cells while loading. */
@@ -137,12 +179,39 @@ export function fitColumns(row: readonly string[], columns: number): readonly st
 }
 
 /**
- * Paint the rows a viewport shows out of one read window.
+ * Take rows `[first, last)` out of one read window.
+ * @param read - rows the window returned, file row `startRow` first.
+ * @param startRow - file row the window starts at.
+ * @param first - first body row wanted.
+ * @param last - one past the last body row wanted.
+ * @param loading - true when the window has not been read yet.
+ * @param columns - width of the header.
+ */
+export function bandRows(
+  read: readonly (readonly string[])[],
+  startRow: number,
+  first: number,
+  last: number,
+  loading: boolean,
+  columns: number,
+): BodyRow[] {
+  const rows: BodyRow[] = []
+  for (let index = first; index < last; index += 1) {
+    // File row 0 is the header, which the table draws itself, so body row `i` is file row
+    // `i + 1` and lives at `i + 1 - startRow` inside the read rows.
+    const offset = index + 1 - startRow
+    const cells = loading || offset < 0 || offset >= read.length ? null : fitColumns(read[offset] ?? [], columns)
+    rows.push({ index, cells })
+  }
+  return rows
+}
+
+/**
+ * Paint the rows a viewport shows out of one read window, positioned by index.
  *
- * File row 0 is the header, which the table draws once above its body, so body row `i`
- * is file row `i + 1` and lives at `i + 1 - startRow` inside the read rows. Only the
- * viewport band is painted; the filler above and below keeps the scrollbar the length of
- * the whole file, so a 300,000-row table still costs one screen of elements.
+ * Only used while the table is short enough for exact positions; the filler above and
+ * below keeps the scrollbar the length of the whole file, so a 300,000-row table still
+ * costs one screen of elements.
  * @param read - rows the window returned, file row `startRow` first.
  * @param startRow - file row the window starts at.
  * @param totalRows - file rows known so far, header included.
@@ -160,15 +229,9 @@ export function windowedBodyRows(
   loading: boolean,
   columns: number,
 ): WindowedBody {
-  const rows: BodyRow[] = []
-  for (let index = slice.first; index < slice.last; index += 1) {
-    const offset = index + 1 - startRow
-    const cells = loading || offset < 0 || offset >= read.length ? null : fitColumns(read[offset] ?? [], columns)
-    rows.push({ index, cells })
-  }
   const bodyRows = Math.max(0, totalRows - 1)
   return {
-    rows,
+    rows: bandRows(read, startRow, slice.first, slice.last, loading, columns),
     topPad: slice.first * rowHeight,
     bottomPad: Math.max(0, bodyRows - slice.last) * rowHeight,
   }

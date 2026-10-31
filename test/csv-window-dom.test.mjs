@@ -142,7 +142,10 @@ async function render(component, text, options = {}) {
   })
   const table = container.querySelector('table')
   assert.ok(table, 'the table is mounted')
-  const scroller = table.parentElement
+  // table -> pinned block -> content (a fixed-height spacer when proportional) -> scroller.
+  const content = table.parentElement?.parentElement ?? null
+  const scroller = content?.parentElement ?? null
+  assert.ok(content !== null && scroller !== null, 'the table sits inside the scroller')
   const painted = () => [...container.querySelectorAll('tr[data-row-index]')].map(row => ({
     index: Number(row.getAttribute('data-row-index')),
     cells: [...row.children].map(cell => cell.textContent ?? ''),
@@ -154,6 +157,19 @@ async function render(component, text, options = {}) {
       scroller.dispatchEvent(new window.Event('scroll'))
     })
   }
+  /** Scroll to a fraction of the scroller's travel. */
+  const scrollToFraction = async (fraction) => {
+    // jsdom has no layout, so the travel comes from the spacer's declared height when
+    // the table is proportional, and from scrollHeight (0) otherwise.
+    const declared = Number.parseFloat(content.style.height)
+    const travel = Number.isFinite(declared)
+      ? Math.max(0, declared - scroller.clientHeight)
+      : Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+    await act(async () => {
+      scroller.scrollTop = travel * fraction
+      scroller.dispatchEvent(new window.Event('scroll'))
+    })
+  }
   /** Unmount, so a pending settle timer cannot update React after the test ends. */
   const dispose = async () => { await act(async () => { root.unmount() }) }
   /** The row count the summary claims, as a number. */
@@ -161,7 +177,7 @@ async function render(component, text, options = {}) {
     const match = /([\d,]+) 行/u.exec(container.textContent ?? '')
     return match === null ? Number.NaN : Number(match[1].replaceAll(',', ''))
   }
-  return { container, scroller, painted, scrollToBodyRow, dispose, summaryRows }
+  return { container, scroller, content, painted, scrollToBodyRow, scrollToFraction, dispose, summaryRows }
 }
 
 test('a windowed csv knows its row count and first rows on the first paint', { skip: !available }, async (t) => {
@@ -186,6 +202,42 @@ test('a small csv is not windowed and paints on the first render', { skip: !avai
   assert.deepEqual(rows.map(row => row.cells), [['1', '1', 'alpha'], ['2', '2', 'beta']])
   // The filter control is still offered where the whole file is in memory.
   assert.ok(view.container.querySelector('input[type="checkbox"]'), 'only-matches is available')
+})
+
+test('a table past the scroll limit keeps 22px rows and a proportional scrollbar', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const rows = 800_000
+  // 800,000 rows at 22px would need 17.6M px, past the browser's 16.7M cap.
+  const view = await render(component, csvOf(rows))
+  t.after(view.dispose)
+  assert.equal(view.summaryRows(), rows)
+  // The content is a fixed-height spacer, not the natural row stack.
+  const contentHeight = Number.parseFloat(view.content.style.height)
+  assert.ok(Math.abs(contentHeight - 16_777_216) < 1, `spacer height ${String(contentHeight)}`)
+  // Rows keep their box; the scrollbar turns proportional instead of the text shrinking.
+  const first = view.painted()[0]
+  assert.equal(first.cells[0], '1')
+  assert.equal(first.cells[2], 'user_1')
+  const row = view.container.querySelector('tr[data-row-index]')
+  assert.equal(row?.getAttribute('style'), `height: ${String(ROW)}px;`)
+
+  await tick(SETTLE)
+  // Half way down the scrollbar is half way through the file, within a screen.
+  await view.scrollToFraction(0.5)
+  await tick(SETTLE)
+  const middle = view.painted()
+  assert.ok(middle.length >= 10, 'the middle band is painted')
+  const expected = Math.round((rows - 1) * 0.5)
+  assert.ok(Math.abs(middle[0].index - expected) < 60, `band starts at ${String(middle[0].index)}, expected ~${String(expected)}`)
+
+  // The very bottom reaches the file's last row.
+  await view.scrollToFraction(1)
+  await tick(SETTLE)
+  const end = view.painted()
+  const last = end[end.length - 1]
+  assert.equal(last.index, rows - 1, 'the last body row is painted')
+  assert.equal(last.cells[0], String(rows), 'and it is labelled with the last file row')
+  assert.equal(last.cells[2], `user_${String(rows)}`)
 })
 
 test('a windowed csv paints absolute row numbers after the scroll settles', { skip: !available }, async (t) => {
