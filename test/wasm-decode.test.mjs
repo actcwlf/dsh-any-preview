@@ -64,3 +64,29 @@ test('corrupt input is reported instead of returning bytes', { skip }, async () 
   const written = api.lzma_decode(pProps, props.length, pInput, input.length, pOutput, 4096)
   assert.ok(written < 0, `expected a negative code, got ${written}`)
 })
+
+test('the heap grows past its initial size and stays usable', { skip }, async () => {
+  const { instance } = await WebAssembly.instantiate(readFileSync(wasmPath), {})
+  const api = instance.exports
+  const before = api.memory.buffer.byteLength
+
+  const block = api.malloc(24 * 1024 * 1024)
+  assert.notEqual(block, 0, 'a 24 MB allocation succeeds')
+  assert.ok(api.memory.buffer.byteLength > before, 'memory grew')
+
+  // A pointer taken before growth must still address the same bytes.
+  const fixture = JSON.parse(readFileSync(fixturePath, 'utf8'))
+  const props = hexBytes(fixture.props)
+  const input = hexBytes(fixture.input)
+  const expected = hexBytes(fixture.plain)
+  api.reset_heap()
+  const pProps = api.malloc(props.length)
+  const pInput = api.malloc(input.length)
+  const pOutput = api.malloc(expected.length + 64)
+  const memory = () => new Uint8Array(api.memory.buffer)
+  memory().set(props, pProps)
+  memory().set(input, pInput)
+  const written = api.lzma_decode(pProps, props.length, pInput, input.length, pOutput, expected.length + 64)
+  assert.equal(written, expected.length)
+  assert.deepEqual(Array.from(memory().slice(pOutput, pOutput + written)), Array.from(expected))
+})

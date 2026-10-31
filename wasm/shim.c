@@ -21,9 +21,23 @@ int *__errno_location(void) {
 
 /* ---- allocator ---------------------------------------------------------- */
 
-#define ARENA_BYTES (96u * 1024u * 1024u)
-static uint8_t g_arena[ARENA_BYTES] __attribute__((aligned(16)));
+/* The heap starts at __heap_base and grows on demand; nothing is reserved up
+ * front. Pointers are wasm offsets, so memory.grow cannot invalidate them. */
+extern unsigned char __heap_base;
+
 static uint32_t g_used = 0;
+
+static uint32_t heap_bytes(void) {
+  return (uint32_t)__builtin_wasm_memory_size(0) * 65536u
+       - (uint32_t)(uintptr_t)&__heap_base;
+}
+
+static int heap_reserve(uint32_t need) {
+  if (need <= heap_bytes()) return 1;
+  uint32_t missing = need - heap_bytes();
+  size_t pages = (missing + 65535u) / 65536u;
+  return __builtin_wasm_memory_grow(0, pages) != (size_t)-1;
+}
 
 void reset_heap(void) {
   g_used = 0;
@@ -31,8 +45,9 @@ void reset_heap(void) {
 
 void *malloc(size_t size) {
   uint32_t aligned = (uint32_t)((size + 15u) & ~(size_t)15u);
-  if (g_used + aligned > ARENA_BYTES) return 0;
-  void *result = &g_arena[g_used];
+  if (aligned == 0) aligned = 16u;
+  if (!heap_reserve(g_used + aligned)) return 0;
+  void *result = &__heap_base + g_used;
   g_used += aligned;
   return result;
 }
@@ -44,26 +59,18 @@ void free(void *p) {
 /* ---- the libc functions the SDK may call -------------------------------- */
 
 void *memcpy(void *dst, const void *src, size_t n) {
-  uint8_t *d = (uint8_t *)dst;
-  const uint8_t *s = (const uint8_t *)src;
-  for (size_t i = 0; i < n; i++) d[i] = s[i];
+  /* -mbulk-memory lowers this to the memory.copy instruction. */
+  __builtin_memcpy(dst, src, n);
   return dst;
 }
 
 void *memset(void *dst, int value, size_t n) {
-  uint8_t *d = (uint8_t *)dst;
-  for (size_t i = 0; i < n; i++) d[i] = (uint8_t)value;
+  __builtin_memset(dst, value, n);
   return dst;
 }
 
 void *memmove(void *dst, const void *src, size_t n) {
-  uint8_t *d = (uint8_t *)dst;
-  const uint8_t *s = (const uint8_t *)src;
-  if (d < s) {
-    for (size_t i = 0; i < n; i++) d[i] = s[i];
-  } else {
-    for (size_t i = n; i > 0; i--) d[i - 1] = s[i - 1];
-  }
+  __builtin_memmove(dst, src, n);
   return dst;
 }
 

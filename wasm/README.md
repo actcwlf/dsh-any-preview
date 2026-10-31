@@ -115,3 +115,13 @@ wasm-ld --no-entry --export-memory --initial-memory=134217728 --max-memory=40265
 - 导出齐全；
 - 用 Python `lzma` 生成的 raw LZMA1 夹具（`test/fixtures/lzma1.json`）解码后与原文逐字节一致；
 - 篡改一个字节后返回负错误码，而不是错误数据。
+### 三项加固（已实施）
+
+| 项 | 做法 | 效果 |
+|---|---|---|
+| 拷贝性能 | `-mbulk-memory` + `__builtin_memcpy/memset/memmove` | 下降到 `memory.copy` / `memory.fill` 指令，不再逐字节循环 |
+| 内存 | 堆从 `__heap_base` 起按需 `memory.grow`，初始 16 MB、上限 512 MB | 不再静态承诺 128 MB；`malloc` 失败返回 0 |
+| 栈 | `-z stack-size=1048576` | 1 MB 显式栈，避免 `LzmaDec` 状态在默认 64 KB 栈上静默溢出 |
+
+分配器语义仍是"bump + `free` 空操作"：一次解码结束后调用 `reset_heap()`；
+`test/wasm-decode.test.mjs` 会验证 24 MB 分配触发增长后指针依然有效。

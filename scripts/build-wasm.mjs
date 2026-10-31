@@ -70,7 +70,7 @@ const objects = []
 for (const source of SOURCES) {
   const object = join(buildDir, `${source.replace(/[\\/]/gu, '_').replace(/\.c$/u, '')}.o`)
   run(clang, [
-    '--target=wasm32-unknown-unknown', '-nostdlib', '-fno-builtin', '-O3',
+    '--target=wasm32-unknown-unknown', '-nostdlib', '-O3', '-mbulk-memory',
     '-I', 'wasm/include', '-I', 'wasm/lzma', '-c', source, '-o', object,
   ])
   objects.push(object)
@@ -78,7 +78,7 @@ for (const source of SOURCES) {
 
 run(wasmLd, [
   '--no-entry', '--export-memory',
-  '--initial-memory=134217728', '--max-memory=402653184',
+  '--initial-memory=16777216', '--max-memory=536870912', '-z', 'stack-size=1048576',
   ...EXPORTS.filter(name => name !== 'memory').map(name => `--export=${name}`),
   '-o', outFile, ...objects,
 ])
