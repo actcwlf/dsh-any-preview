@@ -40,7 +40,7 @@ CSV 预览当前的两个限制：
 - **单行上限** `LIMITS.csvLineChars = 8 MB`（`23fba90`，master）：超长行停止解析，状态行提示；
 - **大文件搜索**：>2 MB 时状态行显示 `全文扫描 N% · 已匹配 M`，工具栏有「终止扫描」。
 
-## 3. 现有 API（接线时直接用）
+## 3. API（接线后的实际形态）
 
 ```ts
 // csv-index.ts
@@ -50,16 +50,20 @@ index.anchors / index.rows / index.scanned
 index.anchorBefore(row) / index.estimateRows(totalChars)
 
 // csv-window.ts
-readWindow(text, index, fromRow, count, delimiter): { startRow, rows }
+readWindow(text, index, fromRow, count, delimiter, maxLineChars?)
+  → { startRow, rows, overlong }
 
 // csv-window-state.ts
 planWindow(scrollTop, viewportHeight, rowHeight, windowSize, totalRows, overscan)
-  → { start, count, window, alignedStart }
-placeholderRows(count) / cacheCapacity(windowSize)
+  → { start, count, window, alignedStart }   // count = 整个窗口 + 下沿带
+windowedBodyRows(read, startRow, totalRows, slice, rowHeight, loading, columns)
+  → { rows, topPad, bottomPad }              // 画 slice 这一段，算出上下撑高
+scaledRowHeight(rows, rowHeight, limitPx, minHeight) / cacheCapacity(windowSize)
 
 // useWindowedRows.ts
 useWindowedRows({ text, index, delimiter, scrollTop, viewportHeight, totalRows, rowHeight,
-                  windowSize?, settleMs? }): { startRow, rows, loading }
+                  windowSize?, settleMs?, maxLineChars? })
+  → { startRow, rows, loading, overlong }    // loading 时 rows 为空，由调用方画占位
 ```
 
 ## 4. 接线（已完成，实际差异见 §10）
