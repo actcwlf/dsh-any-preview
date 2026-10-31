@@ -103,6 +103,42 @@ export async function writeEntryBytesTo(
   await writeFile(path, data)
   return path
 }
+
+/** Path of the partial file used while a streaming extraction is in progress. */
+export function partPathOf(entryName: string, targetDir: string): string {
+  return join(targetDir, `.${safeEntryName(entryName)}.part`)
+}
+
+/** Start a streaming extraction: an empty partial file beside the archive. */
+export async function beginExtraction(entryName: string, targetDir: string): Promise<string> {
+  await mkdir(targetDir, { recursive: true })
+  await writeFile(partPathOf(entryName, targetDir), new Uint8Array())
+  return join(targetDir, safeEntryName(entryName))
+}
+
+/** Append one decoded chunk, refusing to grow past the entry limit. */
+export async function appendExtraction(entryName: string, targetDir: string, chunk: Uint8Array): Promise<void> {
+  const part = partPathOf(entryName, targetDir)
+  const info = await stat(part).catch(() => undefined)
+  if (info === undefined) throw new Error('no extraction in progress')
+  if ((info.size ?? 0) + chunk.byteLength > MAX_ENTRY_BYTES) {
+    await rm(part, { force: true })
+    throw new Error('entry exceeds size limit')
+  }
+  await appendFile(part, chunk)
+}
+
+/** Finish a streaming extraction: the partial file takes its final name. */
+export async function endExtraction(entryName: string, targetDir: string): Promise<string> {
+  const final = join(targetDir, safeEntryName(entryName))
+  await rename(partPathOf(entryName, targetDir), final)
+  return final
+}
+
+/** Drop a half-written extraction. */
+export async function abortExtraction(entryName: string, targetDir: string): Promise<void> {
+  await rm(partPathOf(entryName, targetDir), { force: true })
+}
 /** Whether a previous extraction of this member is still on disk. */
 export async function extractedPathOf(entryName: string, targetDir: string): Promise<string | undefined> {
   const path = join(targetDir, safeEntryName(entryName))
