@@ -322,10 +322,10 @@ test('csv body windows a large file instead of truncating it', async () => {
     resourceAddress: 'dsh-resource://file/session/s/huge.csv',
     wrap: false,
   }))
-  // The header and the full row count are known before any window is read; the rows
-  // themselves are placeholders until the first window arrives.
+  // The header and the full row count are known before any window is read, and the rows
+  // the delivered text already holds paint at once instead of waiting for the window.
   assert.match(html, /120,000 行 × 3 列/u)
   assert.match(html, />id</u)
-  assert.doesNotMatch(html, /data-row-index/u, 'no window is read during the first render')
-  assert.match(html, /height:\s*22px/u, 'placeholder rows keep the row height')
+  assert.match(html, /data-row-index="0"/u, 'the first rows come from the delivered text')
+  assert.match(html, /height:\s*22px/u, 'rows keep the fixed row height')
 })

@@ -98,7 +98,7 @@ export interface WindowedBody {
  * @param row - cells of one row.
  * @param columns - width of the header.
  */
-function fitColumns(row: readonly string[], columns: number): readonly string[] {
+export function fitColumns(row: readonly string[], columns: number): readonly string[] {
   return row.length >= columns ? row : [...row, ...Array<string>(columns - row.length).fill('')]
 }
 

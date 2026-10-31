@@ -18,7 +18,7 @@ import { scanText } from '../../kernel/search-scan.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
 import { createCsvIndex } from '../../kernel/csv-index.ts'
 import type { CsvIndex } from '../../kernel/csv-index.ts'
-import { scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
+import { fitColumns, scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
 import { readWindow } from '../../kernel/csv-window.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
@@ -247,8 +247,15 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const readRows = useCallback(async (startRow: number, count: number): Promise<WindowRead> => {
     const file = fileRef.current
     if (fileMode && file !== null) {
-      const read = await file.read(startRow, count)
-      return { rows: read.rows, overlong: read.overlong, exact: read.exact }
+      try {
+        const read = await file.read(startRow, count)
+        return { rows: read.rows, overlong: read.overlong, exact: read.exact }
+      } catch (error) {
+        // The file source broke mid-session (route gone, file changed): hand the table
+        // back to the delivered text instead of leaving it on placeholders.
+        setFileState(FAILED_FILE)
+        throw error
+      }
     }
     if (index === null) return { rows: [], overlong: false, exact: true }
     const read = readWindow(text, index, startRow, count, delimiterRef.current, LIMITS.csvLineChars)
@@ -259,7 +266,11 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   // an empty window, which the non-windowed path below never looks at.
   const win = useWindowedRows({
     read: readRows,
-    revision: fileMode ? fileState.revision : text.length,
+    // Cached windows hold rows, not counts: only a change of the rows or of their
+    // numbering has to drop them. The background walk changes neither until it finishes,
+    // so it must not clear the cache on every slice — that is what blanked the table
+    // while indexing. Completion is the one moment the numbers become exact.
+    revision: fileMode ? (fileState.complete ? 1 : 0) : text.length,
     source: fileMode ? 'file' : 'text',
     enabled: windowed,
     scrollTop,
@@ -472,9 +483,16 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
       view.columns,
     )
     : plainBodyRows(visibleIndices, view.body, scrollTop, viewportHeight)
-  const shown = body.rows
   const topPad = body.topPad
   const bottomPad = body.bottomPad
+  // While a window is being read, rows the delivered text already holds fill in: the
+  // open of a big file switches source under the same first screen, and an empty frame
+  // there is a visible flicker for no reason.
+  const painted = windowed && win.loading
+    ? body.rows.map(row => (row.cells === null && row.index < view.body.length
+      ? { index: row.index, cells: fitColumns(view.body[row.index] ?? [], view.columns) }
+      : row))
+    : body.rows
   // A window read past the built index has real rows but estimated numbers.
   const estimated = windowed && !win.exact
 
@@ -541,7 +559,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
                 <td colSpan={view.columns + 1} style={spacerCell} />
               </tr>
             )}
-            {shown.map((row) => {
+            {painted.map((row) => {
               if (row.cells === null) {
                 return (
                   <tr key={row.index} style={{ height: rowHeight }}>

@@ -8,7 +8,8 @@
  *
  * The read itself may be synchronous (rows already in the text) or a file slice, so it
  * is always awaited; `revision` is whatever the caller uses to say "the rows behind
- * these numbers changed", and a cache entry is dropped when it changes.
+ * these numbers changed", and `source` names the thing behind them, so a cache entry is
+ * dropped when either changes.
  */
 import { useEffect, useRef, useState } from 'react'
 import { cacheCapacity, planWindow } from './csv-window-state.ts'
@@ -76,9 +77,11 @@ export function useWindowedRows(options: WindowedRowsOptions): WindowRows {
   const generation = useRef(0)
   const reader = useRef(read)
   reader.current = read
-  const readFailed = useRef(false)
-  // Start settled: the first window of a freshly opened table has nothing to wait for.
-  const [settled, setSettled] = useState(1)
+  // The last window painted, kept so a re-read of the same window does not blank it:
+  // an invalidated window still holds the rows the reader is looking at.
+  const lastRead = useRef<{ readonly window: number, readonly read: WindowRead } | null>(null)
+  // A cache write is invisible to React, so a landed read bumps this to paint it.
+  const [, setLanded] = useState(0)
 
   // Rows, their numbering, or the source behind them changed: every window that
   // described the old ones is stale.
@@ -95,53 +98,55 @@ export function useWindowedRows(options: WindowedRowsOptions): WindowRows {
     // LRU queue, and a window the reader keeps returning to must not age out.
     cache.current.delete(plan.window)
     cache.current.set(plan.window, cached)
+    lastRead.current = { window: plan.window, read: cached }
   }
 
-  // Only fetch after the scroll has been quiet for `settleMs`; a moving viewport keeps
-  // resetting this timer, so a fast drag reads nothing at all. The very first window is
-  // read at once — nothing is being dragged yet — unless a read already failed.
+  // One scheduler, not two: a window that is missing gets read after the viewport has
+  // been quiet for `settleMs` — so a fast drag reads nothing — and at once when the cache
+  // is empty, because then the table has nothing at all to show. A landed read bumps
+  // state, which ends this effect's turn; a failed one changes nothing, so it cannot
+  // spin, and the next scroll, revision or source change retries it.
   useEffect(() => {
     if (!enabled || cached !== undefined) return undefined
-    if (cache.current.size === 0 && !readFailed.current) {
-      setSettled(1)
-      return undefined
-    }
-    const timer = setTimeout(() => { setSettled(value => value + 1) }, settleMs)
-    return () => { clearTimeout(timer) }
-  }, [enabled, cached, plan.window, settleMs, scrollTop])
-
-  useEffect(() => {
-    if (!enabled || cached !== undefined || settled === 0) return undefined
     const token = ++generation.current
     let live = true
-    const startRow = plan.alignedStart
-    const count = plan.count
-    void (async () => {
-      try {
-        const result = await reader.current(startRow, count)
-        if (!live || token !== generation.current) return
-        readFailed.current = false
-        cache.current.set(plan.window, result)
-        const capacity = cacheCapacity(windowSize)
-        while (cache.current.size > capacity) {
-          const oldest = cache.current.keys().next().value
-          if (oldest === undefined) break
-          cache.current.delete(oldest)
+    const delay = cache.current.size === 0 ? 0 : settleMs
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await reader.current(plan.alignedStart, plan.count)
+          if (!live || token !== generation.current) return
+          cache.current.set(plan.window, result)
+          lastRead.current = { window: plan.window, read: result }
+          const capacity = cacheCapacity(windowSize)
+          while (cache.current.size > capacity) {
+            const oldest = cache.current.keys().next().value
+            if (oldest === undefined) break
+            cache.current.delete(oldest)
+          }
+          setLanded(value => value + 1)
+        } catch {
+          // Leave the placeholders; the next scroll or revision tries again.
         }
-      } catch {
-        // A failed read leaves the placeholders in place; the next scroll retries.
-        if (live) readFailed.current = true
-      }
-      if (live) setSettled(0)
-    })()
-    return () => { live = false }
-  }, [settled, enabled, cached, plan.alignedStart, plan.count, plan.window, revision, windowSize])
+      })()
+    }, delay)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [enabled, cached, plan.alignedStart, plan.count, plan.window, revision, source, windowSize, scrollTop, settleMs])
 
   // No windowing means nothing to show: the caller paints from its own rows.
   if (!enabled) return NOTHING
 
   if (cached !== undefined) {
     return { startRow: plan.alignedStart, rows: cached.rows, loading: false, overlong: cached.overlong, exact: cached.exact }
+  }
+  // The window was invalidated but the reader is looking at the same one: keep those
+  // rows up until the re-read lands (their numbering may change by a row at the end).
+  const stale = lastRead.current
+  if (stale !== null && stale.window === plan.window) {
+    return { startRow: plan.alignedStart, rows: stale.read.rows, loading: false, overlong: stale.read.overlong, exact: stale.read.exact }
   }
   // No rows to stand in for: the caller paints the visible band from `loading`, so a
   // window of 5,000 placeholder rows would be allocation without a reader.

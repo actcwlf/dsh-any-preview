@@ -227,4 +227,46 @@ git log --oneline master..HEAD
   行号与总量仍会精确；
 - 切片扫描是行对齐的，跨行书写的正则（如包含 `\n` 的模式）在切片边界处可能漏一处，行内模式不受影响。
 
+## 13. 修一个只有真机能撞见的 bug：打开大文件后整表变空白
+
+真机现象：打开 `huge.csv` 先闪出几行，然后整张表变空白，只有表头，**不滚动就再也不出内容**。
+
+### 原因（用假 Host + 真实时间线跑出来的）
+
+1. 打开时先走文本路径（owner 交来第一页 5 000 行）——这就是那一下"闪烁"；
+2. 探测到 22 MB 后切到文件源，缓存被换源清空，表格改画占位；
+3. 后台索引每读 1 MB 就 `setFileState({revision: n})`，而**当时把 `revision` 直接喂给了窗口缓存**：
+   每片都清缓存 → 表格退回占位；
+4. `useWindowedRows` 当时是「武装 effect + 读取 effect」两个 effect 共享一个 `settled` 计数器：
+   读完 `settled` 归 0，而**缓存刚被同一批渲染清空时武装 effect 不会重跑**（它的依赖没变化），
+   `settled` 永远留在 0 → 读取 effect 每次都早退 → **再也不发请求**；
+5. 于是索引期间每次清缓存都是一次空白，最后停在空白上；用户一拖滚动条，`scrollTop` 变化又
+   重新武装，才会突然恢复。
+
+跟踪日志（修复前，真机同构的假 Host）：
+
+```
+[diag] read? en=true cached=false settled=1 ... rev=1
+[diag] done ... rows=5074            ← 第一窗读到
+[diag] read? en=true cached=false settled=0 ... rev=2   ← 清缓存后 settled 已是 0
+[diag] read? ... settled=0 ... rev=3                    ← 之后再没开始过读取
+...（rev 到 22 全是 settled=0，没有一次 done）
+```
+
+### 修法
+
+- `useWindowedRows` 改成**一个调度 effect**：缓存为空立即读、非空（拖动中换窗口）等 200 ms；
+  读完 bump 一次状态把缓存画出来。失败不写状态，因此不会自旋，下一次滚动/换源/换编号再试。
+- `lastRead` 记住上一帧画出的窗口：同一窗口被失效重读时继续画旧行，不再闪一下。
+- **失效条件收窄到真正变的东西**：文本路径用 `text.length`；文件路径只在索引**走完**时清一次
+  （行没变、编号没变就没有理由清）。进度照样每片更新，只是不再牵动缓存。
+- 文件源读失败（路由没了、文件变了）→ `setFileState(FAILED_FILE)` 落回文本路径，而不是留一张空表。
+- 窗口读还没回来、但 owner 已经交来的文本里有这几行时，先用文本行填上：打开大文件不再有空帧。
+
+### 回归测试
+
+`test/csv-window-dom.test.mjs` 的「the table never goes blank while the file is being indexed」：
+慢速后台索引（20 ms 一片）期间每 20 ms 采样一次 `tr[data-row-index]`，**首行出现之后不允许再出现 0 行**。
+
+
 

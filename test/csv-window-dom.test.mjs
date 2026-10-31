@@ -331,6 +331,31 @@ test('the background walk makes the row count and the numbers exact', { skip: !a
   assert.equal(atTop.cells[2], 'user_100001')
 })
 
+test('the table never goes blank while the file is being indexed', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const host = installHost(csvOf(400_000))
+  t.after(host.restore)
+  // A slow idle walk keeps indexing running while the samples below are taken.
+  globalThis.requestIdleCallback = (callback) => setTimeout(callback, 20)
+  const view = await render(component, csvOf(5_000), { path: '/data/big.csv' })
+  t.after(view.dispose)
+
+  let sawRows = false
+  const samples = []
+  let blanks = 0
+  for (let sample = 0; sample < 30; sample += 1) {
+    const rows = view.painted().length
+    samples.push(rows)
+    if (rows > 0) sawRows = true
+    else if (sawRows) blanks += 1
+    await tick(20)
+  }
+  assert.ok(sawRows, 'the table painted its first window')
+  // Regression: an index slice used to invalidate the window cache, and the read that
+  // would have refilled it never ran again — the table then showed placeholders forever.
+  assert.equal(blanks, 0, `the table went blank while indexing: ${samples.join(',')}`)
+})
+
 test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !hugeAvailable }, async (t) => {
   const text = readFileSync(hugeCsv, 'utf8')
   assert.ok(text.length > 20 * 1024 * 1024, 'the fixture is the 22 MB one')
