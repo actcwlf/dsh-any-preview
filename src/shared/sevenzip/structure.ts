@@ -67,11 +67,19 @@ export interface SevenZipFolder {
   size: number
   /** Unpacked size of each stream in the folder, in order. */
   sizes: number[]
+  /** Coder outputs bound to coder inputs (inIndex/outIndex). */
+  binds: { inIndex: number, outIndex: number }[]
+  /** Total coder inputs / outputs of the chain. */
+  inputs: number
+  outputs: number
+  /** First input and output index of each coder, in chain order. */
+  coderInBase: number[]
+  coderOutBase: number[]
+  /** Indices into SevenZipArchive.packStreams, one per unbound input. */
+  packs: number[]
   crc?: number
   /** Number of files packed into this folder; >1 means solid. */
   streams: number
-  /** Total coder output streams: kCodersUnPackSize stores one size per output. */
-  outputs: number
   /** False when a coder we cannot run appears (AES, BCJ2, …). */
   readonly supported: boolean
 }
@@ -323,6 +331,15 @@ function parseStreamsInfo(reader: Reader): {
     packStreams.push({ offset: position, size })
     position += size
   }
+
+  // Packed streams are stored folder by folder, in the order of each folder's
+  // unbound inputs; that order is what tells a BCJ2 folder which stream is which.
+  let nextPack = 0
+  for (const folder of folders) {
+    const bound = folder.binds.length
+    const count = folder.inputs - bound
+    folder.packs = Array.from({ length: Math.max(0, count) }, () => nextPack++)
+  }
   return { folders, packStreams }
 }
 
@@ -376,10 +393,15 @@ function parseSubStreams(reader: Reader, folders: SevenZipFolder[]): void {
 function parseFolder(reader: Reader): SevenZipFolder {
   const coderCount = reader.number()
   const coders: SevenZipCoder[] = []
+  const coderInBase: number[] = []
+  const coderOutBase: number[] = []
+  const binds: { inIndex: number, outIndex: number }[] = []
   let totalIn = 0
   let totalOut = 0
 
   for (let index = 0; index < coderCount; index++) {
+    coderInBase.push(totalIn)
+    coderOutBase.push(totalOut)
     const flags = reader.byte()
     const idLength = flags & 0x0f
     const complex = (flags & 0x10) !== 0
@@ -393,14 +415,23 @@ function parseFolder(reader: Reader): SevenZipFolder {
     coders.push({ id, name: CODEC_NAMES[id] ?? id, inStreams, outStreams, properties })
   }
 
-  const bindPairs = totalOut - 1
-  for (let index = 0; index < bindPairs; index++) { reader.number(); reader.number() }
+  // Bind pairs connect coder outputs to other coder inputs.
+  const bindPairCount = totalOut - 1
+  for (let index = 0; index < bindPairCount; index++) {
+    binds.push({ inIndex: reader.number(), outIndex: reader.number() })
+  }
 
-  const packedCount = totalIn - bindPairs
+  // Every input that no bind pair feeds comes from a packed stream.
+  const packedCount = totalIn - bindPairCount
   for (let index = 0; index < packedCount - 1; index++) reader.number()
 
-  const supported = coders.every(coder => coder.id === '030101' || coder.id === '21' || coder.id === '00')
-  return { coders, size: 0, sizes: [], streams: 1, outputs: totalOut, supported }
+  const supported = coders.every(coder =>
+    coder.id === '030101' || coder.id === '21' || coder.id === '00'
+    || coder.id === '03030103' || coder.id === '03' || coder.id === '0303011b')
+  return {
+    coders, size: 0, sizes: [], streams: 1, outputs: totalOut, supported,
+    binds, inputs: totalIn, coderInBase, coderOutBase, packs: [],
+  }
 }
 
 /** Parse kFilesInfo: names, directory flags and per-stream sizes. */
