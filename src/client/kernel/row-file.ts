@@ -15,6 +15,8 @@
 import { countRows, skipLines } from './lines.ts'
 import { textUrl } from './file-url.ts'
 import { createLineCounter } from './search-scan.ts'
+import { rowsAt, rowsPerByte } from '../../shared/inspect/density.ts'
+import type { DensityProbe } from '../../shared/inspect/density.ts'
 
 /** Bytes one background index slice covers. */
 const SLICE_BYTES = 1024 * 1024
@@ -214,8 +216,9 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
   // A CSV's row length grows with its ids and notes, so the density of the first
   // megabyte misplaces a jump by several percent. Probe the rest of the file cheaply
   // and estimate from the average density instead; the index still wins where it has
-  // counted the rows itself.
-  const densities: number[] = counted > 0 && scanned > 0 ? [counted / scanned] : []
+  // counted the rows itself. `preview_inspect` measures the same probes, with the same
+  // shared arithmetic, so the two never quote different row counts for one file.
+  const probes: DensityProbe[] = counted > 0 && scanned > 0 ? [{ rows: counted, bytes: scanned }] : []
   for (const point of SAMPLE_POINTS) {
     if (size <= 0) break
     const at = Math.floor(size * point)
@@ -223,12 +226,11 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
     const sample = await fetchSlice(url, at, SAMPLE_BYTES, false, signal)
     const rows = countRows(sample.text, sample.eof)
     const bytes = sample.end - sample.start
-    if (rows > 0 && bytes > 0) densities.push(rows / bytes)
+    if (rows > 0 && bytes > 0) probes.push({ rows, bytes })
   }
-  const density = densities.length === 0 ? 0 : densities.reduce((sum, value) => sum + value, 0) / densities.length
-  if (density > 0) {
-    bytesPerRow = () => 1 / density
-    totalRows = () => (complete ? counted : Math.max(counted + 1, Math.round(size * density)))
+  if (rowsPerByte(probes) > 0) {
+    bytesPerRow = () => 1 / rowsPerByte(probes)
+    totalRows = () => (complete ? counted : Math.max(counted + 1, rowsAt(size, probes)))
   }
 
   return {

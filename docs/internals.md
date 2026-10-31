@@ -348,8 +348,27 @@ ctx.inject(['tools'], (toolsCtx) => {
 工具名 `preview_inspect({ path })`，返回 `{ kind, summary, truncated }`——**给形状，不给内容**。
 `read` 负责按行给内容，二者互补；不要再用工具重复 `read` 的能力。
 
-当前支持 `.gguf`（版本 / KV / 张量表）与 `.csv/.tsv/.tab`（分隔符 / 列 / 前 10 行）。
+当前支持 `.gguf`（版本 / KV / 张量表）与 `.csv/.tsv/.tab`（方言 / 列 / 行数估算）。
 只读窗口：二进制 4 MB、文本 1 MB；输出有界（各 ≤ 20 项）。非支持格式直接报错。
+
+### 大 CSV 报什么
+
+一个 150 MB 的 CSV 用 1 MB 只能描述它自己的 1 %，所以 `.csv` 还会读**三个 32 KB 的窗口**
+（1/3、2/3、5/6 处）和末尾 1 KB，从整份文件回答：
+
+| 字段 | 从哪来 |
+|---|---|
+| `rows: ~2,032,730` | 头 + 3 个窗口的行密度（`shared/inspect/density.ts`，与面板共用同一套算术）|
+| `× bytes/row`（如 72–81） | 每个窗口自己的 bytes/row，写作区间 |
+| `row length varies 1.12×`（note） | 窗口之间的密度差：字节位置映射行号只能到 ±12 %，这也是"估算行数 ≠ 精确行数"的原因 |
+| `delimiter:` + `same in all N windows` | 每个窗口各跑一次 `detectDelimiter`；不一致就在 note 里点名 |
+| `line endings` / `ends with a newline` | 头 + 末尾 1 KB（末行没有换行时行数会差一）|
+| `encoding` / BOM | 严格 UTF-8 解码失败 → "invalid bytes replaced"；BOM 单独说明（会污染第一列列名）|
+| `header:` | 数据列是数字/布尔、而第 0 行对应单元格是文本 → 确认有表头；两者同型 → "none detected"；全文本列无法确认 → "assumed" |
+| `name: integer (1, 2) · ascending in samples` | 每列在头 + 各窗口的前 20 行里取值：类型、两个样例、空值比例、在样本里是否单调；**头里是 integer 而样本里有 `N/A` 会写 `also string`** |
+
+`truncated` 只表示**schema 被截到 20 列**，不再表示"只读了 1 MB"（那是 `notes` 里的一句，
+写得清楚得多）。不做事：列统计、更多样本行，那是查询工具的活。
 
 ### 相对路径怎么解析（踩坑记录）
 

@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip } from '../src/host/inspect-tool.ts'
-
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
 test('the delimiter is the one that appears most on the first line', () => {
@@ -23,25 +22,114 @@ test('column types are inferred coarsely from the first values', () => {
   assert.equal(inferType([]), 'empty')
 })
 
+const encode = text => new TextEncoder().encode(text)
+
+/** Build the probe the tool hands `inspectCsv`: head, size, windows and tail. */
+function csvProbe(text, overrides = {}) {
+  const bytes = encode(text)
+  return { head: bytes, size: bytes.length, samples: [], tail: bytes.slice(-64), ...overrides }
+}
+
 test('a CSV result carries summary, schema and next steps', () => {
   const text = 'id,name\n1,alpha\n2,beta\n'
-  const result = inspectCsv(new TextEncoder().encode(text), false, text.length)
+  const result = inspectCsv(csvProbe(text))
   assert.equal(result.kind, 'csv')
   assert.equal(result.truncated, false)
   assert.match(result.summary, /2 columns/u)
-  assert.deepEqual(result.schema, ['id: integer', 'name: string'])
+  assert.match(result.summary, /~3 rows/u)
+  assert.match(result.schema[0] ?? '', /^id: integer/u)
+  assert.match(result.schema[1] ?? '', /^name: string/u)
+  assert.ok(result.facts.some(fact => fact.startsWith('header: id | name')))
   assert.equal(result.next.length, 2)
   assert.match(result.next[0] ?? '', /read\(offset=1/u)
 })
 
 test('an empty CSV is refused rather than summarised', () => {
-  assert.throws(() => inspectCsv(new Uint8Array(), false, 0), /empty/u)
+  assert.throws(() => inspectCsv(csvProbe('')), /empty/u)
 })
 
-test('a truncated read is reported', () => {
-  const result = inspectCsv(new TextEncoder().encode('a,b\n1,2\n'), true, 10 * 1024 * 1024)
+test('a big file gets a row estimate, not just its first megabyte', () => {
+  // 1,000 rows of 16 bytes each; the file claims to be 2 MB, so ~125,000 rows fit.
+  const LINE = '1,user_1,note 1\n'
+  const head = LINE.repeat(1_000)
+  const sample = LINE.repeat(2_000)
+  const result = inspectCsv(csvProbe(head, {
+    size: 2 * 1024 * 1024,
+    samples: [encode(sample), encode(sample), encode(sample)],
+    tail: encode(LINE),
+  }))
+  const rows = result.facts.find(fact => fact.startsWith('rows:')) ?? ''
+  assert.match(rows, /~\d{3},\d{3}/u, rows)
+  assert.match(rows, /est\. from the head \+ 3 windows/u)
+  assert.match(rows, /16–16 bytes\/row/u)
+  assert.ok(result.notes.some(note => /only the first/u.test(note)))
+  // The whole file is described, so the answer is not truncated.
+  assert.equal(result.truncated, false)
+})
+
+test('rows that grow across the file warn about byte offsets', () => {
+  const LINE = '1,user_1,note 1\n'
+  const LONG = '1000000,user_1000000,note which is much longer\n'
+  const result = inspectCsv(csvProbe(LINE.repeat(500), {
+    size: 4 * 1024 * 1024,
+    samples: [encode(LONG.repeat(400)), encode(LONG.repeat(400))],
+    tail: encode(LONG),
+  }))
+  assert.ok(result.notes.some(note => /row length varies/u.test(note)), 'the spread is reported')
+})
+
+test('a delimiter that changes deeper in the file is called out', () => {
+  const result = inspectCsv(csvProbe('a,b\n1,2\n', {
+    size: 8 * 1024 * 1024,
+    samples: [encode('a;b\n1;2\n'), encode('a;b\n1;2\n')],
+    tail: encode('1;2\n'),
+  }))
+  assert.ok(result.notes.some(note => /delimiter is "," at the head but ";"/u.test(note)))
+})
+
+test('line endings, the trailing newline, BOM and encoding are reported', () => {
+  const crlf = inspectCsv(csvProbe('id,name\r\n1,a\r\n2,b', { tail: encode('2,b') }))
+  assert.ok(crlf.facts.some(fact => fact === 'line endings: CRLF · no trailing newline'), crlf.facts.join('\n'))
+  const bom = new TextEncoder().encode('\ufeffid,name\n1,a\n')
+  const withBom = inspectCsv({ head: bom, size: bom.length, samples: [], tail: bom })
+  assert.ok(withBom.facts.some(fact => fact.includes('UTF-8 with BOM')), withBom.facts.join('\n'))
+  assert.ok(withBom.notes.some(note => /BOM/u.test(note)))
+  // Invalid UTF-8 is reported instead of silently decoded.
+  const broken = new Uint8Array([0x69, 0x64, 0x0A, 0xFF, 0xFE, 0x0A])
+  const invalid = inspectCsv({ head: broken, size: broken.length, samples: [], tail: broken })
+  assert.ok(invalid.facts.some(fact => /invalid bytes/u.test(fact)))
+})
+
+test('a column that changes kind deeper in the file is flagged', () => {
+  // A real mid-file window starts mid-row: the partial first line is dropped, so the
+  // N/A values have to sit on the complete lines that follow it.
+  const result = inspectCsv(csvProbe('id,paid\n1,true\n2,false\n', {
+    size: 16 * 1024 * 1024,
+    samples: [encode('9,N/A\n7,N/A\n8,true\n'), encode('9,false\n6,N/A\n')],
+    tail: encode('10,false\n'),
+  }))
+  const paid = result.schema.find(line => line.startsWith('paid:')) ?? ''
+  assert.match(paid, /also string/u, paid)
+})
+
+test('a headerless file is not mistaken for a header', () => {
+  const result = inspectCsv(csvProbe('1,a\n2,b\n3,c\n'))
+  assert.ok(result.facts.some(fact => /header: none detected/u.test(fact)), result.facts.join('\n'))
+})
+
+test('quoted newlines say rows are not lines', () => {
+  const result = inspectCsv(csvProbe('id,note\n1,"two\nlines"\n2,plain\n'))
+  assert.ok(result.notes.some(note => /quoted fields hold newlines/u.test(note)), result.notes.join('\n'))
+  assert.ok(result.next.some(step => /按 CSV 解析/u.test(step)))
+})
+
+test('a wide table caps the schema and says so', () => {
+  const header = Array.from({ length: 25 }, (_value, index) => `c${String(index)}`).join(',')
+  const row = Array.from({ length: 25 }, () => '1').join(',')
+  const result = inspectCsv(csvProbe(`${header}\n${row}\n`))
   assert.equal(result.truncated, true)
-  assert.ok(result.notes.some(note => note.includes('1 MB')))
+  assert.equal(result.schema.length, 20)
+  assert.ok(result.notes.some(note => /25 columns, first 20 shown/u.test(note)))
 })
 
 test('a GGUF header summarises from the fixture', () => {

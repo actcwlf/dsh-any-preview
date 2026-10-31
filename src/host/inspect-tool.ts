@@ -15,6 +15,12 @@ import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
 import { parseNotebook } from '../client/previews/ipynb/parse.ts'
 import { parseHeaderJson, readHeaderLength } from '../client/previews/safetensors/parse.ts'
 import { collectSchema, parseSqliteHeader } from '../client/previews/sqlite/parse.ts'
+import { detectDelimiter } from '../client/previews/csv/detect.ts'
+import { createRowParser } from '../client/kernel/text-pipeline.ts'
+import { countNewlines } from '../client/kernel/lines.ts'
+import { LIMITS } from '../shared/limits.ts'
+import { densitySpread, rowLengthRange, rowsAt } from '../shared/inspect/density.ts'
+import type { DensityProbe } from '../shared/inspect/density.ts'
 import { parseRst } from '../shared/inspect/rst.ts'
 import { isEncodedHeader, parseEncodedHeader, parseHeader, readLayout } from '../shared/sevenzip/structure.ts'
 import { decodeFolder } from '../shared/sevenzip/decode.ts'
@@ -27,6 +33,15 @@ const HEAD_BYTES = 4 * 1024 * 1024
 
 /** Text window for delimited files. */
 const TEXT_BYTES = 1 * 1024 * 1024
+
+/** Window probed across a delimited file, for density and dialect. */
+const SAMPLE_BYTES = 32 * 1024
+
+/** Where those probes are taken, as fractions of the file. */
+const SAMPLE_POINTS = [1 / 3, 2 / 3, 5 / 6] as const
+
+/** Tail read for the trailing-newline fact. */
+const TAIL_BYTES = 1024
 
 /** How many keys, tensors, columns or rows a summary may name. */
 const MAX_ITEMS = 20
@@ -122,65 +137,263 @@ function inspectGguf(bytes: Uint8Array): InspectResult {
 }
 
 /** Pick the delimiter that appears most on the first line. */
-function detectDelimiter(line: string): string {
-  const candidates = [',', '\t', ';', '|']
-  let best = ','
-  let bestCount = 0
-  for (const candidate of candidates) {
-    const count = line.split(candidate).length - 1
-    if (count > bestCount) { best = candidate; bestCount = count }
-  }
-  return best
-}
+export { detectDelimiter }
 
-/** Infer a column type from a handful of values; deliberately coarse. */
-function inferType(values: readonly string[]): string {
-  const sample = values.filter(value => value !== '')
-  if (sample.length === 0) return 'empty'
-  if (sample.every(value => /^[-+]?\d+$/u.test(value))) return 'integer'
-  if (sample.every(value => /^[-+]?\d*\.\d+(?:[eE][-+]?\d+)?$/u.test(value))) return 'number'
-  if (sample.every(value => /^(?:true|false)$/iu.test(value))) return 'boolean'
+/** How many rows a sample window contributes to the type check. */const SAMPLE_ROWS = 20
+
+/** Longest value shown per column. */
+const VALUE_CHARS = 24
+
+/** Types one field can look like. */
+type FieldType = 'empty' | 'integer' | 'number' | 'boolean' | 'date' | 'string'
+
+/**
+ * What a single field looks like.
+ * @param value - one field, already trimmed by the parser.
+ */
+function typeOf(value: string): FieldType {
+  if (value === '') return 'empty'
+  if (/^[-+]?\d+$/u.test(value)) return 'integer'
+  if (/^[-+]?\d*\.\d+(?:[eE][-+]?\d+)?$/u.test(value)) return 'number'
+  if (/^(?:true|false)$/iu.test(value)) return 'boolean'
+  // A whole column of `2026-02-02` or `2026-02-02T03:04:05Z` reads better as a date than
+  // as a string, and it tells the caller a time column exists.
+  if (/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[-+]\d{2}:?\d{2})?)?$/u.test(value)) return 'date'
   return 'string'
 }
 
-/** Describe a delimited text file from its first bytes. */
-function inspectCsv(bytes: Uint8Array, truncatedRead: boolean, size: number): InspectResult {
-  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
-  const lines = text.split(/\r?\n/u).filter(line => line !== '')
-  if (lines.length === 0) throw new Error('file is empty')
+/**
+ * Infer a column type from a handful of values; deliberately coarse.
+ * @param values - sampled fields of one column.
+ */
+function inferType(values: readonly string[]): string {
+  const seen = new Set<FieldType>()
+  for (const value of values) {
+    const type = typeOf(value)
+    if (type !== 'empty') seen.add(type)
+  }
+  if (seen.size === 0) return 'empty'
+  return seen.size === 1 ? ([...seen][0] ?? 'string') : 'string'
+}
 
-  const first = lines[0] ?? ''
-  const delimiter = detectDelimiter(first)
-  const columns = first.split(delimiter)
-  const dataRows = lines.slice(1)
+/** What the tool knows about a delimited file before it looks inside. */
+export interface CsvProbe {
+  /** Bytes from the start: all of it when it fits, else the first 1 MB. */
+  readonly head: Uint8Array
+  /** File size in bytes. */
+  readonly size: number
+  /** Windows spread across the file, for density and dialect checks. */
+  readonly samples: readonly Uint8Array[]
+  /** The last kilobyte, for the trailing-newline fact. */
+  readonly tail: Uint8Array
+}
 
-  const schema = columns.slice(0, MAX_ITEMS).map((column, index) => {
-    const values = dataRows.slice(0, 20).map(row => row.split(delimiter)[index] ?? '')
-    return `${column === '' ? `column_${String(index + 1)}` : column}: ${inferType(values)}`
+/**
+ * Parse text into rows with the real (quote-aware) parser.
+ * @param text - whole lines; the trailing partial line is dropped unless `complete`.
+ * @param delimiter - field separator.
+ * @param complete - true when `text` is the whole file.
+ */
+function parseRows(text: string, delimiter: string, complete: boolean): string[][] {
+  const rows: string[][] = []
+  const parser = createRowParser(delimiter, cells => { rows.push([...cells]) }, LIMITS.csvLineChars)
+  parser.push(text)
+  if (complete) parser.finish()
+  return rows
+}
+
+/**
+ * Rows a mid-file window contributes: the partial first line is dropped, and the last
+ * line is only kept when the window ends on a newline.
+ * @param text - one sampled window, decoded.
+ * @param delimiter - field separator.
+ * @param limit - rows to keep.
+ */
+function sampleRows(text: string, delimiter: string, limit: number): string[][] {
+  const start = text.indexOf('\n')
+  const end = text.lastIndexOf('\n')
+  if (start === -1 || end <= start) return []
+  return parseRows(text.slice(start + 1, end), delimiter, true).slice(0, limit)
+}
+
+/**
+ * The line ending a text uses: CRLF when most breaks are CRLF, LF otherwise.
+ * @param text - decoded bytes.
+ */
+function lineEnding(text: string): string {
+  const crlf = text.split('\r\n').length - 1
+  const lf = text.split('\n').length - 1
+  if (lf === 0) return 'no line breaks'
+  return crlf * 2 > lf ? 'CRLF' : 'LF'
+}
+
+/**
+ * Describe one column from the values sampled at the head and across the file.
+ * @param name - header cell.
+ * @param index - column position.
+ * @param head - values from the first rows of the file.
+ * @param spread - values from the windows sampled across the file.
+ */
+function describeColumn(
+  name: string,
+  index: number,
+  head: readonly string[],
+  spread: readonly string[],
+): string {
+  const label = name === '' ? `column_${String(index + 1)}` : name
+  const headTypes = new Set(head.map(typeOf).filter(type => type !== 'empty'))
+  const spreadTypes = new Set(spread.map(typeOf).filter(type => type !== 'empty'))
+  const all = [...head, ...spread]
+  const filled = all.filter(value => value !== '')
+  const empties = all.length - filled.length
+
+  const parts: string[] = []
+  const main = inferType(head.length > 0 ? head : all)
+  parts.push(main)
+  const examples = [...new Set(filled)].slice(0, 2).map(value => value.length > VALUE_CHARS ? `${value.slice(0, VALUE_CHARS)}…` : value)
+  if (examples.length > 0) parts.push(`(${examples.join(', ')})`)
+  if (empties > 0 && all.length > 0) parts.push(`${String(Math.round((empties / all.length) * 100))}% empty`)
+  // The interesting case is a column that changes kind deeper in the file: a loader that
+  // trusts the first rows alone would fail on the sampled ones.
+  const changed = [...headTypes].length > 0 && spreadTypes.size > 0 && [...spreadTypes].some(type => !headTypes.has(type))
+  if (changed) {
+    const other = [...spreadTypes].find(type => !headTypes.has(type))
+    const sample = spread.find(value => typeOf(value) === other)
+    parts.push(`also ${other ?? 'string'}${sample === undefined ? '' : ` (${sample.length > VALUE_CHARS ? `${sample.slice(0, VALUE_CHARS)}…` : sample})`} in samples`)
+  }
+  if (main === 'integer' && filled.length >= 2 && [...filled].every(value => typeOf(value) === 'integer')) {
+    const numbers = filled.map(Number)
+    const ascending = numbers.every((value, position) => position === 0 || value >= (numbers[position - 1] ?? 0))
+    if (ascending) parts.push('ascending in samples')
+  }
+  return `${label}: ${parts.join(' · ')}`
+}
+
+/**
+ * Describe a delimited text file: the whole-file shape from cheap probes, the columns
+ * from a parse of the head plus a few rows of each sampled window.
+ *
+ * The head alone describes 1 MB of a 150 MB file, so the row count, the row-length
+ * spread and the dialect are measured across the file instead of extrapolated from its
+ * beginning. Nothing here reads the whole file: four 32 KB windows are enough to know
+ * whether the rows are uniform and whether the delimiter holds.
+ * @param probe - head bytes, size, sampled windows and the tail.
+ */
+function inspectCsv(probe: CsvProbe): InspectResult {
+  const { head, size, samples, tail } = probe
+  if (head.length === 0) throw new Error('file is empty')
+
+  const bom = head.length >= 3 && head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF
+  const body = bom ? head.subarray(3) : head
+  let text: string
+  let valid = true
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body)
+  } catch {
+    valid = false
+    text = new TextDecoder('utf-8', { fatal: false }).decode(body)
+  }
+
+  const complete = size <= head.length
+  const delimiter = detectDelimiter(text)
+  const rows = parseRows(text, delimiter, complete)
+  if (rows.length === 0) throw new Error('file is empty')
+
+  const header = rows[0] ?? []
+  const columns = header.length
+  const dataRows = rows.slice(1)
+
+  const decoded = samples.map(sample => new TextDecoder('utf-8', { fatal: false }).decode(sample))
+  const sampled = decoded.map(sample => sampleRows(sample, delimiter, SAMPLE_ROWS))
+
+  // Density: the head counts rows in its own bytes, each window in its own.
+  const probes: DensityProbe[] = [{ rows: countNewlines(text), bytes: body.length }]
+  for (const [position, sample] of samples.entries()) {
+    const sampleText = decoded[position] ?? ''
+    probes.push({ rows: countNewlines(sampleText), bytes: sample.length })
+  }
+  const estimated = rowsAt(size, probes)
+  const spread = densitySpread(probes)
+  const lengths = rowLengthRange(probes)
+
+  // Dialect: a file stitched together from several exports can change separator halfway.
+  const dialects = new Set(decoded.map(sample => detectDelimiter(sample)))
+  const disagrees = [...dialects].filter(candidate => candidate !== delimiter)
+
+  // Ragged: sample rows whose field count is not the header's.
+  const flat = sampled.flat()
+  const ragged = flat.filter(row => row.length !== columns).length
+  // A quoted field can hold a newline, in which case a line is not a row.
+  const embedded = complete ? Math.max(0, countNewlines(text) - rows.length) : 0
+
+  const schema = header.slice(0, MAX_ITEMS).map((column, index) => {
+    const headValues = dataRows.slice(0, SAMPLE_ROWS).map(row => row[index] ?? '')
+    const deeper = sampled.map(sample => sample.slice(0, SAMPLE_ROWS).map(row => row[index] ?? '')).flat()
+    return describeColumn(column, index, headValues, deeper)
   })
 
+  // Is the first row a header? A column that is numeric in the data but text in row 0
+  // confirms it; a first row typed exactly like the data is data; a file of all-string
+  // columns gives nothing to confirm with, so the header is only assumed.
+  const dataTypes = header.map((_value, index) => typeOf(dataRows[0]?.[index] ?? ''))
+  const typedColumns = dataTypes.filter(type => type !== 'string' && type !== 'empty').length
+  const confirmed = header.some((value, index) => {
+    const data = dataTypes[index] ?? 'empty'
+    const first = typeOf(value)
+    return data !== 'string' && data !== 'empty' && first !== 'empty' && first !== data
+  })
+  const names = header.slice(0, MAX_ITEMS).join(' | ')
+  const headerFact = confirmed
+    ? `header: ${names}`
+    : typedColumns === 0
+      ? `header: ${names} (assumed; no typed column to confirm it)`
+      : `header: none detected — the first row looks like data (${header.slice(0, 3).join(', ')})`
+
+  const facts = [
+    `size: ${(size / 1024 / 1024).toFixed(2)} MB (${size.toLocaleString('en-US')} bytes)`,
+    `rows: ~${estimated.toLocaleString('en-US')} (est. from the head + ${String(samples.length)} windows, ${lengths.min.toFixed(0)}–${lengths.max.toFixed(0)} bytes/row)`,
+    `columns: ${String(columns)}`,
+    `delimiter: ${JSON.stringify(delimiter === '\t' ? 'tab' : delimiter)} (${disagrees.length === 0 ? `same in all ${String(samples.length + 1)} windows` : `differs: ${disagrees.map(value => JSON.stringify(value)).join(', ')}`})`,
+    `line endings: ${lineEnding(text)}${tail.length > 0 ? (tail[tail.length - 1] === 0x0A ? ' · ends with a newline' : ' · no trailing newline') : ''}`,
+    `encoding: ${valid ? 'UTF-8' : 'UTF-8, invalid bytes replaced'}${bom ? ' with BOM' : ''}`,
+    headerFact,
+  ]
+
   const notes: string[] = []
-  const ragged = dataRows.slice(0, 50).filter(row => row.split(delimiter).length !== columns.length).length
-  if (ragged > 0) notes.push(`${String(ragged)} of the first 50 rows have a different column count`)
-  if (text.includes('"\n') || text.includes('"\r\n')) notes.push('quoted fields contain newlines; a line is not a row')
-  if (truncatedRead) notes.push('only the first 1 MB was read')
-  if (size > 0) notes.push(`file size ${(size / 1024 / 1024).toFixed(2)} MB`)
+  if (!complete) {
+    notes.push(`only the first ${(body.length / 1024 / 1024).toFixed(0)} MB was parsed; the row count and row length come from the head and ${String(samples.length)} sampled windows`)
+  }
+  if (spread > 1.05) {
+    notes.push(`row length varies ${spread.toFixed(2)}× across the file: an offset in bytes infers row numbers to ±${String(Math.round((spread - 1) * 100))}%`)
+  }
+  if (disagrees.length > 0) {
+    notes.push(`delimiter is ${JSON.stringify(delimiter)} at the head but ${disagrees.map(value => JSON.stringify(value)).join(', ')} in samples`)
+  }
+  if (ragged > 0) {
+    notes.push(`${String(ragged)} of ${String(flat.length)} sampled rows have a different field count`)
+  }
+  if (embedded > 0) {
+    notes.push(`quoted fields hold newlines (${String(embedded)} more newlines than rows): parse as CSV, not by lines`)
+  }
+  if (bom) notes.push('UTF-8 BOM: the first column name includes it unless stripped')
+  if (columns > MAX_ITEMS) notes.push(`${String(columns)} columns, first ${String(MAX_ITEMS)} shown`)
+
+  const next = size > TEXT_BYTES
+    ? ['在面板中打开：按行随机访问，不必读全文件（精确行数在索引完成后可见）', 'grep(pattern="…") 扫描整份文件；read 只适合小片段']
+    : ['read(offset=1, limit=50) 查看表头与首批数据', 'grep(pattern="…") 按内容定位行']
+  if (embedded > 0) next.push('行不是记录：按 CSV 解析，而不是按换行数')
+  if (ragged > 0) next.push(`列数不齐：按表头的 ${String(columns)} 列解析，多出的字段会保留在后面`)
 
   return {
     kind: 'csv',
-    summary: `delimited text · ${String(columns.length)} columns · delimiter ${JSON.stringify(delimiter === '\t' ? 'tab' : delimiter)}`,
-    facts: [
-      `delimiter: ${delimiter === '\t' ? 'tab' : delimiter}`,
-      `columns: ${String(columns.length)}`,
-      `header: ${columns.slice(0, MAX_ITEMS).join(' | ')}`,
-    ],
+    // The estimate itself is well sampled; the spread is a caveat about *offsets*, not
+    // about the count, so it stays in the notes instead of being presented as ± error.
+    summary: `delimited text · ${String(columns)} columns · delimiter ${JSON.stringify(delimiter === '\t' ? 'tab' : delimiter)} · ~${estimated.toLocaleString('en-US')} rows`,
+    facts,
     schema,
     notes,
-    next: [
-      'read(offset=1, limit=50) 查看表头与首批数据',
-      'grep(pattern="…") 按内容定位行',
-    ],
-    truncated: truncatedRead,
+    next,
+    truncated: columns > MAX_ITEMS,
   }
 }
 
@@ -545,8 +758,23 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 
           if (suffix === 'csv' || suffix === 'tsv' || suffix === 'tab') {
             const length = Math.min(size, TEXT_BYTES)
-            const head = await ctx.fs.readByteRange(target, { offset: 0, length }, signal)
-            return inspectCsv(new Uint8Array(head), size > TEXT_BYTES, size)
+            const head = new Uint8Array(await ctx.fs.readByteRange(target, { offset: 0, length }, signal))
+            // Windows spread across the file: a 150 MB table's first megabyte cannot say
+            // how many rows there are, how uniform they are, or whether the delimiter holds.
+            const samples: Uint8Array[] = []
+            if (size > length) {
+              const at = SAMPLE_POINTS.map(point => Math.floor(size * point))
+              for (const offset of at) {
+                if (offset <= 0 || offset >= size) continue
+                const window = Math.min(SAMPLE_BYTES, size - offset)
+                samples.push(new Uint8Array(await ctx.fs.readByteRange(target, { offset, length: window }, signal)))
+              }
+            }
+            const tailLength = size > length ? Math.min(TAIL_BYTES, size) : 0
+            const tail = tailLength === 0
+              ? new Uint8Array()
+              : new Uint8Array(await ctx.fs.readByteRange(target, { offset: size - tailLength, length: tailLength }, signal))
+            return inspectCsv({ head, size, samples, tail })
           }
 
           const read: Reader = async (offset, length) =>
@@ -597,6 +825,6 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 
 // Exported for tests: pure, no fs involved.
 export {
-  detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite,
+  inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite,
   inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip,
 }

@@ -459,6 +459,47 @@ viewportHeight`），并把揭示挪进 `scroll.ts` 的 `reveal()`，`index.tsx`
    换 `parse`、`renderRow` 和表头。
 
 
+## 17. `preview_inspect` 对 150 MB 的 CSV 说什么
+
+改之前它只读前 1 MB：能报列名、分隔符、用前 20 行推的类型、前 50 行里的列数不齐，**行数一个字都没有**，
+还因为"只读了 1 MB"把 `truncated` 置成 true。对一个 150 MB 的表，这描述的是"它的开头"，不是"它"。
+
+现在读 1 MB 头 + 三个 32 KB 窗口（1/3、2/3、5/6）+ 末尾 1 KB，从整份文件回答：
+
+```
+delimited text · 8 columns · delimiter "," · ~2,032,730 rows
+  size: 150.00 MB (157,283,875 bytes)
+  rows: ~2,032,730 (est. from the head + 3 windows, 72–81 bytes/row)
+  columns: 8
+  delimiter: "," (same in all 4 windows)
+  line endings: LF · ends with a newline
+  encoding: UTF-8
+  header: id | name | city | amount | status | created_at | note | tag
+  id: integer · (1, 2) · ascending in samples
+  amount: number · (0.13, 0.26) · also integer (68) in samples
+  created_at: date · (2026-02-02, 2026-03-03)
+! only the first 1 MB was parsed; the row count and row length come from the head and 3 sampled windows
+! row length varies 1.12× across the file: an offset in bytes infers row numbers to ±12%
+→ 在面板里打开：按行随机访问，不必读全文件（精确行数在索引完成后可见）
+→ grep(pattern="…") 扫描整份文件；read 只适合小片段
+```
+
+设计上的几条取舍：
+
+- **行数只给估算，不给假误差**：estimate 本身是"头 + 3 窗口"的密度平均（这份文件 **+1.6 %**，
+  与面板报的同一个数，因为两边现在共用 `shared/inspect/density.ts`）；窗口间的 **1.12×** 是
+  "字节位置 ↔ 行号"的误差（note），不是行数的误差，所以不写进 summary 的 `±`。
+- **表头要"确认"而不是"假定"**：数据列是数字/布尔、第 0 行同列是文本 → 确认；两者同型 →
+  `header: none detected — the first row looks like data`；全文本列没法判断 → `(assumed; …)`。
+- **类型跨窗口**：头里是 `boolean`、样本里出现 `N/A` → `also string (N/A) in samples`。这正是
+  "前 20 行推 dtype"最容易翻车的地方。顺带加了 `date`（`2026-02-02` 读成日期比读成字符串有用）。
+- **`truncated` 语义改正**：只表示 schema 被截到 20 列，不再表示"只读了 1 MB"。
+- **不做事**：列统计（min/max/distinct）、更多样本行——inspect 的价值在"便宜且稳定"，精确定稿
+  归面板（打开后后台建索引，行号与总行数都会变精确）。
+
+跨窗口的方言检查也修掉了一个隐患：拼接出来的 CSV 可能在中途换成分号，旧实现只看第一行。
+
+
 
 
 
