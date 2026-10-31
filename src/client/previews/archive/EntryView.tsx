@@ -36,6 +36,8 @@ export interface EntryViewProps {
   readonly loadBytes: () => Promise<Uint8Array>
   /** Write bytes to `targetDir`; returns the path written. */
   readonly write: (bytes: Uint8Array, force: boolean) => Promise<string>
+  /** Streaming write for members too large to hold; wins over write when present. */
+  readonly writeStream?: (onProgress: (fraction: number) => void) => Promise<string>
   /** Whether an earlier extraction exists. */
   readonly check: () => Promise<string | undefined>
   /** Address of the written file, when it can be opened by the main preview. */
@@ -90,6 +92,7 @@ export function EntryView(props: EntryViewProps) {
   const [existing, setExisting] = useState<string | undefined>(undefined)
   const [autoOpened, setAutoOpened] = useState(false)
   const [hexView, setHexView] = useState(false)
+  const [progress, setProgress] = useState<number | undefined>(undefined)
 
   useEffect(() => {
     let alive = true
@@ -142,7 +145,9 @@ export function EntryView(props: EntryViewProps) {
     setFailure(undefined)
     setNotice(undefined)
     try {
-      const path = await write(loaded.status === 'ready' ? loaded.bytes : new Uint8Array(), force)
+      const path = props.writeStream !== undefined && loaded.status !== 'ready'
+        ? await props.writeStream(fraction => setProgress(fraction))
+        : await write(loaded.status === 'ready' ? loaded.bytes : new Uint8Array(), force)
       setExisting(path)
       onOpened?.()
       const address = addressOf(path)

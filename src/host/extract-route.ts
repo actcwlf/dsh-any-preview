@@ -6,7 +6,7 @@
  * sanitized base name. Anything that would escape that directory is refused.
  */
 import { LIMITS } from '../shared/limits.ts'
-import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { zipEntryBytes } from '../shared/zip/parse.ts'
@@ -26,7 +26,7 @@ export type ExtractRouteContext = RouteContext
 
 interface ExtractRequest {
   /** `extract` (default), `check` for an existing copy, `clean` for the directory. */
-  readonly action?: 'extract' | 'check' | 'clean' | 'write'
+  readonly action?: 'extract' | 'check' | 'clean' | 'write' | 'begin' | 'append' | 'end' | 'abort'
   /** Base64 payload for `write`: the already-decoded member bytes. */
   readonly data?: string
   /** Rewrite even when an identical extraction is present. */
@@ -157,6 +157,38 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
     if (action === 'check') {
       const path = await extractedPathOf(entry, targetDir)
       return json({ exists: path !== undefined, path: path ?? null })
+    }
+
+    const partPath = join(targetDir, `.${safeEntryName(entry)}.part`)
+    const finalPath = join(targetDir, safeEntryName(entry))
+
+    if (action === 'begin') {
+      await mkdir(targetDir, { recursive: true })
+      await writeFile(partPath, new Uint8Array())
+      return json({ path: finalPath })
+    }
+
+    if (action === 'append') {
+      if (typeof body.data !== 'string') return failure(400, 'data is required')
+      const decoded = Buffer.from(body.data, 'base64')
+      const info = await stat(partPath).catch(() => undefined)
+      if (info === undefined) return failure(409, 'no extraction in progress')
+      if ((info.size ?? 0) + decoded.length > MAX_ENTRY_BYTES) {
+        await rm(partPath, { force: true })
+        return failure(413, 'entry exceeds size limit')
+      }
+      await appendFile(partPath, decoded)
+      return json({ written: decoded.length })
+    }
+
+    if (action === 'end') {
+      await rename(partPath, finalPath)
+      return json({ path: finalPath })
+    }
+
+    if (action === 'abort') {
+      await rm(partPath, { force: true })
+      return json({ removed: true })
     }
 
     if (action === 'write') {

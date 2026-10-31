@@ -12,6 +12,8 @@ import {
 } from '../../shared/sevenzip/structure.ts'
 import type { SevenZipArchive, SevenZipEntry, SevenZipPackStream } from '../../shared/sevenzip/structure.ts'
 import { canDecode, decodeFolder } from '../../shared/sevenzip/decode.ts'
+import { canStream, streamFolderRange } from '../../shared/sevenzip/stream.ts'
+import type { SessionDecoder } from '../../shared/sevenzip/stream.ts'
 import type { Decoder } from '../../shared/sevenzip/decode.ts'
 
 /** Packed offsets are relative to the end of the 32-byte signature header. */
@@ -30,12 +32,12 @@ export async function decoder(): Promise<Decoder> {
 }
 
 /** Read one packed stream from the file. */
-function readPacked(url: string, stream: SevenZipPackStream): Promise<Uint8Array> {
+function readPacked(url: string, stream: SevenZipPackStream, offset = 0, length = stream.size): Promise<Uint8Array> {
   // An empty stream (BCJ2 often has one) would ask for bytes=N-(N-1), and the
   // route answers 416 rather than an empty body.
-  if (stream.size <= 0) return Promise.resolve(new Uint8Array())
-  const start = DATA_START + stream.offset
-  return readRange(url, start, start + stream.size - 1)
+  if (length <= 0) return Promise.resolve(new Uint8Array())
+  const start = DATA_START + stream.offset + offset
+  return readRange(url, start, start + length - 1)
 }
 
 /**
@@ -144,4 +146,71 @@ export async function cleanExtracted(targetDir: string): Promise<number> {
   if (!response.ok) throw new Error(await response.text())
   const result = await response.json() as { removed: number }
   return result.removed
+}
+/** Open a streaming extraction; returns the final path that will be produced. */
+export async function beginExtracted(entryName: string, targetDir: string): Promise<string> {
+  return postExtract<{ path: string }>({ action: 'begin', entry: entryName, targetDir }).then(result => result.path)
+}
+
+/** Append one decoded chunk to the extraction in progress. */
+export async function appendExtracted(entryName: string, targetDir: string, chunk: Uint8Array): Promise<void> {
+  await postExtract({ action: 'append', entry: entryName, targetDir, data: toBase64(chunk) })
+}
+
+/** Finish a streaming extraction: the partial file takes its final name. */
+export async function endExtracted(entryName: string, targetDir: string): Promise<string> {
+  return postExtract<{ path: string }>({ action: 'end', entry: entryName, targetDir }).then(result => result.path)
+}
+
+/** Drop a streaming extraction that failed half way. */
+export async function abortExtracted(entryName: string, targetDir: string): Promise<void> {
+  await postExtract({ action: 'abort', entry: entryName, targetDir })
+}
+
+/** One request to the extraction route. */
+async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(await response.text())
+  return await response.json() as T
+}
+/**
+ * Extract one member through the streaming path.
+ *
+ * Used when the folder is too large to hold: the decoder emits only the member's slice,
+ * each chunk is appended to a `.part` file, and the file is renamed at the end.
+ */
+export async function streamExtracted(
+  url: string,
+  archive: SevenZipArchive,
+  entry: SevenZipEntry,
+  targetDir: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const folder = archive.folders[entry.folder]
+  if (folder === undefined) throw new Error('7z: entry has no folder')
+  if (!canStream(folder)) throw new Error('7z: this folder cannot be streamed')
+
+  const start = folder.sizes.slice(0, entry.stream).reduce((sum, size) => sum + size, 0)
+  const end = start + entry.size
+  const final = await beginExtracted(entry.name, targetDir)
+  try {
+    await streamFolderRange({
+      decoder: (await decoder()) as unknown as SessionDecoder,
+      folder,
+      readPacked: async (index, offset, length) => readPacked(url, archive.packStreams[index] ?? { offset: 0, size: 0 }, offset, length),
+      range: { start, end },
+      sink: async (chunk, offset) => {
+        await appendExtracted(entry.name, targetDir, chunk)
+        onProgress?.((offset + chunk.length - start) / Math.max(1, entry.size))
+      },
+    })
+    return await endExtracted(entry.name, targetDir) ?? final
+  } catch (error) {
+    await abortExtracted(entry.name, targetDir).catch(() => undefined)
+    throw error
+  }
 }
