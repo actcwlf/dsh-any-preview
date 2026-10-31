@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub } from '../src/host/inspect-tool.ts'
 
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
@@ -87,4 +87,41 @@ test('a SQLite result reports schema objects', async () => {
   assert.equal(result.kind, 'sqlite')
   assert.match(result.summary, /SQLite/u)
   assert.ok(result.schema.some(line => line.startsWith('table ')))
+})
+
+test('a safetensors header summarises from the fixture', async () => {
+  const { size, read } = readerFor('sample.safetensors')
+  const result = await inspectSafetensors(size, read)
+  assert.equal(result.kind, 'safetensors')
+  assert.match(result.summary, /safetensors/u)
+  assert.ok(result.facts.some(fact => fact.startsWith('tensors:')))
+})
+
+test('a reST outline lists headings and counts', () => {
+  const text = 'Title\n=====\n\nFirst\n-----\n\nsome text\n\nSecond\n------\n\nmore\n'
+  const result = inspectRst(new TextEncoder().encode(text), false)
+  assert.equal(result.kind, 'rst')
+  assert.match(result.summary, /headings/u)
+  assert.ok(result.schema.includes('Title'))
+})
+
+test('a notebook reports cell kinds', () => {
+  const notebook = {
+    cells: [
+      { cell_type: 'markdown', source: ['# Title'] },
+      { cell_type: 'code', source: ['print(1)'], outputs: [{ output_type: 'stream', text: ['1'] }] },
+    ],
+  }
+  const result = inspectNotebook(new TextEncoder().encode(JSON.stringify(notebook)))
+  assert.equal(result.kind, 'ipynb')
+  assert.match(result.summary, /2 cells/u)
+  assert.ok(result.facts.includes('code: 1'))
+})
+
+test('an EPUB reports chapters from its archive shape', async () => {
+  const { size, read } = readerFor('sample.epub')
+  const result = await inspectEpub(size, read)
+  assert.equal(result.kind, 'epub')
+  assert.match(result.summary, /EPUB/u)
+  assert.ok(result.facts.some(fact => fact.startsWith('chapters')))
 })

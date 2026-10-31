@@ -12,7 +12,11 @@
 import { extname, isAbsolute, join } from 'node:path'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
+import { parseNotebook } from '../client/previews/ipynb/parse.ts'
+import { parseHeaderJson, readHeaderLength } from '../client/previews/safetensors/parse.ts'
 import { collectSchema, parseSqliteHeader } from '../client/previews/sqlite/parse.ts'
+import { parseRst } from '../shared/inspect/rst.ts'
+import { outlineOf } from '../shared/inspect/document.ts'
 import { findEocd, parseZipDirectory, u16, u32 } from '../shared/zip/parse.ts'
 
 /** Header window for binary formats. */
@@ -296,6 +300,116 @@ async function inspectSqlite(read: Reader): Promise<InspectResult> {
     truncated: schema.truncated || objects.length > MAX_ITEMS,
   }
 }
+/** Describe a safetensors header (8-byte length prefix plus JSON). */
+async function inspectSafetensors(size: number, read: Reader): Promise<InspectResult> {
+  const prefix = await read(0, 8)
+  const headerLength = readHeaderLength(prefix)
+  if (headerLength === undefined) throw new Error('not a safetensors file (length prefix missing)')
+  const bytes = await read(8, Math.min(headerLength, size - 8))
+  const header = parseHeaderJson(new TextDecoder().decode(bytes), headerLength)
+  const dtypes = header.dtypes.map(([dtype, count]) => `${dtype}: ${String(count)}`)
+
+  return {
+    kind: 'safetensors',
+    summary: `safetensors · ${String(header.tensors.length)} tensors · ${header.totalParams.toLocaleString('en-US')} params`,
+    facts: [
+      `tensors: ${String(header.tensors.length)}`,
+      `parameters: ${header.totalParams.toLocaleString('en-US')}`,
+      `header bytes: ${String(headerLength)}`,
+      `metadata keys: ${String(header.metadata.length)}`,
+    ],
+    schema: header.tensors.slice(0, MAX_ITEMS).map(
+      tensor => `${tensor.name}: ${tensor.dtype} [${tensor.shape.join('×')}] ${tensor.params.toLocaleString('en-US')}`,
+    ),
+    notes: dtypes.slice(0, 5),
+    next: ['在面板中打开可看到完整张量表与 dtype 分布'],
+    truncated: header.tensors.length > MAX_ITEMS,
+  }
+}
+
+/** Describe a reStructuredText document by its outline. */
+function inspectRst(bytes: Uint8Array, truncatedRead: boolean): InspectResult {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  const blocks = parseRst(text)
+  const { headings, counts } = outlineOf(blocks)
+
+  return {
+    kind: 'rst',
+    summary: `reST · ${String(headings.length)} headings · ${String(counts.paragraph ?? 0)} paragraphs`,
+    facts: [
+      `headings: ${String(headings.length)}`,
+      `paragraphs: ${String(counts.paragraph ?? 0)}`,
+      `literal blocks: ${String(counts.code ?? 0)}`,
+      `tables: ${String(counts.table ?? 0)}`,
+      `lists: ${String(counts.list ?? 0)}`,
+    ],
+    schema: headings.slice(0, MAX_ITEMS).map(heading => `${'  '.repeat(Math.max(0, heading.level - 1))}${heading.text}`),
+    notes: [
+      ...(truncatedRead ? ['only the first 2 MB was read'] : []),
+      ...(headings.length > MAX_ITEMS ? [`${String(headings.length)} headings, first ${String(MAX_ITEMS)} shown`] : []),
+    ],
+    next: ['在面板中打开可按章节阅读', 'grep(pattern="…") 定位具体段落'],
+    truncated: truncatedRead || headings.length > MAX_ITEMS,
+  }
+}
+
+/** Describe a notebook by its cells, not their content. */
+function inspectNotebook(bytes: Uint8Array): InspectResult {
+  const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes))
+  const notebook = parseNotebook(parsed)
+  const markdown = notebook.cells.filter(cell => cell.kind === 'markdown').length
+  const code = notebook.cells.filter(cell => cell.kind === 'code').length
+  const withOutput = notebook.cells.filter(cell => (cell.outputs ?? []).length > 0).length
+
+  return {
+    kind: 'ipynb',
+    summary: `notebook · ${String(notebook.cells.length)} cells · ${String(code)} code`,
+    facts: [
+      `cells: ${String(notebook.cells.length)}`,
+      `markdown: ${String(markdown)}`,
+      `code: ${String(code)}`,
+      `cells with output: ${String(withOutput)}`,
+    ],
+    schema: notebook.cells.slice(0, MAX_ITEMS).map((cell, index) => `#${String(index + 1)} ${cell.kind}: ${(cell.source ?? '').split('\n')[0]?.slice(0, 80) ?? ''}`),
+    notes: notebook.cells.length > MAX_ITEMS ? [`${String(notebook.cells.length)} cells, first ${String(MAX_ITEMS)} shown`] : [],
+    next: ['在面板中打开可逐单元格阅读'],
+    truncated: notebook.cells.length > MAX_ITEMS,
+  }
+}
+
+/** Describe an EPUB by its archive shape (entries, not rendered text). */
+async function inspectEpub(size: number, read: Reader): Promise<InspectResult> {
+  const tailLength = Math.min(size, 66_000)
+  const tail = await read(size - tailLength, tailLength)
+  const eocd = findEocd(tail)
+  if (eocd < 0) throw new Error('epub: no end-of-central-directory record')
+  const directorySize = u32(tail, eocd + 12)
+  const directoryOffset = u32(tail, eocd + 16)
+  const entries = parseZipDirectory(await read(directoryOffset, directorySize))
+
+  const names = entries.map(entry => entry.name)
+  const xhtml = names.filter(name => /\.x?html?$/iu.test(name)).length
+  const images = names.filter(name => /\.(?:png|jpe?g|gif|svg|webp)$/iu.test(name)).length
+  const styles = names.filter(name => /\.css$/iu.test(name)).length
+  const hasContainer = names.some(name => name === 'META-INF/container.xml')
+  const opf = names.find(name => name.endsWith('.opf')) ?? ''
+
+  return {
+    kind: 'epub',
+    summary: `EPUB · ${String(xhtml)} chapters · ${String(images)} images`,
+    facts: [
+      `entries: ${String(entries.length)}`,
+      `chapters (html): ${String(xhtml)}`,
+      `images: ${String(images)}`,
+      `stylesheets: ${String(styles)}`,
+      `package document: ${opf === '' ? 'missing' : opf}`,
+    ],
+    schema: names.slice(0, MAX_ITEMS),
+    notes: hasContainer ? [] : ['META-INF/container.xml is missing; the book may not open'],
+    next: ['在面板中打开可按章节阅读'],
+    truncated: entries.length > MAX_ITEMS,
+  }
+}
 /**
  * Register the inspect tool when the profile provides a tool registry.
  * @param ctx - Host context carrying `fs` and optionally `tools`.
@@ -381,6 +495,20 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             return inspectSqlite(read)
           }
 
+          if (suffix === 'safetensors') return inspectSafetensors(size, read)
+
+          if (suffix === 'ipynb') {
+            const length = Math.min(size, HEAD_BYTES)
+            return inspectNotebook(new Uint8Array(await read(0, length)))
+          }
+
+          if (suffix === 'rst') {
+            const length = Math.min(size, TEXT_BYTES)
+            return inspectRst(new Uint8Array(await read(0, length)), size > TEXT_BYTES)
+          }
+
+          if (suffix === 'epub') return inspectEpub(size, read)
+
           if (suffix === 'gguf') {
             const length = Math.min(size, HEAD_BYTES)
             const head = await ctx.fs.readByteRange(target, { offset: 0, length }, signal)
@@ -398,4 +526,7 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 }
 
 // Exported for tests: pure, no fs involved.
-export { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite }
+export {
+  detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectZip, inspectSqlite,
+  inspectSafetensors, inspectRst, inspectNotebook, inspectEpub,
+}
