@@ -9,9 +9,11 @@
  * Living under `/api` means the connection carrier applies its Host/Origin
  * fence and browser authentication before this handler runs.
  */
-import { basename, extname, isAbsolute, resolve as resolvePath } from 'node:path'
+import { basename, extname, isAbsolute } from 'node:path'
 import { LAN_ROUTE_PATH, lanBaseUrl } from './lan-route.ts'
 import { signLanPath } from './lan-url.ts'
+import { ROUTE_HEADERS, failure, failureFrom, resolveHostFile } from './file-target.ts'
+import type { HostFile } from './file-target.ts'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 
 /** Exact pathname claimed on the shared `/api` Fetch channel. */
@@ -53,11 +55,6 @@ const MEDIA_TYPES: Readonly<Record<string, string>> = {
   wma: 'audio/x-ms-wma',
   mid: 'audio/midi',
   midi: 'audio/midi',
-}
-
-const BASE_HEADERS: Readonly<Record<string, string>> = {
-  'Cache-Control': 'private, no-store',
-  'X-Content-Type-Options': 'nosniff',
 }
 
 /**
@@ -156,21 +153,6 @@ function streamBytes(
   })
 }
 
-function failure(status: number, message: string): Response {
-  return new Response(message, {
-    status,
-    headers: { ...BASE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' },
-  })
-}
-
-const STATUS_BY_CODE: Readonly<Record<string, number>> = {
-  FS_NOT_FOUND: 404,
-  FS_NOT_REGULAR_FILE: 403,
-  FS_PERMISSION_DENIED: 403,
-  FS_SANDBOX_DENIED: 403,
-  FS_ABORTED: 499,
-}
-
 /**
  * Serve one media file: metadata, HEAD, and byte ranges over a chunked stream.
  * @param request - authenticated Fetch request.
@@ -193,45 +175,32 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
     const query = `path=${encodeURIComponent(target)}&sig=${encodeURIComponent(signature)}`
     const base = lanBaseUrl()
     if (base === '') return failure(503, 'loopback route unavailable')
-    return Response.json({ url: `${base}${LAN_ROUTE_PATH}?${query}` }, { headers: BASE_HEADERS })
+    return Response.json({ url: `${base}${LAN_ROUTE_PATH}?${query}` }, { headers: ROUTE_HEADERS })
   }
   const path = url.searchParams.get('path')
   if (path === null || path.length === 0) return failure(400, 'missing path')
   if (path.includes('\0') || !isAbsolute(path)) return failure(400, 'absolute path required')
 
-  // Only accept a path the Host actually maps, and only when it round-trips to
-  // the same location — an alias or symlink spelling is refused.
-  const mapped = fs.processPathFromHostPath(path)
-  if (mapped === undefined) return failure(422, 'unmapped host path')
-
-  let target: unknown
-  let info: Awaited<ReturnType<HostFileSystem['stat']>>
+  let file: HostFile | Response
   try {
-    target = await fs.resolve(mapped, { signal: request.signal })
-    if (resolvePath(fs.processPath(target)) !== resolvePath(path)) {
-      return failure(422, 'unmapped host path')
-    }
-    info = await fs.stat(target, request.signal)
+    file = await resolveHostFile(fs, path, request.signal)
   } catch (error) {
-    const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined
-    if (code === undefined) throw error
-    return failure(STATUS_BY_CODE[code] ?? 500, code)
+    return failureFrom(error)
   }
-  if (info === undefined) return failure(404, 'not found')
-  if (info.type !== 'file') return failure(403, 'not a regular file')
+  if (file instanceof Response) return file
 
-  const size = info.size ?? 0
-  const type = mediaTypeOf(info.displayPath ?? path)
+  const size = file.size
+  const type = mediaTypeOf(file.displayPath)
   const range = parseRange(request.headers.get('range'), size)
   const download = url.searchParams.get('download') === '1'
 
   const headers: Record<string, string> = {
-    ...BASE_HEADERS,
+    ...ROUTE_HEADERS,
     'Accept-Ranges': 'bytes',
     'Content-Type': type,
   }
   if (download) {
-    const name = basename(info.displayPath ?? path)
+    const name = basename(file.displayPath)
     const safe = name.replace(/["\\\r\n]/gu, '_')
     headers['Content-Disposition'] = `attachment; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(name)}`
   }
@@ -262,7 +231,7 @@ export async function serveMedia(request: Request, fs: HostFileSystem, secret?: 
   if (request.method === 'HEAD') {
     return new Response(null, { status, headers })
   }
-  return new Response(streamBytes(fs, target, window.start, length, request.signal), { status, headers })
+  return new Response(streamBytes(fs, file.target, window.start, length, request.signal), { status, headers })
 }
 
 /**
@@ -295,6 +264,6 @@ export function registerAssetBaseRoute(ctx: MediaRouteContext): () => void {
     path: ASSET_BASE_PATH,
     methods: ['GET'],
     requestBody: 'buffered',
-    fetch: async () => Response.json({ base: lanBaseUrl() }, { headers: BASE_HEADERS }),
+    fetch: async () => Response.json({ base: lanBaseUrl() }, { headers: ROUTE_HEADERS }),
   })
 }
