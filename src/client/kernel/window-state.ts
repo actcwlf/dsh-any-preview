@@ -93,19 +93,27 @@ export interface ProportionalGeometry {
 
 /**
  * Compute the proportional scroller's geometry.
+ *
+ * The header occupies the top of the viewport but the rows start below it, so only the
+ * part of the viewport a header does not cover can hold whole rows. Leaving it out put
+ * the last screen one row too low: at full scroll the final row was clipped by the
+ * header's height and the viewport showed it half-cut.
  * @param bodyRows - body rows in the table (header excluded).
  * @param viewportHeight - visible height in pixels.
  * @param rowHeight - natural height of one row in pixels.
  * @param limitPx - the scroll height the browser will honour.
+ * @param headerHeight - pixels the header covers at the top of the viewport.
  */
 export function proportionalGeometry(
   bodyRows: number,
   viewportHeight: number,
   rowHeight: number,
   limitPx: number,
+  headerHeight = 0,
 ): ProportionalGeometry {
   const contentHeight = Math.max(viewportHeight + 1, limitPx)
-  const visibleRows = Math.max(1, Math.floor(viewportHeight / rowHeight))
+  const rowsHeight = Math.max(0, viewportHeight - Math.max(0, headerHeight))
+  const visibleRows = Math.max(1, Math.floor(rowsHeight / rowHeight))
   const maxScroll = Math.max(0, contentHeight - viewportHeight)
   // The last screen must be reachable: progress 1 has to land on row `bodyRows - visibleRows`.
   const travel = Math.max(1, bodyRows - visibleRows)

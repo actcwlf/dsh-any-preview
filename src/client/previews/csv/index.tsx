@@ -21,22 +21,7 @@ import { useRowScroll } from './scroll.ts'
 import { useWholeFileScan } from './scan.ts'
 import type { ScanNavigation } from './scan.ts'
 import { CsvTable } from './table.tsx'
-
-/** Fixed row height; the table never squeezes its rows. */
-const ROW_HEIGHT = 22
-
-/**
- * Browsers stop growing an element's scroll height near 2^24 px (about 727,000 rows at
- * 22px). Past that the scrollbar turns proportional instead of the rows shrinking.
- */
-const SCROLL_LIMIT_PX = 16_777_216
-
-/** Rows rendered above and below the viewport to cover fast scrolling. */
-const OVERSCAN = 8
-
-/** Rows per window, and the quiet time after a drag before that window is read. */
-const WINDOW_ROWS = 5_000
-const SETTLE_MS = 200
+import { OVERSCAN, ROW_HEIGHT, SCROLL_LIMIT_PX, SETTLE_MS, WINDOW_ROWS } from './layout.ts'
 
 const cancelStyle = {
   font: 'inherit', fontSize: 11, padding: '0 6px', height: 22, borderRadius: 4, cursor: 'pointer',
@@ -298,4 +283,5 @@ export const csvPreview: PreviewModule = {
   title: () => t('csv.title'),
   Body: CsvBody,
 }
+
 

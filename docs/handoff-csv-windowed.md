@@ -439,13 +439,23 @@ viewportHeight`），并把揭示挪进 `scroll.ts` 的 `reveal()`，`index.tsx`
 4. **后台建索引的进度节流**：每片只更新一次状态 → 改成"每 2 % 或完成时"才 dispatch，
    150 MB 文件的整组件渲染从 150 次降到约 50 次。
 
-### 16.5 还留着的
+### 16.5 表头高度进几何（本轮）
 
-1. **表头高度进几何**：`visibleRows` 没算 27 px 表头，100 % 时差一行、顶部行被表头压住一截
-   （纯外观，改动会牵动所有比例几何的常量）；
-2. **文本路径的 `csv-index` / `csv-window` 仍是 CSV 专用**（引号感知的跳过）；log 走"一行一格"
+比例模式的 `visibleRows` 原来是 `viewportHeight / rowHeight`，把 27 px 的表头也算进了"能放多少行"，
+于是 100 % 时最后一屏低了一行：最后一行被表头压掉一截（720 px 视口：`27 + 32 × 22 = 731 > 720`）。
+
+修法：`proportionalGeometry(..., headerHeight)` 用 `viewportHeight - headerHeight` 算 `visibleRows`
+（720 px → 31 行），表格常量收进 `previews/csv/layout.ts`（`ROW_HEIGHT` / `HEADER_HEIGHT` /
+`SCROLL_LIMIT_PX` / `OVERSCAN` / `WINDOW_ROWS` / `SETTLE_MS`），body、scroll、view 共用一份。
+
+无头 Chromium 实测真实表头：**26.5 px**（行 22 px ✓），常量取 27 更保守——`27 + 31 × 22 = 709 ≤ 720`
+成立，`27 + 32 × 22 = 731 > 720` 不成立。单测 `the header is not part of the row area` 钉住了这两条。
+
+### 16.6 还留着的
+
+1. **文本路径的 `csv-index` / `csv-window` 仍是 CSV 专用**（引号感知的跳过）；log 走"一行一格"
    时不需要引号，但两个函数目前把引号写死。等真的移植 log 时再加 `quoted` 参数比现在预埋更稳；
-3. **格式移植本身**（log → jsonl → diff），见上一轮讨论的方案：壳已经抽好，每个格式只需
+2. **格式移植本身**（log → jsonl → diff），见上一轮讨论的方案：壳已经抽好，每个格式只需
    换 `parse`、`renderRow` 和表头。
 
 

@@ -1,4 +1,4 @@
-﻿/** Window arithmetic: which rows a viewport needs, where they sit, and the cache key. */
+/** Window arithmetic: which rows a viewport needs, where they sit, and the cache key. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
@@ -126,6 +126,23 @@ test('the proportional mapping starts at the first row and ends on the last scre
   // Out-of-range scroll offsets clamp instead of running past the file.
   assert.equal(logicalRow(-100, geometry, bodyRows), 0)
   assert.equal(logicalRow(1e12, geometry, bodyRows), bodyRows - geometry.visibleRows)
+})
+
+test('the header is not part of the row area', () => {
+  const bodyRows = 2_000_000
+  const HEADER = 27
+  const withoutHeader = proportionalGeometry(bodyRows, 720, ROW, 16_777_216)
+  const withHeader = proportionalGeometry(bodyRows, 720, ROW, 16_777_216, HEADER)
+  // 720 / 22 = 32 rows, but only (720 - 27) / 22 = 31 fit below the header.
+  assert.equal(withoutHeader.visibleRows, 32)
+  assert.equal(withHeader.visibleRows, 31)
+  // The whole last screen has to fit under the header, or the final row is clipped.
+  assert.ok(HEADER + withHeader.visibleRows * ROW <= 720)
+  assert.ok(HEADER + withoutHeader.visibleRows * ROW > 720, 'without it the last row is cut')
+  // The mapping moved with it: full scroll starts one row later, so the travel is one
+  // row longer and each row gets slightly fewer scroll pixels.
+  assert.equal(logicalRow(withHeader.maxScroll, withHeader, bodyRows), bodyRows - 31)
+  assert.ok(withHeader.pitch < withoutHeader.pitch, 'one more row of travel means less pitch')
 })
 
 test('the pinned band covers the viewport and reaches the last row', () => {

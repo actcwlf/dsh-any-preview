@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { logicalRow, proportionalGeometry } from '../../kernel/window-state.ts'
 import type { ProportionalGeometry } from '../../kernel/window-state.ts'
+import { HEADER_HEIGHT } from './layout.ts'
 
 /** Viewport height before the first measurement. */
 const FALLBACK_VIEWPORT = 480
@@ -92,7 +93,7 @@ export function useRowScroll(options: RowScrollOptions): RowScroll {
   // nor the viewport did, or the reveal below re-runs on every render.
   const geometry = useMemo(() => (
     windowed && bodyRows * rowHeight > scrollLimit
-      ? proportionalGeometry(bodyRows, viewportHeight, rowHeight, scrollLimit)
+      ? proportionalGeometry(bodyRows, viewportHeight, rowHeight, scrollLimit, HEADER_HEIGHT)
       : undefined
   ), [windowed, bodyRows, rowHeight, scrollLimit, viewportHeight])
   const mappingPitch = geometry === undefined ? rowHeight : geometry.pitch
@@ -149,5 +150,6 @@ export function useRowScroll(options: RowScrollOptions): RowScroll {
     bindScroller, setScrollTop, scrollTo, reveal,
   }
 }
+
 
 
