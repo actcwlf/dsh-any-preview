@@ -16,12 +16,14 @@ import { logPreview } from './log/index.tsx'
 import { rstPreview } from './rst/index.tsx'
 import { safeTensorsPreview } from './safetensors/index.tsx'
 import { sqlitePreview } from './sqlite/index.tsx'
+import { sevenZipPreview } from './7z/index.tsx'
 import { audioPreview, videoPreview } from './media/index.tsx'
 import { glbPreview, gltfPreview, objPreview, stlPreview } from './model/index.tsx'
 
 /** Every preview this package ships, in registration order. */
 export const PREVIEWS: readonly PreviewModule[] = [
   archivePreview,
+  sevenZipPreview,
   csvPreview,
   diffPreview,
   emlPreview,
