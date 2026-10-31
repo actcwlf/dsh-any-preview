@@ -260,6 +260,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const win = useWindowedRows({
     read: readRows,
     revision: fileMode ? fileState.revision : text.length,
+    source: fileMode ? 'file' : 'text',
     enabled: windowed,
     scrollTop,
     viewportHeight,

@@ -42,6 +42,8 @@ export interface WindowedRowsOptions {
   readonly read: (startRow: number, count: number) => Promise<WindowRead>
   /** Bumps whenever the rows or their numbering changed. */
   readonly revision: number
+  /** Names the source behind `revision`: a change of key drops every window too. */
+  readonly source?: string
   /** False when the caller is not windowing at all. */
   readonly enabled: boolean
   readonly scrollTop: number
@@ -64,12 +66,13 @@ const NOTHING: WindowRows = { startRow: 0, rows: [], loading: false, overlong: f
  */
 export function useWindowedRows(options: WindowedRowsOptions): WindowRows {
   const {
-    read, revision, enabled, scrollTop, viewportHeight, totalRows, rowHeight,
+    read, revision, source = '', enabled, scrollTop, viewportHeight, totalRows, rowHeight,
     windowSize = 5000, settleMs = 200,
   } = options
 
   const cache = useRef(new Map<number, WindowRead>())
   const cachedRevision = useRef(-1)
+  const cachedSource = useRef('')
   const generation = useRef(0)
   const reader = useRef(read)
   reader.current = read
@@ -77,10 +80,12 @@ export function useWindowedRows(options: WindowedRowsOptions): WindowRows {
   // Start settled: the first window of a freshly opened table has nothing to wait for.
   const [settled, setSettled] = useState(1)
 
-  // Rows or their numbering changed: every window that described them is stale.
-  if (cachedRevision.current !== revision) {
+  // Rows, their numbering, or the source behind them changed: every window that
+  // described the old ones is stale.
+  if (cachedRevision.current !== revision || cachedSource.current !== source) {
     cache.current.clear()
     cachedRevision.current = revision
+    cachedSource.current = source
   }
 
   const plan = planWindow(scrollTop, viewportHeight, rowHeight, windowSize, totalRows)
