@@ -69,10 +69,9 @@ export function createCsvIndex(stride = 10_000): CsvIndex {
         if (char === '"') { quoted = true; continue }
         if (char === '\n') {
           rows += 1
-          rowStart = offset + 1
+          rowStart = index + 1
           if (rows % stride === 0) anchors.push({ row: rows, offset: rowStart })
         }
-        offset += 1
       }
       consumed = text.length
     },
@@ -92,8 +91,8 @@ export function createCsvIndex(stride = 10_000): CsvIndex {
       return found
     },
     estimateRows(totalChars: number): number {
-      if (offset === 0) return 0
-      return Math.max(rows, Math.round((rows / offset) * totalChars))
+      if (consumed === 0) return 0
+      return Math.max(rows, Math.round((rows / consumed) * totalChars))
     },
   }
 }
