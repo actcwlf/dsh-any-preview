@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { parseHeader, readLayout } from '../src/shared/sevenzip/structure.ts'
-import { canStream, streamFolderRange } from '../src/shared/sevenzip/stream.ts'
+import { canStream, shouldStream, STREAM_THRESHOLD_BYTES, streamFolderRange } from '../src/shared/sevenzip/stream.ts'
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const samples = join(root, '..', 'samples')
@@ -68,4 +68,10 @@ test('chunk size does not change the result', { skip }, async () => {
 test('only single-coder folders are streamable', { skip }, async () => {
   const { archive } = await fixture()
   assert.equal(canStream(archive.folders[0]), true)
+})
+test('the streaming threshold decides the path', () => {
+  assert.equal(shouldStream(STREAM_THRESHOLD_BYTES), true)
+  assert.equal(shouldStream(STREAM_THRESHOLD_BYTES - 1), false)
+  // A small fixture can exercise the same code path by lowering the threshold.
+  assert.equal(shouldStream(1024, 1), true)
 })

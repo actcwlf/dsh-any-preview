@@ -339,3 +339,21 @@ kernel/content-modules.ts        按扩展名挑"能只靠内容渲染"的预览
 - 否则按可读性判断：像文本就给 `<pre>`，否则给前 4 KB 的十六进制并提示"解压后用主预览查看"。
 
 判定用 `looksTextual()`（控制字符比例 < 5%），避免把二进制当作文本渲染成乱码。
+### 流式解码（超大 solid 文件夹）
+
+一次性解码要整个文件夹进内存，受 wasm 堆上限（512 MB）约束。超过阈值时改走流式：
+
+```
+dec_open → 循环(读 1 MB packed → dec_push → 只留目标区间 → append 到 .part) → dec_finish → rename
+```
+
+- 句柄表：`wasm/shim.c` 的 `dec_open/dec_push/dec_finish/dec_close`，8 个槽位，
+  每槽持有一个 `CLzmaDec`/`CLzma2Dec` 词典，**跨调用保留状态**；
+- 区间裁剪：`stream.ts` 按 `folder.sizes` 前缀和算出成员区间，只把落在区间的字节
+  交给 sink，达到 `range.end` 立即停止；
+- 落盘：路由 `begin/append/end/abort`，先写 `.<name>.part`，最后 `rename`；
+  失败即删，不留半成品；
+- 阈值：`STREAM_THRESHOLD_BYTES = 64 MB`，`shouldStream(size, threshold)` 可注入，
+  测试用小夹具 + 小阈值即可覆盖同一条路径；
+- 边界：只有**单 coder**（LZMA/LZMA2/Copy）能流式；BCJ/BCJ2 需要整块缓冲，
+  仍走一次性路径。

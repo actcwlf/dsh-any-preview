@@ -181,6 +181,7 @@ export function EntryView(props: EntryViewProps) {
         <button type="button" onClick={() => setHexView(true)} style={SMALL}>{t('archive.viewHex')}</button>
       </div>
       {notice !== undefined && <div style={NOTE}>{notice}</div>}
+      {progress !== undefined && <div style={NOTE}>{Math.round(progress * 100)}%</div>}
       {failure !== undefined && <div style={FAIL}>{failure}</div>}
     </div>
   )

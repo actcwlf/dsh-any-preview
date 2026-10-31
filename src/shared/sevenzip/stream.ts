@@ -23,6 +23,14 @@ export interface SessionDecoder extends Decoder {
   dec_close(handle: number): void
 }
 
+
+/** Folder size above which extraction streams instead of buffering. */
+export const STREAM_THRESHOLD_BYTES = 64 * 1024 * 1024
+
+/** Whether a folder of this size should take the streaming path. */
+export function shouldStream(folderSize: number, threshold = STREAM_THRESHOLD_BYTES): boolean {
+  return folderSize >= threshold
+}
 /** Output bytes requested from a folder. */
 export interface ByteRange {
   readonly start: number

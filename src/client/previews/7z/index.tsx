@@ -9,7 +9,7 @@ import {
   checkExtracted, cleanExtracted, isSupported, readSevenZip, readSevenZipEntry, streamExtracted, writeExtracted,
 } from '../../kernel/sevenzip.ts'
 import { openResourceAddress } from '../../runtime.ts'
-import { canStream } from '../../../shared/sevenzip/stream.ts'
+import { canStream, shouldStream } from '../../../shared/sevenzip/stream.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -97,7 +97,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
         write={(bytes, force) => writeExtracted(selected.name, bytes, dir, force)}
         writeStream={(() => {
           const folder = archive.folders[selected.folder]
-          if (folder === undefined || !canStream(folder) || folder.size < 64 * 1024 * 1024) return undefined
+          if (folder === undefined || !canStream(folder) || !shouldStream(folder.size)) return undefined
           return (onProgress: (fraction: number) => void) => streamExtracted(url, archive, selected, dir, onProgress)
         })()}
         check={() => checkExtracted(selected.name, dir)}
