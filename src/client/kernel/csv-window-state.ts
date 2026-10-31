@@ -78,6 +78,40 @@ export function scaledRowHeight(rows: number, rowHeight: number, limitPx: number
   return Math.max(minHeight, (limitPx / natural) * rowHeight)
 }
 
+/** What one row's box and text need so the browser lays it out at the planned height. */
+export interface RowMetrics {
+  /** Height the row must occupy; the pitch the scrollbar math uses. */
+  readonly height: number
+  /** Line box inside each cell. A table row cannot be shorter than this. */
+  readonly lineHeight: number
+  /** Font size that fits the line box without glyphs bleeding into the next row. */
+  readonly fontSize: number
+  /** Whether the 1px separator fits; a squeezed row cannot spare the pixel. */
+  readonly separator: boolean
+}
+
+/** Row height below which the 1px separator costs more than it is worth. */
+const SEPARATOR_MIN_HEIGHT = 14
+
+/**
+ * Fit a row's box and text to the planned height.
+ *
+ * A table row's `height` is a *minimum*: the browser grows it to the line box plus the
+ * border. Planning 8.4px rows while the cells keep a 10px line box and a 1px rule makes
+ * the browser lay them out at 11px, so the scroll position no longer matches the row
+ * numbers. Everything here therefore follows the pitch: the line box equals the height
+ * (minus the separator when there is room), and the font shrinks to fit the line box.
+ * @param height - planned row pitch in pixels.
+ * @param baseFont - font size of the table at its natural height.
+ */
+export function rowMetrics(height: number, baseFont = 12): RowMetrics {
+  const separator = height >= SEPARATOR_MIN_HEIGHT
+  // Two spare pixels at natural sizes keep the current 20px line box at a 22px row.
+  const lineHeight = Math.max(1, height - (separator ? 2 : 0))
+  const fontSize = Math.min(baseFont, Math.max(5, lineHeight - 1))
+  return { height, lineHeight, fontSize, separator }
+}
+
 /** One painted row: its body index and its cells, or no cells while loading. */
 export interface BodyRow {
   readonly index: number

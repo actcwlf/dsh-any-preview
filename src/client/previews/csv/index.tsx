@@ -18,7 +18,7 @@ import { scanText } from '../../kernel/search-scan.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
 import { createCsvIndex } from '../../kernel/csv-index.ts'
 import type { CsvIndex } from '../../kernel/csv-index.ts'
-import { fitColumns, scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
+import { fitColumns, rowMetrics, scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
 import { readWindow } from '../../kernel/csv-window.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
@@ -38,6 +38,9 @@ const LARGE_TEXT_CHARS = 2 * 1024 * 1024
 
 /** A drag this many screens long may replace an estimated total with the exact one. */
 const EXACT_SWITCH_SCREENS = 3
+
+/** How long the size probe may take before the delivered text takes over. */
+const PROBE_TIMEOUT_MS = 4_000
 
 /** One index anchor every N rows, so a jump scans at most that many rows. */
 const INDEX_STRIDE = 10_000
@@ -156,7 +159,12 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [deep, setDeep] = useState<{ progress: number, matches: number } | undefined>(undefined)
-  const [fileState, setFileState] = useState<FileState>(IDLE_FILE)
+  // A file the owner has not finished handing over may be a big one, and a big one's row
+  // pitch is compressed. Start on the loading line for it instead of painting the natural
+  // pitch for a frame and then squeezing it.
+  const [fileState, setFileState] = useState<FileState>(() => (
+    absolutePath !== undefined && source.kind === 'text' && !source.eof ? OPENING_FILE : IDLE_FILE
+  ))
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -321,6 +329,13 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     const controller = new AbortController()
     let live = true
     setFileState(OPENING_FILE)
+    // A probe that never answers must not leave the pane on its loading line.
+    const giveUp = setTimeout(() => {
+      if (!live) return
+      live = false
+      controller.abort()
+      setFileState(FAILED_FILE)
+    }, PROBE_TIMEOUT_MS)
     void (async () => {
       try {
         const media = fileUrl(path)
@@ -347,9 +362,10 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
         // text keeps the table working, so this is not an error the reader must see.
         if (live) setFileState(FAILED_FILE)
       }
-    })()
+    })().finally(() => { clearTimeout(giveUp) })
     return () => {
       live = false
+      clearTimeout(giveUp)
       controller.abort()
       fileRef.current?.dispose()
       fileRef.current = null
@@ -454,7 +470,13 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
     return () => { controller.abort() }
   }, [options.query, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
 
-  if (buffer === null || view === null) {
+  // A file the owner has not finished handing over may be a big one, whose row pitch is
+  // compressed (2,000,000 rows at 22px would pass the browser's height limit). Painting
+  // the delivered rows first would show them at the natural pitch and then squeeze them
+  // a moment later — the "style change" on open. Wait for the size instead.
+  const measuring = fileState.status === 'opening' && absolutePath !== undefined && !eof
+
+  if (buffer === null || view === null || measuring) {
     const empty = source.kind === 'text' && eof && text.length === 0
     return (
       <div style={PANE_FILL}>
@@ -464,10 +486,24 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
   }
 
   const dataRows = windowed ? Math.max(0, totalRows - 1) : view.body.length
-  // The row box follows the (possibly scaled) row height, so text stays inside its row.
-  const lineBox = { lineHeight: `${Math.max(10, Math.round(rowHeight - 2))}px` } as const
+  // The row box follows the (possibly scaled) pitch, and the text with it: a table row
+  // is never shorter than its line box, so a squeezed row needs a squeezed line box and
+  // a font that fits it — otherwise the browser lays rows out taller than planned and
+  // the scrollbar stops lining up with the row numbers.
+  const metrics = rowMetrics(rowHeight)
+  const lineBox = {
+    lineHeight: `${String(metrics.lineHeight)}px`,
+    fontSize: `${String(metrics.fontSize)}px`,
+    ...(metrics.separator ? {} : { borderBottom: 'none' }),
+  } as const
   const indexCell = { ...indexStyle, ...lineBox }
   const bodyCell = { ...cellStyle, ...lineBox }
+  const headerCell = {
+    ...headerStyle,
+    padding: metrics.separator ? '5px 12px' : '2px 10px',
+    fontSize: metrics.separator ? 12 : Math.max(10, metrics.fontSize + 2),
+  }
+  const cornerCell = { ...headerCell, left: 0, zIndex: 2, width: 1 }
 
   // What to paint, in body-row coordinates. A `null` cell list is a row whose window
   // has not been read yet: it keeps its height and shows nothing.
@@ -547,9 +583,9 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
           <thead>
             <tr>
-              <th style={cornerStyle} />
+              <th style={cornerCell} />
               {view.header.map((value, column) => (
-                <th key={column} style={headerStyle}>{value || t('csv.column', { index: column + 1 })}</th>
+                <th key={column} style={headerCell}>{value || t('csv.column', { index: column + 1 })}</th>
               ))}
             </tr>
           </thead>
@@ -562,7 +598,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
             {painted.map((row) => {
               if (row.cells === null) {
                 return (
-                  <tr key={row.index} style={{ height: rowHeight }}>
+                  <tr key={row.index} style={{ height: metrics.height }}>
                     <td colSpan={view.columns + 1} style={spacerCell} />
                   </tr>
                 )
@@ -572,7 +608,7 @@ export function CsvBody({ content, resourceAddress, scrollportRef, useResource }
                 <tr
                   key={row.index}
                   data-row-index={row.index}
-                  style={{ height: rowHeight, background: active ? ACTIVE_ROW : undefined }}
+                  style={{ height: metrics.height, background: active ? ACTIVE_ROW : undefined }}
                 >
                   <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
                     {estimated ? `~${String(row.index + 1)}` : row.index + 1}
@@ -612,8 +648,6 @@ const headerStyle = {
   fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)',
 }
-
-const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
 
 const spacerCell = { padding: 0, border: 'none' } as const
 

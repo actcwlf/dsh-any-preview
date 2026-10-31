@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  cacheCapacity, planWindow, scaledRowHeight, windowedBodyRows,
+  cacheCapacity, planWindow, rowMetrics, scaledRowHeight, windowedBodyRows,
 } from '../src/client/kernel/csv-window-state.ts'
 
 const ROW = 22
@@ -124,4 +124,38 @@ test('a huge table shrinks its rows so its end stays reachable', () => {
 
 test('the scaled row height never collapses below the floor', () => {
   assert.equal(scaledRowHeight(50_000_000, ROW, 16_777_216, 6), 6)
+})
+
+test('a natural row keeps the current line box, separator and font', () => {
+  assert.deepEqual(rowMetrics(ROW), { height: ROW, lineHeight: 20, fontSize: 12, separator: true })
+})
+
+test('a compressed row carries its own line box and font', () => {
+  // 1,000,000 rows: 16.78px pitch, still room for the 1px rule and a 12px font.
+  const million = rowMetrics(16_777_216 / 1_000_000)
+  assert.equal(million.separator, true)
+  assert.ok(million.lineHeight + 1 <= million.height)
+  assert.equal(million.fontSize, 12)
+  // 2,000,000 rows: 8.39px pitch. No room for the rule, and the font must fit the box.
+  const twoMillion = rowMetrics(16_777_216 / 2_000_000)
+  assert.equal(twoMillion.separator, false)
+  assert.ok(Math.abs(twoMillion.lineHeight - twoMillion.height) < 1e-9, 'the line box is the row')
+  assert.ok(twoMillion.fontSize <= twoMillion.lineHeight, 'the glyphs fit the box')
+  assert.ok(twoMillion.fontSize <= 12)
+})
+
+test('every row box fits inside its planned height', () => {
+  for (const height of [22, 16.78, 12, 10, 8.39, 6, 1]) {
+    const metrics = rowMetrics(height)
+    const occupied = metrics.lineHeight + (metrics.separator ? 1 : 0)
+    assert.ok(occupied <= metrics.height + 1e-9, `height ${String(height)}: line box ${String(occupied)}`)
+    // Below the 5px font floor a box cannot hold text at all; the row box still holds.
+    if (metrics.lineHeight >= 5) {
+      assert.ok(metrics.fontSize <= metrics.lineHeight, `height ${String(height)}: font ${String(metrics.fontSize)}`)
+    }
+  }
+})
+
+test('a squeezed row keeps a floor font instead of vanishing', () => {
+  assert.equal(rowMetrics(6).fontSize, 5)
 })
