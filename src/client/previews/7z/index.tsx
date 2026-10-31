@@ -6,10 +6,12 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PANE_FILL } from '../../kernel/layout.ts'
 import {
-  checkExtracted, isSupported, readSevenZip, readSevenZipEntry, writeExtracted,
+  checkExtracted, cleanExtracted, isSupported, readSevenZip, readSevenZipEntry, writeExtracted,
 } from '../../kernel/sevenzip.ts'
+import { openResourceAddress } from '../../runtime.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
+import { ArchiveList } from '../archive/ArchiveList.tsx'
 import { EntryView } from '../archive/EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from '../archive/paths.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -30,6 +32,8 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const [listing, setListing] = useState<Listing>({ status: 'loading' })
   const [selected, setSelected] = useState<SevenZipEntry | undefined>(undefined)
   const [dir, setDir] = useState('')
+  const [lastEntry, setLastEntry] = useState<SevenZipEntry | undefined>(undefined)
+  const [notice, setNotice] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let alive = true
@@ -55,6 +59,29 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
 
   const { archive } = listing
 
+  const reextract = async (): Promise<void> => {
+    if (lastEntry === undefined || url === '') return
+    try {
+      const bytes = await readSevenZipEntry(url, archive, lastEntry)
+      const path = await writeExtracted(lastEntry.name, bytes, dir, true)
+      const address = extractedAddress(resourceAddress, lastEntry.name, dir, defaultDir)
+      const opened = address !== undefined && openResourceAddress(address)
+      setNotice(opened
+        ? t('archive.reextracted', { name: lastEntry.name })
+        : t('archive.reextractedTo', { path }))
+    } catch (error) {
+      setNotice(errorText(error, 'archive.reextractFailed'))
+    }
+  }
+
+  const clean = async (): Promise<void> => {
+    try {
+      const removed = await cleanExtracted(dir)
+      setNotice(removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: removed }))
+    } catch (error) {
+      setNotice(errorText(error, 'archive.cleanFailed'))
+    }
+  }
   if (selected !== undefined) {
     return (
       <EntryView
@@ -67,6 +94,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
         write={(bytes, force) => writeExtracted(selected.name, bytes, dir, force)}
         check={() => checkExtracted(selected.name, dir)}
         addressOf={() => extractedAddress(resourceAddress, selected.name, dir, defaultDir)}
+        onOpened={() => setLastEntry(selected)}
         onBack={() => setSelected(undefined)}
       />
     )
@@ -76,7 +104,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const total = files.reduce((sum, entry) => sum + entry.size, 0)
   const supported = isSupported(archive)
 
-  const title = [
+  const summary = [
     t('sevenzip.summary', { count: files.length }),
     formatBytes(total),
     archive.solid ? t('sevenzip.solid') : '',
@@ -84,37 +112,17 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   ].filter(part => part !== '').join(' · ')
 
   return (
-    <PreviewChrome
-      title={<span>{title}</span>}
-      status={supported ? undefined : t('sevenzip.unsupported')}
-    >
-      <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <table style={TABLE}>
-          <tbody>
-            {archive.entries.map((entry, index) => (
-              <tr key={`${String(index)}:${entry.name}`} style={entry.directory ? ROW_DIRECTORY : ROW}>
-                <td style={CELL}>
-                  <button
-                    type="button"
-                    onClick={() => { setSelected(entry) }}
-                    disabled={entry.directory}
-                    style={entry.directory ? LINK_DISABLED : LINK}
-                  >
-                    {entry.name}
-                  </button>
-                </td>
-                <td style={{ ...CELL, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)' }}>
-                  {entry.directory ? '' : formatBytes(entry.size)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </PreviewChrome>
+    <ArchiveList
+      entries={archive.entries}
+      summary={summary}
+      notice={notice ?? (supported ? undefined : t('sevenzip.unsupported'))}
+      lastEntry={lastEntry}
+      onSelect={entry => { setSelected(entry as SevenZipEntry) }}
+      onReextract={() => { void reextract() }}
+      onClean={() => { void clean() }}
+    />
   )
 }
-
 const TABLE = { width: '100%', borderCollapse: 'collapse' } as const
 const ROW = { borderBottom: '1px solid var(--dsw-alias-border-l2)' } as const
 const ROW_DIRECTORY = { ...ROW, color: 'var(--dsw-alias-label-tertiary)' } as const

@@ -25,6 +25,7 @@ import { logPreview } from '../log/index.tsx'
 import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
+import { ArchiveList } from './ArchiveList.tsx'
 import { EntryView } from './EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from './paths.ts'
 
@@ -147,54 +148,17 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   }
 
   return (
-    <PreviewChrome>
-      <div style={barStyle}>
-        <span>
-          {t('archive.summary', { count: entries.length.toLocaleString('en-US'), total: formatBytes(total) })}
-          {entries.length >= MAX_ENTRIES && ` · ${t('archive.limitReached')}`}
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)' }}>
-          <span>{barNotice ?? t('archive.hint')}</span>
-          {absolutePath !== undefined && lastEntry !== undefined && (
-            <button type="button" onClick={() => { void reextract() }} style={smallButtonStyle}>
-              {t('archive.reextract', { name: lastEntry.name })}
-            </button>
-          )}
-          {absolutePath !== undefined && (
-            <button type="button" onClick={() => { void clean() }} style={smallButtonStyle}>{t('archive.clean')}</button>
-          )}
-        </span>
-      </div>
-      <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <table style={{ borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12 }}>
-          <thead>
-            <tr>
-              <th style={headerStyle}>{t('common.name')}</th>
-              <th style={{ ...headerStyle, textAlign: 'right', width: 90 }}>{t('common.size')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry, index) => (
-              <tr
-                key={index}
-                onClick={entry.directory ? undefined : () => setSelected(entry)}
-                style={{ cursor: entry.directory ? 'default' : 'pointer' }}
-              >
-                <td style={{ ...cellStyle, color: entry.directory ? 'var(--dsw-alias-label-secondary)' : 'var(--dsw-alias-label-primary)' }}>
-                  {entry.name}
-                </td>
-                <td style={{ ...cellStyle, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)' }}>
-                  {entry.directory ? '' : formatBytes(entry.size)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </PreviewChrome>
+    <ArchiveList
+      entries={entries}
+      summary={`${t('archive.summary', { count: entries.length.toLocaleString('en-US'), total: formatBytes(total) })}${entries.length >= MAX_ENTRIES ? ` · ${t('archive.limitReached')}` : ''}`}
+      notice={barNotice}
+      lastEntry={lastEntry}
+      onSelect={entry => setSelected(entry as ArchiveEntry)}
+      onReextract={() => { void reextract() }}
+      onClean={() => { void clean() }}
+    />
   )
 }
-
 const barStyle = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
   padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',

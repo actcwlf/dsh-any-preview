@@ -130,3 +130,14 @@ export async function checkExtracted(entryName: string, targetDir: string): Prom
   const result = await response.json() as { exists: boolean, path: string | null }
   return result.exists ? (result.path ?? undefined) : undefined
 }
+/** Remove the extraction directory through the shared clean action. */
+export async function cleanExtracted(targetDir: string): Promise<number> {
+  const response = await fetch(new URL('api/any-preview/extract', document.baseURI), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'clean', targetDir }),
+  })
+  if (!response.ok) throw new Error(await response.text())
+  const result = await response.json() as { removed: number }
+  return result.removed
+}
