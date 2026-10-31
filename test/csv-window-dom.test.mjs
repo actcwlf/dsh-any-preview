@@ -11,6 +11,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { existsSync, readFileSync } from 'node:fs'
+import { alignTextSlice } from '../src/host/text-route.ts'
 
 const repo = process.env.DSH_REPO ?? 'D:/DSH/deepseek-harness'
 const anchor = `${repo}/packages/client/ui-sidebar-documentpreview/package.json`
@@ -94,15 +95,49 @@ async function mountCsv() {
   return { window, component: seat.component }
 }
 
-/** Mount the body over `text`; returns the root, the scroller and row helpers. */
-async function render(component, text) {
+/**
+ * Install a fake Host for one file: the text route over `text`, and the media route
+ * answering the one-byte probe the size comes from.
+ * @param {string} text - the file's contents.
+ * @returns {{ bytes: number, restore: () => void }} its size, and how to undo this.
+ */
+function installHost(text) {
+  const bytes = Buffer.from(text, 'utf8')
+  const original = globalThis.fetch
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input), 'http://127.0.0.1:4233/')
+    if (url.pathname === '/api/any-preview/media') {
+      return new Response(null, { status: 206, headers: { 'content-range': `bytes 0-0/${String(bytes.length)}` } })
+    }
+    if (url.pathname !== '/api/any-preview/text') return new Response('no route', { status: 404 })
+    const offset = Number(url.searchParams.get('offset') ?? '0')
+    const length = Number(url.searchParams.get('length') ?? String(bytes.length))
+    const rowStart = url.searchParams.get('rowStart') === '1'
+    const window = bytes.subarray(offset, Math.min(bytes.length, offset + length))
+    return Response.json(alignTextSlice(window, offset, bytes.length, rowStart))
+  }
+  return { bytes: bytes.length, restore: () => { globalThis.fetch = original } }
+}
+
+/**
+ * Mount the body over `text`; returns the root, the scroller and row helpers.
+ * @param component - the CSV body.
+ * @param text - text the document owner delivered.
+ * @param {{ path?: string }} [options] - `path` makes the owner report a Host file,
+ *   which lets the body read the file itself.
+ */
+async function render(component, text, options = {}) {
   const container = document.getElementById('root')
   const root = createRoot(container)
+  const { path } = options
+  // The owner's metadata hook: a stable identity across renders, like the real one.
+  const useResource = path === undefined ? undefined : () => ({ value: { absolutePath: path, version: 'v1' } })
   await act(async () => {
     root.render(React.createElement(component, {
       content: { kind: 'text', text, eof: true },
       resourceAddress: 'dsh-resource://file/session/s/huge.csv',
       wrap: false,
+      useResource,
     }))
   })
   const table = container.querySelector('table')
@@ -121,18 +156,24 @@ async function render(component, text) {
   }
   /** Unmount, so a pending settle timer cannot update React after the test ends. */
   const dispose = async () => { await act(async () => { root.unmount() }) }
-  return { container, scroller, painted, scrollToBodyRow, dispose }
+  /** The row count the summary claims, as a number. */
+  const summaryRows = () => {
+    const match = /([\d,]+) 行/u.exec(container.textContent ?? '')
+    return match === null ? Number.NaN : Number(match[1].replaceAll(',', ''))
+  }
+  return { container, scroller, painted, scrollToBodyRow, dispose, summaryRows }
 }
 
-test('a windowed csv spends the first paint on placeholders', { skip: !available }, async (t) => {
+test('a windowed csv knows its row count and first rows on the first paint', { skip: !available }, async (t) => {
   const { component } = await mountCsv()
   const text = csvOf(120_000)
   assert.ok(text.length > 2 * 1024 * 1024, 'the fixture is past the windowing threshold')
   const view = await render(component, text)
   t.after(view.dispose)
-  // The header and the row count are known immediately; the rows are not read yet.
+  // The header and the row count are known immediately, and the first window is read
+  // at once: nothing is being dragged, so there is no settle to wait for.
   assert.match(view.container.textContent, /120,000 行/)
-  assert.equal(view.painted().length, 0, 'no window is read during the first paint')
+  assert.ok(view.painted().length >= 10, 'the first window is painted without a wait')
   // Filtering would hide rows a window does not hold, so the control is not offered.
   assert.equal(view.container.querySelector('input[type="checkbox"]'), null)
 })
@@ -229,3 +270,97 @@ test('the 22 MB fixture browses to row 200,000', { skip: !hugeAvailable }, async
   assert.ok(heights.every(Number.isFinite), 'every painted row states its height')
   assert.equal(Math.round(heights.reduce((sum, value) => sum + value, 0)), 300_000 * ROW)
 })
+
+test('a file the owner would page reads a jump straight from the file', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const total = 120_000
+  const host = installHost(csvOf(total))
+  t.after(host.restore)
+  // No background walk in this test: the jump has to work without one.
+  globalThis.requestIdleCallback = () => 0
+  // The owner delivered its first page only; `eof` says more pages exist, but the table
+  // never asks for page two.
+  const view = await render(component, csvOf(5_000), { path: '/data/big.csv' })
+  t.after(view.dispose)
+  await tick(SETTLE)
+
+  // The whole file's size gives the row count before a single page is indexed.
+  const shown = view.summaryRows()
+  assert.ok(Number.isFinite(shown), 'the summary states a row count')
+  assert.ok(Math.abs(shown - total) < total * 0.05, `estimated ${String(shown)} of ${String(total)} rows from ${String(host.bytes)} bytes`)
+
+  // Jump far past the rows the owner delivered.
+  await view.scrollToBodyRow(100_000)
+  await tick(SETTLE)
+  const rows = view.painted()
+  assert.ok(rows.length >= 10, 'the jump is painted')
+  assert.match(rows[0].cells[0], /^~/u, 'a number the index has not reached yet is marked')
+  const id = Number(rows[0].cells[2].replace('user_', ''))
+  assert.ok(id > 90_000 && id < 110_000, `content is near the jump: ${String(id)}`)
+
+  // The very bottom shows the file's last rows, not the start of its last slice.
+  await view.scrollToBodyRow(shown - 1)
+  await tick(SETTLE)
+  const tail = view.painted()
+  assert.match(tail[tail.length - 1].cells[2], /^user_120000$/u, 'the file ends here')
+})
+
+test('the background walk makes the row count and the numbers exact', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const host = installHost(csvOf(120_000))
+  t.after(host.restore)
+  // Idle callbacks stand in for the browser's: one slice per callback, like the real one.
+  globalThis.requestIdleCallback = (callback) => setTimeout(callback, 0)
+  const view = await render(component, csvOf(5_000), { path: '/data/big.csv' })
+  t.after(view.dispose)
+  await tick(SETTLE)
+  // The walk is a handful of slices; give the timers room to finish it.
+  await tick(600)
+
+  // The exact total is adopted on a drag longer than three screens, not before.
+  await view.scrollToBodyRow(6_000)
+  await tick(SETTLE)
+  assert.equal(view.summaryRows(), 120_000, 'the index has counted every row')
+
+  await view.scrollToBodyRow(100_000)
+  await tick(SETTLE)
+  const rows = view.painted()
+  const atTop = rows.find(row => row.index === 100_000)
+  assert.ok(atTop, 'the row at the scroll position is painted')
+  assert.equal(atTop.cells[0], '100001', 'the number is exact once the index covers it')
+  assert.equal(atTop.cells[2], 'user_100001')
+})
+
+test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !hugeAvailable }, async (t) => {
+  const text = readFileSync(hugeCsv, 'utf8')
+  assert.ok(text.length > 20 * 1024 * 1024, 'the fixture is the 22 MB one')
+  const { component } = await mountCsv()
+  const host = installHost(text)
+  t.after(host.restore)
+  // Only the first page arrives from the owner, and no background walk yet.
+  globalThis.requestIdleCallback = () => 0
+  const firstPage = text.split('\n', 5_001).join('\n')
+  const view = await render(component, firstPage, { path: '/data/huge.csv' })
+  t.after(view.dispose)
+  await tick(SETTLE)
+
+  const shown = view.summaryRows()
+  assert.ok(Math.abs(shown - 300_000) < 2_000, `estimated ${String(shown)} of 300,000 rows`)
+
+  // One drag to row 200,000: no pages were loaded from the head to get here.
+  await view.scrollToBodyRow(200_000)
+  await tick(SETTLE)
+  const rows = view.painted()
+  const atTop = rows.find(row => row.index === 200_000)
+  assert.ok(atTop, 'the jumped-to row is painted')
+  assert.match(atTop.cells[0], /^~/u, 'its number is still an estimate')
+  const id = Number((atTop.cells[2] ?? '').replace('user_', ''))
+  assert.ok(Math.abs(id - 200_001) < 3_000, `content lands near row 200,000: ${String(id)}`)
+
+  // Dragging to the bottom lands on the file's own last row.
+  await view.scrollToBodyRow(shown - 1)
+  await tick(SETTLE)
+  const tail = view.painted()
+  assert.match(tail[tail.length - 1].cells[2] ?? '', /^user_300000$/u, 'the file ends here')
+})
+

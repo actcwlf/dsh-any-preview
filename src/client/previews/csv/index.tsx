@@ -20,14 +20,24 @@ import { createCsvIndex } from '../../kernel/csv-index.ts'
 import type { CsvIndex } from '../../kernel/csv-index.ts'
 import { scaledRowHeight, windowedBodyRows } from '../../kernel/csv-window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/csv-window-state.ts'
+import { readWindow } from '../../kernel/csv-window.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
+import type { WindowRead } from '../../kernel/useWindowedRows.ts'
+import { openCsvFile, scanCsvFile } from '../../kernel/csv-file.ts'
+import type { CsvFile } from '../../kernel/csv-file.ts'
+import { fileSize } from '../../kernel/zip.ts'
+import { fileUrl } from '../../kernel/file-url.ts'
+import { useDocument } from '../../kernel/useDocument.ts'
 import { DELIMITER_LABEL, detectDelimiter } from './detect.ts'
 
 /** Rows the incremental buffer keeps before the windowed path takes over. */
 const ROW_BUDGET = LIMITS.csvRows
 
-/** Text longer than this is read as windows instead of from the parsed rows. */
+/** Windowing takes over once the delivered text is large, or the row budget is hit. */
 const LARGE_TEXT_CHARS = 2 * 1024 * 1024
+
+/** A drag this many screens long may replace an estimated total with the exact one. */
+const EXACT_SWITCH_SCREENS = 3
 
 /** One index anchor every N rows, so a jump scans at most that many rows. */
 const INDEX_STRIDE = 10_000
@@ -56,6 +66,25 @@ const cancelStyle = {
   color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
   border: '1px solid var(--dsw-alias-border-l2)',
 } as const
+
+/** Where the file-backed source stands. `failed` means the text path keeps the table. */
+type FileStatus = 'idle' | 'opening' | 'ready' | 'failed'
+
+/** File source state the table renders from. */
+interface FileState {
+  readonly status: FileStatus
+  /** Bumps when the index grows; drops cached windows. */
+  readonly revision: number
+  /** Best-known rows, header included. */
+  readonly total: number
+  /** Fraction of the file walked so far, 0..1. */
+  readonly progress: number
+  readonly complete: boolean
+}
+
+const IDLE_FILE: FileState = { status: 'idle', revision: 0, total: 0, progress: 0, complete: false }
+const OPENING_FILE: FileState = { status: 'opening', revision: 0, total: 0, progress: 0, complete: false }
+const FAILED_FILE: FileState = { status: 'failed', revision: 0, total: 0, progress: 0, complete: false }
 
 /** Widen ragged rows so the grid lines up under the header. */
 function normalize(rows: readonly (readonly string[])[]): {
@@ -105,22 +134,29 @@ function plainBodyRows(
   }
 }
 
-export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
+export function CsvBody({ content, resourceAddress, scrollportRef, useResource }: PreviewBodyProps) {
   useLocale()
   const source = previewSourceOf(content)
   const text = source.kind === 'text' ? source.text : ''
   const eof = source.kind === 'text' ? source.eof : false
+  // The file's Host path, when the owner reports one: it is what lets the table read
+  // the file itself instead of waiting for page after page.
+  const { absolutePath } = useDocument(content, resourceAddress, useResource)
 
   const bufferRef = useRef<RowBuffer | null>(null)
   const indexRef = useRef<CsvIndex | null>(null)
   const delimiterRef = useRef<string>(',')
   const consumedRef = useRef(0)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
+  const fileRef = useRef<CsvFile | null>(null)
+  const openedRef = useRef<string | null>(null)
+  const adoptRef = useRef({ shown: 0, at: 0 })
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [deep, setDeep] = useState<{ progress: number, matches: number } | undefined>(undefined)
+  const [fileState, setFileState] = useState<FileState>(IDLE_FILE)
 
   // Consume during render: parsing is a pure fold over the new suffix, and the
   // `consumed` cursor makes a repeated render (StrictMode) a no-op. Doing this
@@ -167,20 +203,38 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   )
   const found = useSearch(texts, options)
 
-  // Windowing takes over once the delivered text is large, or the moment the row
-  // budget would hide rows: from here on there is no row cap, only a window cache.
-  const windowed = source.kind === 'text' && (text.length > LARGE_TEXT_CHARS || buffer?.truncated === true)
+  // Windowing takes over once the delivered text is large, the moment the row budget
+  // would hide rows, or as soon as the file itself is the source: from here on there
+  // is no row cap, only a window cache.
+  const textWindowed = source.kind === 'text' && (text.length > LARGE_TEXT_CHARS || buffer?.truncated === true)
+  const fileMode = fileState.status === 'ready'
+  const windowed = textWindowed || fileMode
 
   // Rows in the file, header included. `index.rows` counts newlines, so a last line
   // without one is an extra row — the rule the parser's `finish` also applies.
   const openLastLine = text.length > 0 && !text.endsWith('\n')
   const indexedRows = (index?.rows ?? 0) + (eof && openLastLine ? 1 : 0)
   // Every delivered page is indexed synchronously, so this estimate is already the
-  // exact count of what arrived; it would run ahead of `index.rows` only if indexing
-  // moved to an idle pass. That is when the product rule "adopt the exact count only
-  // after a drag longer than about three screens" is needed back.
+  // exact count of what arrived.
   const estimatedRows = Math.max(buffer?.rows.length ?? 1, index?.estimateRows(text.length) ?? 1, 1)
-  const totalRows = Math.max(indexedRows, estimatedRows)
+  const textTotalRows = Math.max(indexedRows, estimatedRows)
+
+  // A file's row count starts as an estimate from the bytes read and becomes exact
+  // when the background walk ends. The product rule is not to swap it in immediately:
+  // the new total is adopted on the next drag longer than about three screens, so the
+  // scrollbar never changes length under the reader's hand.
+  let totalRows: number
+  if (fileMode) {
+    const hold = adoptRef.current
+    if (hold.shown === 0 || Math.abs(scrollTop - hold.at) > EXACT_SWITCH_SCREENS * viewportHeight) {
+      hold.shown = Math.max(1, fileState.total)
+      hold.at = scrollTop
+    }
+    totalRows = Math.max(1, hold.shown)
+  } else {
+    totalRows = textTotalRows
+    adoptRef.current.shown = 0
+  }
 
   // Past the browser's scroll-height limit the rows shrink proportionally instead of
   // the table being cut: the scrollbar still spans every row of the file.
@@ -188,19 +242,31 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     ? scaledRowHeight(Math.max(0, totalRows - 1), ROW_HEIGHT, SCROLL_LIMIT_PX, MIN_ROW_HEIGHT)
     : ROW_HEIGHT
 
-  // Hooks run unconditionally. With `index: null` the hook reads nothing and returns an
-  // empty window, which the non-windowed path below never looks at.
+  // One window, from the file when there is one and from the delivered text otherwise.
+  // The callback is read through a ref by the hook, so its identity does not matter.
+  const readRows = useCallback(async (startRow: number, count: number): Promise<WindowRead> => {
+    const file = fileRef.current
+    if (fileMode && file !== null) {
+      const read = await file.read(startRow, count)
+      return { rows: read.rows, overlong: read.overlong, exact: read.exact }
+    }
+    if (index === null) return { rows: [], overlong: false, exact: true }
+    const read = readWindow(text, index, startRow, count, delimiterRef.current, LIMITS.csvLineChars)
+    return { rows: read.rows, overlong: read.overlong, exact: true }
+  }, [fileMode, index, text])
+
+  // Hooks run unconditionally. With `enabled: false` the hook reads nothing and returns
+  // an empty window, which the non-windowed path below never looks at.
   const win = useWindowedRows({
-    text: windowed ? text : '',
-    index: windowed ? index : null,
-    delimiter: delimiterRef.current,
+    read: readRows,
+    revision: fileMode ? fileState.revision : text.length,
+    enabled: windowed,
     scrollTop,
     viewportHeight,
     totalRows,
     rowHeight,
     windowSize: WINDOW_ROWS,
     settleMs: SETTLE_MS,
-    maxLineChars: LIMITS.csvLineChars,
   })
 
   const visibleIndices = useMemo(() => {
@@ -233,6 +299,85 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
     return () => { observer.disconnect() }
   }, [ready])
 
+  // The document owner hands a file over 5,000 rows at a time and never seeks, so a
+  // big file needs its own source: probe the size once, and only take the file path
+  // for a file too big to page. Small files keep the instant text path.
+  useEffect(() => {
+    const path = absolutePath
+    if (path === undefined || text.length === 0 || openedRef.current === path) return undefined
+    openedRef.current = path
+    const controller = new AbortController()
+    let live = true
+    setFileState(OPENING_FILE)
+    void (async () => {
+      try {
+        const media = fileUrl(path)
+        const bytes = media === undefined ? undefined : await fileSize(media)
+        if (bytes === undefined || bytes <= LARGE_TEXT_CHARS) {
+          if (live) setFileState(FAILED_FILE)
+          return
+        }
+        const file = await openCsvFile(path, delimiterRef.current, controller.signal)
+        if (!live) {
+          file.dispose()
+          return
+        }
+        fileRef.current = file
+        setFileState({
+          status: 'ready',
+          revision: file.revision,
+          total: file.totalRows(),
+          progress: file.size > 0 ? file.scanned / file.size : 1,
+          complete: file.complete,
+        })
+      } catch {
+        // No route, no permission, or a path the Host will not serve: the delivered
+        // text keeps the table working, so this is not an error the reader must see.
+        if (live) setFileState(FAILED_FILE)
+      }
+    })()
+    return () => {
+      live = false
+      controller.abort()
+      fileRef.current?.dispose()
+      fileRef.current = null
+      // Let a re-run (StrictMode's second mount, or a new file) open again.
+      openedRef.current = null
+    }
+  }, [absolutePath, text.length === 0])
+
+  // Walk the rest of the file in the background so the scrollbar and the row numbers
+  // can become exact. One slice per idle callback: the first screen never waits.
+  useEffect(() => {
+    if (fileState.status !== 'ready' || fileState.complete) return undefined
+    let live = true
+    const step = (): void => {
+      const file = fileRef.current
+      if (!live || file === null) return
+      void file.advance().then((more) => {
+        if (!live) return
+        setFileState({
+          status: 'ready',
+          revision: file.revision,
+          total: file.totalRows(),
+          progress: file.size > 0 ? file.scanned / file.size : 1,
+          complete: file.complete,
+        })
+        if (more) schedule()
+      }, () => {
+        // A half-indexed file still reads what it has; the text path takes over only
+        // if the source could not be opened at all.
+        if (live) setFileState(current => ({ ...current, complete: true }))
+      })
+    }
+    const schedule = (): void => {
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(step, { timeout: 1000 })
+      else setTimeout(step, 0)
+    }
+    schedule()
+    return () => { live = false }
+  }, [fileState.status, fileState.complete])
+
   // A window cannot hide rows — it never holds the whole file — so a windowed table
   // keeps the highlight and drops filtering rather than filtering only what it can see.
   useEffect(() => {
@@ -262,12 +407,14 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow, filter, visibleIndices, windowed, rowHeight])
 
   // A large file cannot be searched from the parsed rows alone: the row budget keeps
-  // only its head. The full text is scanned in slices so the page stays responsive,
-  // with progress and a cancel control because that scan can take a while. Declared
-  // above the loading return so the hook order never depends on the first parse.
+  // only its head. With a file source the whole file is scanned slice by slice; without
+  // one, the delivered text is. Either way the page stays responsive, with progress and
+  // a cancel control. Declared above the loading return so hook order never depends on
+  // the first parse.
   useEffect(() => {
     const query = options.query.trim()
-    if (query === '' || source.kind !== 'text' || text.length < LARGE_TEXT_CHARS) {
+    const file = fileMode ? fileRef.current : null
+    if (query === '' || source.kind !== 'text' || (file === null && text.length < LARGE_TEXT_CHARS)) {
       setDeep(undefined)
       return
     }
@@ -283,14 +430,17 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
       setDeep(undefined)
       return
     }
-    void scanText(text, pattern, {
-      signal: controller.signal,
-      onProgress: progress => setDeep(current => ({ progress, matches: current?.matches ?? 0 })),
-    }).then((result) => {
+    const onProgress = (progress: number): void => {
+      setDeep(current => ({ progress, matches: current?.matches ?? 0 }))
+    }
+    const scan = file !== null && absolutePath !== undefined
+      ? scanCsvFile(absolutePath, pattern, { signal: controller.signal, onProgress })
+      : scanText(text, pattern, { signal: controller.signal, onProgress })
+    void scan.then((result) => {
       if (!controller.signal.aborted) setDeep({ progress: 1, matches: result.matches })
-    }).catch(() => { /* aborted */ })
+    }).catch(() => { /* aborted, or the file went away */ })
     return () => { controller.abort() }
-  }, [options.query, options.regex, options.caseSensitive, text.length, source.kind])
+  }, [options.query, options.regex, options.caseSensitive, text.length, source.kind, fileMode, absolutePath])
 
   if (buffer === null || view === null) {
     const empty = source.kind === 'text' && eof && text.length === 0
@@ -324,19 +474,22 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
   const shown = body.rows
   const topPad = body.topPad
   const bottomPad = body.bottomPad
+  // A window read past the built index has real rows but estimated numbers.
+  const estimated = windowed && !win.exact
 
   // Aborting drops the progress line; the rows already highlighted stay.
   const cancelScan = (): void => { setDeep(undefined) }
 
-  // Only a real condition is worth a label here: a line past the cap, or a row budget
-  // that hid rows. A truncated buffer always switches the table to windows, so the
-  // budget line stays as the guard for a caller that never reaches the windowed path.
+  // Only a real condition is worth a label here: a line past the cap, the row budget of
+  // the non-windowed path, or the background walk that will make the row count exact.
   const status = deep !== undefined
     ? (deep.progress >= 1
         ? t('csv.scanDone', { count: deep.matches.toLocaleString('en-US') })
         : t('csv.scanProgress', { percent: Math.round(deep.progress * 100), count: deep.matches.toLocaleString('en-US') }))
     : buffer.overlong || win.overlong
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
+    : fileMode && !fileState.complete
+    ? t('csv.indexProgress', { percent: Math.round(fileState.progress * 100) })
     : buffer.truncated && !windowed
     ? t('csv.truncated', { limit: ROW_BUDGET.toLocaleString('en-US') })
     : ''
@@ -402,7 +555,9 @@ export function CsvBody({ content, scrollportRef }: PreviewBodyProps) {
                   data-row-index={row.index}
                   style={{ height: rowHeight, background: active ? ACTIVE_ROW : undefined }}
                 >
-                  <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>{row.index + 1}</td>
+                  <td style={active ? { ...indexCell, background: ACTIVE_ROW } : indexCell}>
+                    {estimated ? `~${String(row.index + 1)}` : row.index + 1}
+                  </td>
                   {row.cells.map((value, column) => (
                     <td key={column} style={bodyCell}>
                       <Marked text={value} pattern={found.pattern} emphasis={active} />
