@@ -68,7 +68,7 @@ export const zh = {
 
   'archive.title': '压缩包',
   'archive.extract': '解压',
-  'archive.viewHex': '以十六进制查看',
+  'archive.viewHex': '查看HEX',
   'archive.chooseDir': '选择目录',
   'sevenzip.binaryHint': '二进制内容，仅显示前 4 KB 的十六进制；解压后可用主预览查看',
   'sevenzip.title': '7z 压缩包',
@@ -254,7 +254,7 @@ export const en: Record<MessageKey, string> = {
 
   'archive.title': 'Archive',
   'archive.extract': 'Extract',
-  'archive.viewHex': 'View as hex',
+  'archive.viewHex': 'View HEX',
   'archive.chooseDir': 'Choose folder',
   'sevenzip.binaryHint': 'Binary content; the first 4 KB are shown as hex. Extract it to use the main preview.',
   'sevenzip.title': '7z archive',
