@@ -196,6 +196,54 @@ function measure(value: number): string {
   return value.toExponential(1)
 }
 
+/** Glyphs the model toolbar uses. */
+type ToolKind = 'reset' | 'grid' | 'wireframe' | 'rotate'
+
+/**
+ * One 15px line icon in the host's regular weight (1px, currentColor).
+ *
+ * The product icon set has no grid/wireframe/rotate glyphs, so these are drawn
+ * to its conventions rather than borrowed at a different stroke weight.
+ * @param kind - which glyph to draw.
+ * @returns the icon element.
+ */
+function ToolIcon({ kind }: { readonly kind: ToolKind }) {
+  return (
+    <svg
+      viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor"
+      strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+    >
+      {kind === 'reset' && (
+        <>
+          <path d="M2.5 5.5V3.5a1 1 0 0 1 1-1h2" />
+          <path d="M10.5 2.5h2a1 1 0 0 1 1 1v2" />
+          <path d="M13.5 10.5v2a1 1 0 0 1-1 1h-2" />
+          <path d="M5.5 13.5h-2a1 1 0 0 1-1-1v-2" />
+          <circle cx="8" cy="8" r="1.1" />
+        </>
+      )}
+      {kind === 'grid' && (
+        <>
+          <rect x="2.5" y="2.5" width="11" height="11" rx="1" />
+          <path d="M6.17 2.5v11M9.83 2.5v11M2.5 6.17h11M2.5 9.83h11" />
+        </>
+      )}
+      {kind === 'wireframe' && (
+        <>
+          <path d="M8 1.9 13.5 5v6L8 14.1 2.5 11V5L8 1.9Z" />
+          <path d="M2.5 5 8 8.1 13.5 5M8 8.1v6" />
+        </>
+      )}
+      {kind === 'rotate' && (
+        <>
+          <path d="M13 8a5 5 0 1 1-1.6-3.7" />
+          <path d="M13.2 2.8v3.3h-3.3" />
+        </>
+      )}
+    </svg>
+  )
+}
+
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   useLocale()
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
@@ -647,32 +695,35 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
         <span style={toolsStyle}>
           <button
-            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            type="button" className="dsh-model-tool" disabled={!ready}
             onClick={() => viewerRef.current?.resetView()}
-            title={t('model.resetView')} data-model-tool="reset"
+            title={t('model.resetView')} aria-label={t('model.resetView')} data-model-tool="reset"
           >
-            {t('model.resetView')}
+            <ToolIcon kind="reset" />
           </button>
           <button
-            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            type="button" className="dsh-model-tool" disabled={!ready}
             onClick={() => toggle('grid')}
-            title={t('model.grid')} aria-pressed={settings.grid} data-model-tool="grid"
+            title={t('model.grid')} aria-label={t('model.grid')}
+            aria-pressed={settings.grid} data-model-tool="grid"
           >
-            {t('model.grid')}
+            <ToolIcon kind="grid" />
           </button>
           <button
-            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            type="button" className="dsh-model-tool" disabled={!ready}
             onClick={() => toggle('wireframe')}
-            title={t('model.wireframe')} aria-pressed={settings.wireframe} data-model-tool="wireframe"
+            title={t('model.wireframe')} aria-label={t('model.wireframe')}
+            aria-pressed={settings.wireframe} data-model-tool="wireframe"
           >
-            {t('model.wireframe')}
+            <ToolIcon kind="wireframe" />
           </button>
           <button
-            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            type="button" className="dsh-model-tool" disabled={!ready}
             onClick={() => toggle('autoRotate')}
-            title={t('model.autoRotate')} aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
+            title={t('model.autoRotate')} aria-label={t('model.autoRotate')}
+            aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
           >
-            {t('model.autoRotate')}
+            <ToolIcon kind="rotate" />
           </button>
         </span>
       </div>
@@ -724,45 +775,50 @@ const statsStyle = {
 } as const
 
 const toolsStyle = {
-  display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexWrap: 'wrap',
-} as const
-
-const toolStyle = {
-  padding: '2px 7px', fontSize: 11, lineHeight: '16px', borderRadius: 'var(--dsw-radius-xs)',
+  display: 'flex', alignItems: 'center', gap: 2, marginLeft: 'auto', flexWrap: 'wrap',
 } as const
 
 /**
- * Button states live in CSS: inline styles cannot express `:hover`,
- * `:focus-visible` or `:disabled`, and the old 14% active tint on a hairline
- * border was too subtle to read as a pressed toggle.
+ * The same control as the host's document toolbar: a 28px transparent square
+ * around a 15px glyph, radius-sm, hover/active on the shared interactive
+ * tokens. Inline styles cannot express hover/focus/disabled, hence the sheet.
  */
 const TOOL_CSS = `
 .dsh-model-tool {
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  background: transparent;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
   color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--dsw-radius-sm);
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
-.dsh-model-tool:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 8%, transparent);
+.dsh-model-tool svg {
+  width: 15px;
+  height: 15px;
+}
+.dsh-model-tool:hover:not(:disabled),
+.dsh-model-tool[aria-pressed="true"]:not(:disabled) {
   color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 .dsh-model-tool:active:not(:disabled) {
-  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 15%, transparent);
+  background: var(--dsw-alias-interactive-bg-active);
 }
 .dsh-model-tool:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: 1px;
 }
 .dsh-model-tool:disabled {
-  opacity: 0.45;
+  color: var(--dsw-alias-label-tertiary);
   cursor: default;
-}
-.dsh-model-tool[aria-pressed="true"] {
-  border-color: var(--dsw-alias-state-business-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
-  color: var(--dsw-alias-label-primary);
 }
 `
 

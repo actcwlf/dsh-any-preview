@@ -235,12 +235,14 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   下载进度来自流式读取，桌面代理不给 `Content-Length` 时退化为「已读字节」。
 - **取景**：`model/frame.ts` 是纯函数，按包围球和垂直/水平 FOV 中较小者算距离，
   near/far 跟随模型尺度（不再有 1000 的地板）；面板尺寸变化时，在用户手动操作前重新取景。
-- **主题**：画布底色读 `--dsw-alias-bg-base`，网格由底色推色，浅色主题不再是深色方块。
+- **主题**：画布底色读 `--dsw-alias-bg-base`；网格与线框取主题对应的固定对比色
+  （不再由底色推导，浅色主题下也不会淡到看不见）。
 - **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
   网格也一并释放；`STLLoader` 已带法线，不再重算。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；信息条显示三角形/顶点/材质数与包围盒尺寸，
-  工具栏提供重置视角、网格、线框、自动旋转；线框用无光照的
+  工具栏提供重置视角、网格、线框、自动旋转，沿用宿主文档工具条的 28px 图标按钮
+  （15px、1px 线宽、`--dsw-alias-interactive-bg-hover` 悬停/按下态）；线框用无光照的
   `MeshBasicMaterial({ wireframe: true, toneMapped: false })` 替换网格材质，
   线条颜色按主题取对比色（原先是让受光材质自己画线，浅色模型在浅色背景上几乎看不见）。
   渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转停下后即停掉
