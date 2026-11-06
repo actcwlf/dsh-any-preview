@@ -235,9 +235,14 @@ function ToolIcon({ kind }: { readonly kind: ToolKind }) {
         </>
       )}
       {kind === 'rotate' && (
+        // Two arrows, not the single circular arrow the document header uses
+        // for reload: a loop reads as continuous motion, and at 15px the two
+        // arrowheads keep it distinct from the refresh glyph beside it.
         <>
-          <path d="M13 8a5 5 0 1 1-1.6-3.7" />
-          <path d="M13.2 2.8v3.3h-3.3" />
+          <path d="M12.8 8.2a4.9 4.9 0 0 1-8.4 3.4" />
+          <path d="M4.4 13.8v-2.7h2.7" />
+          <path d="M3.2 7.8a4.9 4.9 0 0 1 8.4-3.4" />
+          <path d="M11.6 2.2v2.7H8.9" />
         </>
       )}
     </svg>
