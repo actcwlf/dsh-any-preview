@@ -240,7 +240,9 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   网格也一并释放；`STLLoader` 已带法线，不再重算。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；信息条显示三角形/顶点/材质数与包围盒尺寸，
-  工具栏提供重置视角、网格、线框、自动旋转、截图（渲染后 `toDataURL`）。
+  工具栏提供重置视角、网格、线框、自动旋转；线框用无光照的
+  `MeshBasicMaterial({ wireframe: true, toneMapped: false })` 替换网格材质，
+  线条颜色按主题取对比色（原先是让受光材质自己画线，浅色模型在浅色背景上几乎看不见）。
   渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转停下后即停掉
   `setAnimationLoop`，启动时只画一帧背景。
 

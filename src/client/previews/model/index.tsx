@@ -18,7 +18,6 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CSSProperties } from 'react'
 import { readRange } from '../../kernel/zip.ts'
 import { claimsFile } from '../dispatch.ts'
 import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
@@ -71,8 +70,6 @@ const DEFAULT_SETTINGS: ViewerSettings = { grid: true, wireframe: false, autoRot
 interface ViewerHandle {
   apply(settings: ViewerSettings): void
   resetView(): void
-  /** @returns whether the canvas produced an image. */
-  screenshot(): boolean
 }
 
 /** The `.obj`/COFF answer, tied to the URL it was read for. */
@@ -116,6 +113,8 @@ interface SceneTheme {
   readonly background: any
   readonly gridMajor: any
   readonly gridMinor: any
+  /** Wireframe lines: unlit, so they need a fixed contrast against the surface. */
+  readonly wire: any
 }
 
 /**
@@ -173,10 +172,13 @@ function themeOf(THREE: ThreeBundle['THREE'], host: HTMLElement): SceneTheme {
   // Colour components are linear here, so the threshold is on linear luminance.
   const luminance = background.r * 0.2126 + background.g * 0.7152 + background.b * 0.0722
   const light = luminance > 0.4
+  // Fixed rather than derived from the surface: a background-relative grid
+  // stayed a few percent off white in the light theme and read as almost gone.
   return {
     background,
-    gridMajor: background.clone().offsetHSL(0, 0, light ? -0.2 : 0.08),
-    gridMinor: background.clone().offsetHSL(0, 0, light ? -0.1 : 0.04),
+    gridMajor: new THREE.Color(light ? 0x9aa1aa : 0x5f6672),
+    gridMinor: new THREE.Color(light ? 0xd2d6db : 0x363c46),
+    wire: new THREE.Color(light ? 0x2b3038 : 0xe3e7ec),
   }
 }
 
@@ -194,20 +196,6 @@ function measure(value: number): string {
   return value.toExponential(1)
 }
 
-/**
- * Trigger a browser download for one canvas image.
- * @param dataUrl - PNG data URL.
- * @param name - file name to save under.
- */
-function download(dataUrl: string, name: string): void {
-  const link = document.createElement('a')
-  link.href = dataUrl
-  link.download = name
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-}
-
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   useLocale()
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
@@ -217,7 +205,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const [progress, setProgress] = useState<Progress | undefined>(undefined)
   const [attempt, setAttempt] = useState(0)
   const [settings, setSettings] = useState<ViewerSettings>(DEFAULT_SETTINGS)
-  const [notice, setNotice] = useState<{ readonly key: string; readonly text: string } | null>(null)
   const settingsRef = useRef<ViewerSettings>(DEFAULT_SETTINGS)
   const viewerRef = useRef<ViewerHandle | null>(null)
 
@@ -231,7 +218,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     ? (probe !== null && probe.url === url ? probe.ok : null)
     : true
   const shownProgress = progress?.key === key ? progress : undefined
-  const shownNotice = notice?.key === key ? notice.text : ''
 
   // `.obj` also names a COFF object file; decide before parsing anything.
   useEffect(() => {
@@ -253,9 +239,9 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   }, [url, extension, probe?.url])
 
   // Toolbar settings reach a viewer that may not exist yet; keep the latest.
+  // The toggle handler applies immediately, so there is no second render here.
   useEffect(() => {
     settingsRef.current = settings
-    viewerRef.current?.apply(settings)
   }, [settings])
 
   useEffect(() => {
@@ -364,6 +350,44 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       let framed = true
       let observer: ResizeObserver | undefined
       let running = false
+      /** Unlit wire material, created on first use and shared by every mesh. */
+      let wireMaterial: any
+      /** Materials replaced while wireframe is on, so turning it off restores them. */
+      const originalMaterials = new WeakMap<any, any>()
+
+      /**
+       * Swap every mesh's material for an unlit wireframe one.
+       *
+       * `material.wireframe` draws lines through the lit material, so a light
+       * model on the light theme produced near-white one-device-pixel lines that
+       * read as faint or dashed. An unlit material with a fixed contrast colour
+       * renders the same pure-wireframe view, crisply.
+       * @param on - whether wireframe is shown.
+       */
+      const setWireframe = (on: boolean): void => {
+        if (model === undefined) return
+        if (on) {
+          wireMaterial ??= new THREE.MeshBasicMaterial({
+            color: theme.wire,
+            wireframe: true,
+            toneMapped: false,
+          })
+          model.traverse((child: any) => {
+            if (child.isMesh !== true || child.material === undefined) return
+            if (!originalMaterials.has(child)) originalMaterials.set(child, child.material)
+            child.material = Array.isArray(child.material)
+              ? child.material.map(() => wireMaterial)
+              : wireMaterial
+          })
+          return
+        }
+        model.traverse((child: any) => {
+          const original = originalMaterials.get(child)
+          if (original === undefined) return
+          child.material = original
+          originalMaterials.delete(child)
+        })
+      }
 
       /**
        * Render one frame and stop when damping/auto-rotation has settled.
@@ -419,14 +443,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
        */
       const apply = (next: ViewerSettings): void => {
         if (grid !== undefined) grid.visible = next.grid
-        if (model !== undefined) {
-          model.traverse((child: any) => {
-            const material = child.material
-            for (const one of Array.isArray(material) ? material : material === undefined ? [] : [material]) {
-              if (one !== null && typeof one === 'object' && 'wireframe' in one) one.wireframe = next.wireframe
-            }
-          })
-        }
+        setWireframe(next.wireframe)
         controls.autoRotate = next.autoRotate
         invalidate()
       }
@@ -436,18 +453,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         resetView: (): void => {
           framed = true
           fit()
-        },
-        screenshot: (): boolean => {
-          try {
-            // Render now: the drawing buffer is only readable in this task.
-            renderer.render(scene, camera)
-            const dataUrl = renderer.domElement.toDataURL('image/png')
-            const base = absolutePath === undefined ? 'model' : basenameOf(absolutePath).replace(/\.[^.]+$/u, '')
-            download(String(dataUrl), `${base === '' ? 'model' : base}.png`)
-            return true
-          } catch {
-            return false
-          }
         },
       }
 
@@ -469,6 +474,11 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         controls.removeEventListener('start', stopFraming)
         controls.removeEventListener('change', invalidate)
         controls.dispose()
+        // Restore the real materials first, so disposing the model frees them
+        // rather than the wireframe stand-in.
+        setWireframe(false)
+        wireMaterial?.dispose?.()
+        wireMaterial = undefined
         if (model !== undefined) disposeObject(model)
         if (grid !== undefined) disposeObject(grid)
         scene.environment = null
@@ -555,6 +565,8 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
           const spec = gridForBox(extents.x, extents.z, box.min.y - sphere.center.y)
           grid = new THREE.GridHelper(spec.size, spec.divisions, theme.gridMajor, theme.gridMinor)
           grid.position.y = spec.y
+          // Grid colours are picked for contrast, not tone-mapped into the scene.
+          grid.material.toneMapped = false
           scene.add(grid)
         }
 
@@ -593,7 +605,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const retry = useCallback((): void => {
     setProbe(null)
     setProgress(undefined)
-    setNotice(null)
     setView({ ...IDLE, key })
     setAttempt((count) => count + 1)
   }, [key])
@@ -603,11 +614,6 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     settingsRef.current = next
     setSettings(next)
     viewerRef.current?.apply(next)
-  }
-
-  const screenshot = (): void => {
-    const ok = viewerRef.current?.screenshot() ?? false
-    if (!ok) setNotice({ key, text: t('model.screenshotFailed') })
   }
 
   const ready = shown.status === 'ready'
@@ -629,10 +635,11 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         : '',
     ].join('')
     : ''
-  const noticeText = shown.note !== '' ? shown.note : shownNotice
+  const noteText = shown.note
 
   return (
     <div style={PANE_ROOT} data-model-status={shown.status}>
+      <style>{TOOL_CSS}</style>
       <div style={barStyle}>
         <span style={titleStyle} title={typeof absolutePath === 'string' ? absolutePath : undefined}>
           {typeof absolutePath === 'string' ? basenameOf(absolutePath) : t('model.title')}
@@ -640,38 +647,36 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
         <span style={toolsStyle}>
           <button
-            type="button" style={toolStyle} disabled={!ready} onClick={() => viewerRef.current?.resetView()}
+            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            onClick={() => viewerRef.current?.resetView()}
             title={t('model.resetView')} data-model-tool="reset"
           >
             {t('model.resetView')}
           </button>
           <button
-            type="button" style={activeToolStyle(settings.grid)} disabled={!ready} onClick={() => toggle('grid')}
+            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            onClick={() => toggle('grid')}
             title={t('model.grid')} aria-pressed={settings.grid} data-model-tool="grid"
           >
             {t('model.grid')}
           </button>
           <button
-            type="button" style={activeToolStyle(settings.wireframe)} disabled={!ready} onClick={() => toggle('wireframe')}
+            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            onClick={() => toggle('wireframe')}
             title={t('model.wireframe')} aria-pressed={settings.wireframe} data-model-tool="wireframe"
           >
             {t('model.wireframe')}
           </button>
           <button
-            type="button" style={activeToolStyle(settings.autoRotate)} disabled={!ready} onClick={() => toggle('autoRotate')}
+            type="button" className="dsh-model-tool" style={toolStyle} disabled={!ready}
+            onClick={() => toggle('autoRotate')}
             title={t('model.autoRotate')} aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
           >
             {t('model.autoRotate')}
           </button>
-          <button
-            type="button" style={toolStyle} disabled={!ready} onClick={screenshot}
-            title={t('model.screenshot')} data-model-tool="screenshot"
-          >
-            {t('model.screenshot')}
-          </button>
         </span>
       </div>
-      {noticeText !== '' && <div style={noteStyle}>{noticeText}</div>}
+      {noteText !== '' && <div style={noteStyle}>{noteText}</div>}
       <div
         style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}
         title={t('model.hint')}
@@ -724,24 +729,42 @@ const toolsStyle = {
 
 const toolStyle = {
   padding: '2px 7px', fontSize: 11, lineHeight: '16px', borderRadius: 'var(--dsw-radius-xs)',
-  border: '0.5px solid var(--dsw-alias-border-l2)', background: 'transparent',
-  color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer',
-} as const
-
-const toolActiveStyle = {
-  borderColor: 'var(--dsw-alias-state-business-primary)',
-  color: 'var(--dsw-alias-label-primary)',
-  background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent)',
 } as const
 
 /**
- * Style for one toggle button.
- * @param active - whether the toggle is on.
- * @returns the button style.
+ * Button states live in CSS: inline styles cannot express `:hover`,
+ * `:focus-visible` or `:disabled`, and the old 14% active tint on a hairline
+ * border was too subtle to read as a pressed toggle.
  */
-function activeToolStyle(active: boolean): CSSProperties {
-  return active ? { ...toolStyle, ...toolActiveStyle } : toolStyle
+const TOOL_CSS = `
+.dsh-model-tool {
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
+.dsh-model-tool:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 8%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+.dsh-model-tool:active:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-label-secondary) 15%, transparent);
+}
+.dsh-model-tool:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+.dsh-model-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.dsh-model-tool[aria-pressed="true"] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 16%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+`
 
 const noteStyle = {
   padding: '4px 10px', fontSize: 11, color: 'var(--dsw-alias-state-warn-primary)',
