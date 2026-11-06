@@ -236,7 +236,10 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **取景**：`model/frame.ts` 是纯函数，按包围球和垂直/水平 FOV 中较小者算距离，
   near/far 跟随模型尺度（不再有 1000 的地板）；面板尺寸变化时，在用户手动操作前重新取景。
 - **主题**：画布底色读 `--dsw-alias-bg-base`；网格与线框取主题对应的固定对比色
-  （不再由底色推导，浅色主题下也不会淡到看不见）。
+  （不再由底色推导，浅色主题下也不会淡到看不见）。宿主把主题投影为
+  `body[data-ds-dark-theme]` 与 body/html 上的 token 变量，`useModelViewer` 用
+  `MutationObserver` 监听这些属性：切换浅/深色时重算画布底色、重建网格、更新线框材质，
+  不用重开文件。
 - **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
   网格也一并释放；`STLLoader` 已带法线，不再重算。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
@@ -247,6 +250,10 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   线条颜色按主题取对比色（原先是让受光材质自己画线，浅色模型在浅色背景上几乎看不见）。
   渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转停下后即停掉
   `setAnimationLoop`，启动时只画一帧背景。
+
+实现分层：`index.tsx` 只做四个扩展名的注册；`ModelBody.tsx` 负责文件名、统计与布局；
+`ModelToolbar.tsx` / `ModelOverlay.tsx` / `model-icons.tsx` 是纯展示；
+`useModelViewer.ts` 独占 WebGL 生命周期、解码编排、主题跟随与清理。
 
 ### 解码器与外部资源
 
