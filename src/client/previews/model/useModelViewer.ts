@@ -12,7 +12,7 @@
  *   variables on `body`/`html` are observed, and the canvas background, grid
  *   and wireframe colour follow a light/dark switch without reopening a file.
  */
-import { PreviewError, errorText } from '../../kernel/errors.ts'
+import { PreviewError } from '../../kernel/errors.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -38,6 +38,9 @@ const MAX_BYTES = LIMITS.modelBytes
 
 /** Models whose geometry exceeds this are refused rather than frozen. */
 const MAX_TRIANGLES = LIMITS.modelTriangles
+
+/** Declared texture bytes accepted; decoded pixels can be several times larger. */
+const MAX_TEXTURE_BYTES = LIMITS.modelTextureBytes
 
 /** Unit direction the camera sits along, measured from the model's centre. */
 const VIEW = ((): { x: number; y: number; z: number } => {
@@ -73,6 +76,8 @@ export interface ViewerHandle {
 /** What the pane shows for one file and revision; a different key is not shown. */
 export interface ModelViewState {
   readonly status: 'loading' | 'ready' | 'error'
+  /** Reading the file, or decoding/uploading it after the bytes arrived. */
+  readonly phase: 'reading' | 'decoding'
   readonly detail: string
   readonly triangles: number
   readonly vertices: number
@@ -122,7 +127,7 @@ interface KeyedProgress extends ModelProgress {
 
 /** No file yet, or one this run has not settled: the pane is loading. */
 const IDLE: ModelViewState = {
-  status: 'loading', detail: '', triangles: 0, vertices: 0, materials: 0,
+  status: 'loading', phase: 'reading', detail: '', triangles: 0, vertices: 0, materials: 0,
   width: 0, height: 0, depth: 0, note: '', retryable: true,
 }
 
@@ -204,6 +209,26 @@ function sameTheme(left: SceneTheme, right: SceneTheme): boolean {
     && left.gridMajor.getHexString() === right.gridMajor.getHexString()
     && left.gridMinor.getHexString() === right.gridMinor.getHexString()
     && left.wire.getHexString() === right.wire.getHexString()
+}
+
+/**
+ * Turn any load failure into a localized sentence for the pane.
+ *
+ * The console keeps the original error (and its original language); the UI is
+ * always localized, so an English three.js message never appears next to a
+ * Chinese toolbar.
+ * @param error - whatever the loader rejected with.
+ * @returns a translation key's text.
+ */
+function failureText(error: unknown): string {
+  if (error instanceof PreviewError) return t(error.key, error.params)
+  const message = error instanceof Error ? error.message : String(error)
+  if (/worker/iu.test(message)) return t('model.decoderWorkerBlocked')
+  if (/draco|ktx2|basis|meshopt/iu.test(message)) return t('model.decoderUnavailable')
+  if (/fetch|network|http|load(?:ing)?\s+(?:buffer|image|texture)/iu.test(message)) {
+    return t('model.resourceFailed')
+  }
+  return t('model.parseFailed')
 }
 
 /**
@@ -308,8 +333,9 @@ export function useModelViewer(
       let bundle: ThreeBundle
       try {
         bundle = await loadThree()
-      } catch {
+      } catch (error) {
         // The chunk is a capability: say it is unavailable, not that the model is bad.
+        console.error('[dsh-any-preview] three chunk unavailable', error)
         if (alive) fail(t('model.chunkUnavailable'))
         return
       }
@@ -318,9 +344,10 @@ export function useModelViewer(
 
       try {
         renderer = new THREE.WebGLRenderer({ antialias: true })
-      } catch {
+      } catch (error) {
         // No context is a normal outcome on remote desktops and blocklisted GPUs.
         // Throwing here would crash the slot entry and blank every later model.
+        console.error('[dsh-any-preview] WebGL renderer creation failed', error)
         fail(t('model.webglUnavailable'))
         return
       }
@@ -376,10 +403,23 @@ export function useModelViewer(
       let observer: ResizeObserver | undefined
       let themeObserver: MutationObserver | undefined
       let running = false
+      let contextLost = false
       /** Unlit wire material, created on first use and shared by every mesh. */
       let wireMaterial: any
       /** Materials replaced while wireframe is on, so turning it off restores them. */
       const originalMaterials = new WeakMap<any, any>()
+
+      const onContextLost = (event: Event): void => {
+        // Keep the browser from trying to restore a context we cannot use; the
+        // pane offers Retry, which rebuilds the renderer from scratch.
+        event.preventDefault()
+        contextLost = true
+        running = false
+        renderer.setAnimationLoop(null)
+        console.warn('[dsh-any-preview] WebGL context lost')
+        if (alive) fail(t('model.contextLost'))
+      }
+      renderer.domElement.addEventListener('webglcontextlost', onContextLost)
 
       /**
        * Swap every mesh's material for an unlit wireframe one.
@@ -550,6 +590,7 @@ export function useModelViewer(
       shutdown = (): void => {
         running = false
         renderer.setAnimationLoop(null)
+        renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
         observer?.disconnect()
         themeObserver?.disconnect()
         controls.removeEventListener('start', stopFraming)
@@ -560,6 +601,7 @@ export function useModelViewer(
         setWireframe(false)
         wireMaterial?.dispose?.()
         wireMaterial = undefined
+        model?.userData?.releaseBlobs?.()
         if (model !== undefined) disposeObject(model)
         if (grid !== undefined) disposeObject(grid)
         scene.environment = null
@@ -588,6 +630,10 @@ export function useModelViewer(
             size: formatBytes(bytes.byteLength), limit: formatBytes(MAX_BYTES),
           })
         }
+        // The download is done; from here the wait is decode and GPU upload,
+        // which has no byte progress but is still worth naming.
+        setProgress(undefined)
+        setView({ ...IDLE, key, status: 'loading', phase: 'decoding' })
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
         const text = extension === 'obj' ? new TextDecoder().decode(buffer) : undefined
         const needs = modelNeeds(extension, buffer, text)
@@ -606,6 +652,16 @@ export function useModelViewer(
           }
         }
 
+        const loadBinary = async (path: string): Promise<Blob> => {
+          const fileSource = fileUrl(path)
+          if (fileSource === undefined) throw new PreviewError('common.fileUrl')
+          const binaryResponse = await fetch(fileSource, { signal: controller.signal })
+          if (!binaryResponse.ok) {
+            throw new PreviewError('common.httpError', { status: binaryResponse.status })
+          }
+          return binaryResponse.blob()
+        }
+
         const object = await parseModel(bundle, extension, buffer, {
           text,
           baseDir,
@@ -613,20 +669,18 @@ export function useModelViewer(
           decoders: needs,
           assetBase,
           renderer,
-          loadText: async (path) => {
-            const fileSource = fileUrl(path)
-            if (fileSource === undefined) throw new PreviewError('common.fileUrl')
-            const textResponse = await fetch(fileSource, { signal: controller.signal })
-            if (!textResponse.ok) throw new PreviewError('common.httpError', { status: textResponse.status })
-            return textResponse.text()
-          },
+          loadBinary,
+          loadText: async (path) => (await loadBinary(path)).text(),
+          textureBudget: MAX_TEXTURE_BYTES,
         })
-        if (!alive) {
+        if (!alive || contextLost) {
+          object.userData?.releaseBlobs?.()
           disposeObject(object)
           return
         }
         const stats = summarize(object)
         if (stats.triangles > MAX_TRIANGLES) {
+          object.userData?.releaseBlobs?.()
           disposeObject(object)
           throw new PreviewError('model.tooManyTriangles', {
             count: stats.triangles.toLocaleString('en-US'),
@@ -655,6 +709,7 @@ export function useModelViewer(
         setView({
           key,
           status: 'ready',
+          phase: 'reading',
           detail: '',
           triangles: stats.triangles,
           vertices: stats.vertices,
@@ -662,13 +717,18 @@ export function useModelViewer(
           width: extents.x,
           height: extents.y,
           depth: extents.z,
-          note: object.userData.materialsUnavailable === true ? t('model.materialsFailed') : '',
+          note: object.userData.texturesUnavailable === true
+            ? t('model.texturesFailed')
+            : object.userData.materialsUnavailable === true ? t('model.materialsFailed') : '',
           retryable: true,
         })
       } catch (error) {
         if (!alive || controller.signal.aborted) return
+        // The console keeps the loader's original wording and language; the
+        // pane only ever shows a localized sentence.
+        console.error('[dsh-any-preview] model load failed', error)
         teardown()
-        fail(errorText(error, 'model.parseFailed'))
+        if (!contextLost) fail(failureText(error))
       }
     })()
 

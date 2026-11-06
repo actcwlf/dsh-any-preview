@@ -240,3 +240,64 @@ export function unsafeGltfReference(
   }
   return undefined
 }
+
+/** One external resource a glTF expects to fetch over the file route. */
+export interface ExternalReference {
+  readonly uri: string
+  /** Images count against the texture budget; buffers do not. */
+  readonly kind: 'buffer' | 'image'
+}
+
+/**
+ * External files a glTF declares, for prefetching before three starts fetching.
+ *
+ * Only plain URIs are returned: embedded base64 images and the GLB binary chunk
+ * need no request, and blob URLs are already local.
+ * @param json - parsed glTF document.
+ * @returns buffers then images, in declaration order.
+ */
+export function externalReferences(json: Record<string, any> | undefined): readonly ExternalReference[] {
+  if (json === undefined) return []
+  const found: ExternalReference[] = []
+  for (const [field, kind] of [['buffers', 'buffer'], ['images', 'image']] as const) {
+    const list = json[field]
+    if (!Array.isArray(list)) continue
+    for (const entry of list as Reference[]) {
+      const uri = entry?.uri
+      if (typeof uri !== 'string' || uri === '') continue
+      if (uri.startsWith('data:') || uri.startsWith('blob:')) continue
+      found.push({ uri, kind })
+    }
+  }
+  return found
+}
+
+/**
+ * Bytes of image data a glTF carries inline or embeds in its own buffer.
+ *
+ * This is a source-byte heuristic, not decoded pixel memory: enough to refuse
+ * an obviously oversized texture set before the GPU allocates anything. External
+ * images are counted as they are prefetched.
+ * @param json - parsed glTF document.
+ * @returns declared bytes, or 0 when nothing is embedded.
+ */
+export function declaredImageBytes(json: Record<string, any> | undefined): number {
+  if (json === undefined) return 0
+  const views = Array.isArray(json.bufferViews) ? json.bufferViews : []
+  const images = Array.isArray(json.images) ? json.images : []
+  let total = 0
+  for (const image of images as Array<Record<string, any>>) {
+    const uri = image?.uri
+    if (typeof uri === 'string' && uri.startsWith('data:')) {
+      const comma = uri.indexOf(',')
+      if (comma >= 0) total += Math.floor((uri.length - comma - 1) * 0.75)
+      continue
+    }
+    const viewIndex = image?.bufferView
+    if (Number.isInteger(viewIndex)) {
+      const length = views[viewIndex]?.byteLength
+      if (typeof length === 'number' && Number.isFinite(length)) total += length
+    }
+  }
+  return total
+}

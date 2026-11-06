@@ -100,7 +100,8 @@ dsh plugin --profile desktop remove dsh-any-preview
 - i18n：界面文案已中英双语；解析层内部诊断（ZIP 守卫、邮件头标签等）仍为中文
 - 回环媒体路由依赖 `webServer`，缺失该服务的 profile 会退回代理路径（受 Blob 上限约束）
 - 3D：Draco/KTX2/meshopt 的解码器随包分发（构建时从 three 拷贝）；KTX2 依赖 `blob:` Worker，
-  极端 CSP 环境可能不可用；动画/骨骼不播放；外部 `.mtl`/贴图不参与自动刷新
+  极端 CSP 环境会显示本地化解码失败；动画/骨骼不播放；外部 `.mtl`/贴图不参与自动刷新；
+  贴图总量超过 64 MB 会被拒绝
 - 加密压缩包、ZIP64、7z / rar 仍未支持
 - `.ts` 按源码处理（由内置代码预览接管）：多数 `.ts` 文件是 TypeScript，而渲染器选择只看路径；MPEG-TS 请用 `.m2ts` 或改扩展名
 

@@ -14,6 +14,8 @@ import type { ModelExtrasBundle } from '../../../chunk/model-extras.ts'
 import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import {
+  declaredImageBytes,
+  externalReferences,
   gltfJson,
   mtllibNames,
   resourceBase,
@@ -48,6 +50,10 @@ export interface ParseOptions {
   readonly renderer?: any
   /** Read one sandboxed text file (a material library). */
   readonly loadText?: (absolutePath: string) => Promise<string>
+  /** Read one sandboxed binary file, so external loads can be aborted. */
+  readonly loadBinary?: (absolutePath: string) => Promise<Blob>
+  /** Declared image bytes accepted before decoding. */
+  readonly textureBudget?: number
 }
 
 /** three.js objects are opaque here; their real types live in the lazy chunk. */
@@ -57,20 +63,83 @@ export type Object3D = any
 type Progress = (loaded: number, total: number | undefined) => void
 
 /**
+ * Files fetched ahead of three's loaders, kept as blob URLs.
+ *
+ * three's FileLoader/TextureLoader have no request signal, so a parse that is
+ * abandoned halfway otherwise leaves network requests running. Reading the
+ * external files through `loadBinary` (which is abortable) and handing three a
+ * blob URL makes every external fetch cancellable, and lets a texture budget be
+ * enforced before the GPU allocates anything.
+ */
+class Prefetch {
+  private readonly urls = new Map<string, string>()
+  private readonly load: ((absolutePath: string) => Promise<Blob>) | undefined
+  private readonly budget: number | undefined
+  private bytes = 0
+  private disposed = false
+
+  constructor(load: ((absolutePath: string) => Promise<Blob>) | undefined, budget: number | undefined) {
+    this.load = load
+    this.budget = budget
+  }
+
+  /**
+   * The blob URL for a file already fetched.
+   * @param path - absolute path inside the model directory.
+   * @returns a blob URL, or undefined when the file was not prefetched.
+   */
+  get(path: string): string | undefined {
+    return this.urls.get(path)
+  }
+
+  /**
+   * Fetch one file and keep it alive as a blob URL.
+   * @param path - absolute path inside the model directory.
+   * @param image - whether the bytes count against the texture budget.
+   */
+  async add(path: string, image: boolean): Promise<void> {
+    if (this.load === undefined || this.urls.has(path)) return
+    const blob = await this.load(path)
+    if (image && this.budget !== undefined) {
+      this.bytes += blob.size
+      if (this.bytes > this.budget) throw new PreviewError('model.texturesTooLarge')
+    }
+    this.urls.set(path, URL.createObjectURL(blob))
+  }
+
+  /** Revoke every blob URL; safe to call more than once. */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    for (const url of this.urls.values()) URL.revokeObjectURL(url)
+    this.urls.clear()
+  }
+}
+
+/** Whether a rejection is an aborted fetch rather than a model problem. */
+function isAbortError(error: unknown): boolean {
+  return typeof error === 'object' && error !== null
+    && 'name' in error && (error as { name?: unknown }).name === 'AbortError'
+}
+
+/**
  * Build a loading manager that maps every external reference through the
  * sandbox. A blocked reference is an error: loading the geometry but silently
  * dropping textures would hide a file that tried to read outside its directory.
  * @param bundle - three.js module.
  * @param directory - the model's own directory.
+ * @param prefetch - blob URLs to hand three instead of the file route.
  * @returns a manager for the model's loaders.
  */
-function sandboxManager(bundle: ModelBundle, directory: string): any {
+function sandboxManager(bundle: ModelBundle, directory: string, prefetch?: Prefetch): any {
   const manager = new bundle.THREE.LoadingManager()
   const base = resourceBase(directory)
   manager.setURLModifier((url: string) => {
     const target = resourceTarget(url, base, directory)
     if (target.kind === 'blocked') throw new PreviewError('model.resourceOutside')
     if (target.kind === 'verbatim') return url
+    const cached = prefetch?.get(target.path)
+    if (cached !== undefined) return cached
     const resolved = fileUrl(target.path)
     if (resolved === undefined) throw new PreviewError('common.fileUrl')
     return resolved
@@ -121,20 +190,45 @@ async function parseGltf(
   options: ParseOptions,
 ): Promise<Object3D> {
   const directory = options.baseDir
+  const json = gltfJson(bytes, extension)
   if (directory !== undefined) {
     // Fail before three starts fetching, so the pane can say what happened.
-    const offending = unsafeGltfReference(gltfJson(bytes, extension), directory)
+    const offending = unsafeGltfReference(json, directory)
     if (offending !== undefined) throw new PreviewError('model.resourceOutside')
   }
-  const manager = directory === undefined ? undefined : sandboxManager(bundle, directory)
+  if (options.textureBudget !== undefined && declaredImageBytes(json) > options.textureBudget) {
+    throw new PreviewError('model.texturesTooLarge')
+  }
+  const prefetch = new Prefetch(options.loadBinary, options.textureBudget)
+  const manager = directory === undefined ? undefined : sandboxManager(bundle, directory, prefetch)
   const loader = manager === undefined ? new bundle.GLTFLoader() : new bundle.GLTFLoader(manager)
   const disposables: Array<{ dispose?: () => void }> = []
   try {
+    if (directory !== undefined && options.loadBinary !== undefined) {
+      for (const reference of externalReferences(json)) {
+        const resolved = resolveResource(directory, reference.uri)
+        if (resolved === undefined) throw new PreviewError('model.resourceOutside')
+        try {
+          await prefetch.add(resolved, reference.kind === 'image')
+        } catch (error) {
+          // A missing texture should not reject the model; three still gets a
+          // chance to load it through the normal route. A missing buffer is
+          // fatal, and so is exceeding the texture budget.
+          if (reference.kind === 'buffer'
+            || isAbortError(error)
+            || (error instanceof PreviewError && error.key === 'model.texturesTooLarge')) {
+            throw error
+          }
+          console.warn('[dsh-any-preview] texture prefetch failed', resolved, error)
+        }
+      }
+    }
     configureDecoders(loader, options, disposables)
     const path = directory === undefined ? '' : resourceBase(directory)
     const gltf = await loader.parseAsync(bytes, path)
     return gltf.scene
   } finally {
+    prefetch.dispose()
     for (const decoder of disposables) {
       try {
         decoder.dispose?.()
@@ -146,14 +240,50 @@ async function parseGltf(
 }
 
 /**
+ * Texture paths an MTL creator declared, for prefetching before it starts loads.
+ * @param info - merged `materialsInfo` table.
+ * @returns relative texture paths without duplicates.
+ */
+function mtlTexturePaths(info: any): readonly string[] {
+  const paths = new Set<string>()
+  const materials = info !== null && typeof info === 'object' ? Object.values(info) : []
+  for (const material of materials) {
+    if (material === null || typeof material !== 'object') continue
+    for (const [key, value] of Object.entries(material as Record<string, unknown>)) {
+      if (typeof value !== 'string') continue
+      if (!/^(?:map_|bump|norm|disp|decal|refl)/iu.test(key)) continue
+      const path = value.trim().replace(/^"(.*)"$/u, '$1')
+      // Option-prefixed values (`-bm 1 file.png`) are rare; leave them to
+      // MTLLoader rather than guessing how many option arguments they take.
+      if (path === '' || path.startsWith('-')) continue
+      paths.add(path)
+    }
+  }
+  return [...paths]
+}
+
+/** What the material library produced, including texture prefetch failures. */
+interface LoadedMaterials {
+  readonly creator: any
+  readonly texturesUnavailable: boolean
+}
+
+/**
  * Load the material libraries an OBJ names, merged into one creator.
  * @param bundle - three.js and the base loaders (the MTL loader rides with them).
  * @param options - decode context; must carry `baseDir` and `loadText`.
  * @param text - OBJ source.
  * @param manager - loading manager used for the MTL textures.
- * @returns the creator, or undefined when the OBJ names no library.
+ * @param prefetch - blob cache the manager resolves through.
+ * @returns the creator and whether any texture could not be fetched.
  */
-async function loadMaterials(bundle: ModelBundle, options: ParseOptions, text: string, manager: any): Promise<any> {
+async function loadMaterials(
+  bundle: ModelBundle,
+  options: ParseOptions,
+  text: string,
+  manager: any,
+  prefetch: Prefetch,
+): Promise<LoadedMaterials | undefined> {
   const directory = options.baseDir
   if (directory === undefined) return undefined
   const names = mtllibNames(text)
@@ -171,8 +301,26 @@ async function loadMaterials(bundle: ModelBundle, options: ParseOptions, text: s
   if (first === undefined) return undefined
   // OBJ allows more than one mtllib; MTLLoader's creator reads a merged table.
   for (const extra of creators.slice(1)) Object.assign(first.materialsInfo, extra.materialsInfo)
+  let texturesUnavailable = false
+  for (const name of mtlTexturePaths(first.materialsInfo)) {
+    const resolved = resolveResource(directory, name)
+    if (resolved === undefined) {
+      texturesUnavailable = true
+      continue
+    }
+    try {
+      await prefetch.add(resolved, true)
+    } catch (error) {
+      if (isAbortError(error)
+        || (error instanceof PreviewError && error.key === 'model.texturesTooLarge')) {
+        throw error
+      }
+      console.warn('[dsh-any-preview] texture prefetch failed', resolved, error)
+      texturesUnavailable = true
+    }
+  }
   first.preload()
-  return first
+  return { creator: first, texturesUnavailable }
 }
 
 /**
@@ -212,22 +360,41 @@ function showBothSides(root: Object3D, three: any): void {
 async function parseObj(bundle: ModelBundle, bytes: ArrayBuffer, options: ParseOptions): Promise<Object3D> {
   const text = options.text ?? new TextDecoder().decode(bytes)
   const directory = options.baseDir
-  const manager = directory === undefined ? undefined : sandboxManager(bundle, directory)
-  const loader = manager === undefined ? new bundle.OBJLoader() : new bundle.OBJLoader(manager)
+  const prefetch = new Prefetch(options.loadBinary, options.textureBudget)
+  const manager = directory === undefined ? undefined : sandboxManager(bundle, directory, prefetch)
+  if (manager !== undefined) manager.onLoad = () => prefetch.dispose()
+  const objLoader = manager === undefined ? new bundle.OBJLoader() : new bundle.OBJLoader(manager)
   let materials: any
   let materialsUnavailable = false
+  let texturesUnavailable = false
   if (directory !== undefined) {
     try {
-      materials = await loadMaterials(bundle, options, text, manager)
-    } catch {
+      const loaded = await loadMaterials(bundle, options, text, manager, prefetch)
+      if (loaded !== undefined) {
+        materials = loaded.creator
+        texturesUnavailable = loaded.texturesUnavailable
+      }
+    } catch (error) {
+      if (isAbortError(error)
+        || (error instanceof PreviewError && error.key === 'model.texturesTooLarge')) {
+        prefetch.dispose()
+        throw error
+      }
       materialsUnavailable = true
     }
   }
-  if (materials !== undefined) loader.setMaterials(materials)
-  const object = loader.parse(text)
-  showBothSides(object, bundle.THREE)
-  if (materialsUnavailable) object.userData.materialsUnavailable = true
-  return object
+  try {
+    if (materials !== undefined) objLoader.setMaterials(materials)
+    const object = objLoader.parse(text)
+    showBothSides(object, bundle.THREE)
+    object.userData.releaseBlobs = () => prefetch.dispose()
+    if (materialsUnavailable) object.userData.materialsUnavailable = true
+    if (texturesUnavailable) object.userData.texturesUnavailable = true
+    return object
+  } catch (error) {
+    prefetch.dispose()
+    throw error
+  }
 }
 
 /**

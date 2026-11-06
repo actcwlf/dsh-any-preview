@@ -230,9 +230,19 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   三角形数、错误文案或场景留在新文件下。
 - **可恢复**：加载/解析失败在面板内显示并给出「重试」（`attempt` 让 effect 重跑）。
   WebGL 创建失败只在本面板报错——若让异常冒泡，宿主的 slot 边界会把该 entry 退役，
-  本次会话后续所有模型都会变成空白。
-- **可取消**：一个 `AbortController` 同时管整文件 fetch 与 `.obj` 头部探测；
-  下载进度来自流式读取，桌面代理不给 `Content-Length` 时退化为「已读字节」。
+  本次会话后续所有模型都会变成空白。`webglcontextlost` 会阻止默认恢复、停掉循环并在
+  面板内提示重试，而不是留下一块冻结的画布。
+- **可取消、分阶段**：一个 `AbortController` 同时管整文件 fetch、`.obj` 头部探测、
+  glTF 外部 buffer/image 与 MTL 贴图的预取；下载进度来自流式读取，桌面代理不给
+  `Content-Length` 时退化为「已读字节」。下载完成后切到「正在解码」阶段，避免
+  100% 之后长时间只有静态加载文案。
+- **外部资源**：`loadBinary` 先把 glTF 的 `.bin`/图片和 MTL 贴图读成 Blob，再以
+  `blob:` URL 交给 three；这样请求可被 abort，也绕开了 three loader 没有 signal 的限制。
+- **贴图预算**：`declaredImageBytes` 检查 glTF 内嵌/`bufferView` 图片，外部图片与 MTL 贴图
+  在预取时按 Blob 大小累计；超过 `LIMITS.modelTextureBytes`（64 MB）直接报错，避免
+  解码后的显存把标签页拖死。
+- **错误文案**：面板里只出现 i18n 文案；three/loader 的原始错误只进 console，
+  且保持它的原文与语言，不再转成中文。
 - **取景**：`model/frame.ts` 是纯函数，按包围球和垂直/水平 FOV 中较小者算距离，
   near/far 跟随模型尺度（不再有 1000 的地板）；面板尺寸变化时，在用户手动操作前重新取景。
 - **主题**：画布底色读 `--dsw-alias-bg-base`；网格与线框取主题对应的固定对比色
@@ -272,6 +282,8 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - 解码器二进制来自 three 自带的 `examples/jsm/libs/{draco/gltf,basis}`，
   由 `scripts/sync-decoders.mjs` 在构建时拷进 `lib/`：不新增 npm 依赖，运行时也不走 CDN。
   `ASSET_MIME` 同时是回环路由的白名单，wasm 声明为 `application/wasm`。
+  构建脚本校验四个文件的 SHA-256 与字节数；three 升级换掉 decoder 时会直接失败，
+  不会静默混用不同版本的 Draco/Basis。
 - `.gltf` 的外部 `.bin`/贴图与 `.mtl` 里的贴图都经过 `previews/model/resources.ts` 的同目录
   沙箱：拒绝绝对 URL、盘符、`//host`、`..` 以及百分号编码的穿越。glTF 的越界引用在解析前
   就报错；OBJ 的材质库读取失败则降级为无材质并在信息条提示。

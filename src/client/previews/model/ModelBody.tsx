@@ -44,14 +44,16 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     content, resourceAddress, useResource,
   )
   const ready = view.status === 'ready'
-  const loadingText = progress === undefined
-    ? t('model.loading')
-    : progress.total === undefined
-      ? t('model.loadingBytes', { loaded: formatBytes(progress.loaded) })
-      : t('model.loadingProgress', {
-        loaded: formatBytes(progress.loaded),
-        total: formatBytes(progress.total),
-      })
+  const loadingText = view.phase === 'decoding'
+    ? t('model.decoding')
+    : progress === undefined
+      ? t('model.loading')
+      : progress.total === undefined
+        ? t('model.loadingBytes', { loaded: formatBytes(progress.loaded) })
+        : t('model.loadingProgress', {
+          loaded: formatBytes(progress.loaded),
+          total: formatBytes(progress.total),
+        })
   const statsText = ready
     ? [
       view.triangles > 0 ? t('model.triangles', { count: view.triangles.toLocaleString('en-US') }) : '',

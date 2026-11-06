@@ -105,6 +105,54 @@ test('a glb decodes into a scene with its triangles counted', async () => {
   assert.equal(countTriangles(scene), 1)
 })
 
+test('declared image bytes over the texture budget are refused before decoding', async () => {
+  const document = JSON.stringify({
+    asset: { version: '2.0' },
+    bufferViews: [{ byteLength: 1024 }],
+    images: [{ bufferView: 0 }],
+  })
+  await assert.rejects(
+    parseModel(bundle, 'gltf', encoder.encode(document).buffer, { textureBudget: 100 }),
+    (error) => error.key === 'model.texturesTooLarge',
+  )
+})
+
+test('an aborted external buffer rejects instead of continuing to parse', async () => {
+  const document = {
+    asset: { version: '2.0' },
+    buffers: [{ uri: 'scene.bin', byteLength: 44 }],
+  }
+  await assert.rejects(
+    parseModel(bundle, 'gltf', encoder.encode(JSON.stringify(document)).buffer, {
+      baseDir: '/models',
+      loadBinary: async () => {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        throw error
+      },
+    }),
+    (error) => error.name === 'AbortError',
+  )
+})
+
+test('an aborted material texture rejects instead of falling back', async () => {
+  const obj = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nmtllib mat.mtl\nusemtl red\nf 1 2 3\n'
+  const mtl = 'newmtl red\nKd 1 0 0\nmap_Kd tex.png\n'
+  await assert.rejects(
+    parseModel(bundle, 'obj', encoder.encode(obj).buffer, {
+      text: obj,
+      baseDir: '/models',
+      loadText: async () => mtl,
+      loadBinary: async () => {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        throw error
+      },
+    }),
+    (error) => error.name === 'AbortError',
+  )
+})
+
 test('an obj decodes and its faces are triangulated', async () => {
   const obj = encoder.encode('v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')
   const scene = await parseModel(bundle, 'obj', obj.buffer)

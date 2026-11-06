@@ -24,6 +24,8 @@ export const LIMITS = {
   modelBytes: 100 * MB,
   /** Triangles accepted after parsing (WebGL buffers are the real cost). */
   modelTriangles: 3_000_000,
+  /** Declared image bytes accepted before decoding; decoded pixels can be several times larger. */
+  modelTextureBytes: 64 * MB,
   /** A book read whole; EPUB is a zip, so the container must fit. */
   epubBook: 64 * MB,
   /** Chapters rendered from one book. */

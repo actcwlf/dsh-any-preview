@@ -2,7 +2,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  declaredImageBytes,
   directoryOf,
+  externalReferences,
   gltfExtensions,
   gltfJson,
   modelNeeds,
@@ -136,4 +138,40 @@ test('the glTF pre-check names the offending reference', () => {
   assert.equal(unsafeGltfReference({ images: [{ uri: 'http://example.com/a.png' }] }, '/models'), 'http://example.com/a.png')
   // Without a base directory there is nothing to confine a reference to.
   assert.equal(unsafeGltfReference({ buffers: [{ uri: '../a.bin' }] }, undefined), undefined)
+})
+
+test('external references skip embedded data and blob URLs', () => {
+  assert.deepEqual(
+    externalReferences({
+      buffers: [
+        { uri: 'a.bin' },
+        { uri: 'data:application/octet-stream;base64,AA' },
+      ],
+      images: [
+        { uri: 'tex/a.png' },
+        { bufferView: 0 },
+        { uri: 'blob:http://host/x' },
+      ],
+    }),
+    [
+      { uri: 'a.bin', kind: 'buffer' },
+      { uri: 'tex/a.png', kind: 'image' },
+    ],
+  )
+  assert.deepEqual(externalReferences(undefined), [])
+})
+
+test('declared image bytes cover buffer views and data URIs', () => {
+  const document = {
+    bufferViews: [{ byteLength: 100 }, { byteLength: 50 }],
+    images: [
+      { bufferView: 0 },
+      { uri: `data:image/png;base64,${'A'.repeat(40)}` },
+      { uri: 'tex/a.png' },
+      { bufferView: 1 },
+    ],
+  }
+  // 100 (view) + 30 (40 base64 chars) + 0 (external) + 50 (view)
+  assert.equal(declaredImageBytes(document), 180)
+  assert.equal(declaredImageBytes(undefined), 0)
 })
