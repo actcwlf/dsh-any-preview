@@ -417,7 +417,11 @@ export function useModelViewer(
       const frame = (): void => {
         const changed = controls.update()
         renderer.render(scene, camera)
-        if (!changed) {
+        // Auto-rotate's first step is below OrbitControls' change epsilon, so
+        // `changed` can be false on the frame that starts it. Keep the loop
+        // alive while rotation is requested; stop only when it is off and the
+        // camera has settled.
+        if (!changed && !controls.autoRotate) {
           running = false
           renderer.setAnimationLoop(null)
         }
