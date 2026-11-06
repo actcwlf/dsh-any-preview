@@ -13,6 +13,7 @@ import { checkClientContracts } from './contracts.ts'
 import { warmableChunks } from './kernel/chunk-policy.ts'
 import { loadMux } from './kernel/mux-loader.ts'
 import { loadThree } from './kernel/three-loader.ts'
+import { loadModelExtras } from './kernel/model-extras-loader.ts'
 import { refreshLocale, setTranslator } from './i18n.ts'
 import { en, zh } from './locales.ts'
 import { reportContractIssues } from '../shared/contracts.ts'
@@ -24,6 +25,7 @@ const NS = 'anyPreview'
 const CHUNK_LOADERS: Readonly<Record<string, () => Promise<unknown>>> = {
   three: loadThree,
   mux: loadMux,
+  'model-extras': loadModelExtras,
 }
 
 /** How the shell's locale service looks to this plugin. */

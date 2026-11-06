@@ -1,5 +1,6 @@
 /**
- * Plugin asset access: the lazy three.js chunk today, a decode wasm later.
+ * Plugin asset access: the lazy three.js chunk, the model decoders, and a decode
+ * wasm.
  *
  * Assets ship in `lib/`, are served by a loopback route and fetched on demand,
  * so nothing here grows the startup bundle. A missing asset is a capability
@@ -16,20 +17,31 @@ export type AssetName = keyof typeof ASSET_MIME
 const BASE_PATH = '/api/any-preview/asset-base'
 
 /**
+ * Resolve the base URL every asset sits under, with a trailing slash.
+ *
+ * `DRACOLoader.setDecoderPath` and `KTX2Loader.setTranscoderPath` append file
+ * names to a directory, so they need this form rather than one asset's URL.
+ * @returns same-origin base on an http page, loopback base on dsh-app.
+ */
+export async function assetBaseUrl(): Promise<string> {
+  if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
+    return `${ASSET_PREFIX}/`
+  }
+  const response = await fetch(BASE_PATH)
+  if (!response.ok) throw new Error('asset route unavailable')
+  const body = await response.json() as { base?: unknown }
+  if (typeof body.base !== 'string' || body.base === '') throw new Error('asset route unavailable')
+  return `${body.base}${ASSET_PREFIX}/`
+}
+
+/**
  * Resolve an asset to a URL the page can fetch.
  * @param name - whitelisted asset name.
  * @returns same-origin on an http page, loopback on dsh-app.
  */
 export async function assetUrl(name: AssetName): Promise<string> {
   if (!(name in ASSET_MIME)) throw new Error(`unknown asset: ${name}`)
-  if (typeof location !== 'undefined' && location.protocol.startsWith('http')) {
-    return `${ASSET_PREFIX}/${name}`
-  }
-  const response = await fetch(BASE_PATH)
-  if (!response.ok) throw new Error('asset route unavailable')
-  const body = await response.json() as { base?: unknown }
-  if (typeof body.base !== 'string' || body.base === '') throw new Error('asset route unavailable')
-  return `${body.base}${ASSET_PREFIX}/${name}`
+  return `${await assetBaseUrl()}${name}`
 }
 
 /**

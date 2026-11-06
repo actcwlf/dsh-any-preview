@@ -11,14 +11,20 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 
-/** Everything the model viewer needs, in one module instance. */
+/** Everything the base model viewer needs, in one module instance. */
 export interface ThreeBundle {
   readonly THREE: typeof THREE
   readonly OrbitControls: typeof OrbitControls
   readonly GLTFLoader: typeof GLTFLoader
   readonly OBJLoader: typeof OBJLoader
   readonly STLLoader: typeof STLLoader
+  /** OBJ material libraries; small enough to ride with the base chunk. */
+  readonly MTLLoader: typeof MTLLoader
+  /** Neutral studio environment, so PBR metal is not black without an HDR file. */
+  readonly RoomEnvironment: typeof RoomEnvironment
 }
 
-export { OrbitControls, GLTFLoader, OBJLoader, STLLoader, THREE }
+export { OrbitControls, GLTFLoader, OBJLoader, STLLoader, MTLLoader, RoomEnvironment, THREE }

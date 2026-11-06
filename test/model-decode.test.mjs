@@ -12,9 +12,10 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
-import { countTriangles, disposeObject, parseModel, readBody } from '../src/client/previews/model/decode.ts'
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js'
+import { countTriangles, disposeObject, parseModel, readBody, summarize } from '../src/client/previews/model/decode.ts'
 
-const bundle = { THREE, GLTFLoader, OBJLoader, STLLoader }
+const bundle = { THREE, GLTFLoader, OBJLoader, STLLoader, MTLLoader }
 
 /** The real Blender export, when this workspace has the fixture. */
 const sampleGlb = new URL('../../samples/tetra.glb', import.meta.url)
@@ -23,15 +24,24 @@ const sampleAvailable = existsSync(sampleGlb)
 const encoder = new TextEncoder()
 
 /**
- * A one-triangle GLB: header, JSON chunk, BIN chunk.
- * @returns the file bytes.
+ * One triangle as buffer-view bytes: 3 vec3 positions then 3 uint16 indices.
+ * @returns 44 bytes (42 used, padded to a 4-byte boundary).
  */
-function minimalGlb() {
+function geometryBin() {
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])
   const indices = new Uint16Array([0, 1, 2])
   const bin = new Uint8Array(44)
   bin.set(new Uint8Array(positions.buffer), 0)
   bin.set(new Uint8Array(indices.buffer), 36)
+  return bin
+}
+
+/**
+ * A one-triangle GLB: header, JSON chunk, BIN chunk.
+ * @returns the file bytes.
+ */
+function minimalGlb() {
+  const bin = geometryBin()
 
   const json = encoder.encode(JSON.stringify({
     asset: { version: '2.0' },
@@ -209,4 +219,147 @@ test('an empty body settles without a stream', async () => {
   const bytes = await readBody(new Response(null), (loaded, total) => ticks.push([loaded, total]))
   assert.equal(bytes.byteLength, 0)
   assert.deepEqual(ticks.at(-1), [0, 0])
+})
+
+test('the summary counts vertices, triangles and distinct materials', async () => {
+  const scene = await parseModel(bundle, 'glb', minimalGlb())
+  assert.deepEqual(summarize(scene), { vertices: 3, triangles: 1, materials: 1 })
+})
+
+test('an OBJ material library is applied inside the sandbox', async () => {
+  const obj = [
+    'v 0 0 0',
+    'v 1 0 0',
+    'v 0 1 0',
+    'mtllib mat.mtl',
+    'usemtl red',
+    'f 1 2 3',
+  ].join('\n')
+  const read = []
+  const scene = await parseModel(bundle, 'obj', encoder.encode(obj).buffer, {
+    text: obj,
+    baseDir: '/models',
+    loadText: async (path) => {
+      read.push(path)
+      return 'newmtl red\nKd 1 0 0\n'
+    },
+  })
+  assert.deepEqual(read, ['/models/mat.mtl'])
+  const mesh = scene.children.find(child => child.isMesh === true)
+  assert.equal(mesh.material.name, 'red')
+  assert.equal(mesh.material.color.getHexString(), 'ff0000')
+})
+
+test('an unreadable material library leaves a note instead of failing', async () => {
+  const obj = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nmtllib mat.mtl\nusemtl red\nf 1 2 3\n'
+  const scene = await parseModel(bundle, 'obj', encoder.encode(obj).buffer, {
+    text: obj,
+    baseDir: '/models',
+    loadText: async () => { throw new Error('gone') },
+  })
+  assert.equal(scene.userData.materialsUnavailable, true)
+  assert.equal(countTriangles(scene), 1)
+})
+
+test('a glTF reads an external buffer through the signed file route', async () => {
+  const documented = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    buffers: [{ uri: 'scene.bin', byteLength: 44 }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36, target: 34962 },
+      { buffer: 0, byteOffset: 36, byteLength: 6, target: 34963 },
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5123, count: 3, type: 'SCALAR' },
+    ],
+  }
+  const originalDocument = globalThis.document
+  const originalFetch = globalThis.fetch
+  const originalProgress = globalThis.ProgressEvent
+  const requested = []
+  globalThis.document = { baseURI: 'http://test.local/' }
+  // three's FileLoader dispatches ProgressEvent; Node has no such global.
+  globalThis.ProgressEvent ??= class {
+    constructor(type, init = {}) {
+      this.type = type
+      this.lengthComputable = init.lengthComputable ?? false
+      this.loaded = init.loaded ?? 0
+      this.total = init.total ?? 0
+    }
+  }
+  globalThis.fetch = async (input) => {
+    requested.push(typeof input === 'string' ? input : input.url)
+    return new Response(geometryBin())
+  }
+  try {
+    const scene = await parseModel(bundle, 'gltf', encoder.encode(JSON.stringify(documented)).buffer, {
+      baseDir: '/models',
+    })
+    assert.equal(countTriangles(scene), 1)
+    assert.equal(requested.length, 1)
+    assert.match(requested[0], /^http:\/\/test\.local\/api\/any-preview\/media\?path=%2Fmodels%2Fscene\.bin$/u)
+  } finally {
+    globalThis.document = originalDocument
+    globalThis.fetch = originalFetch
+    globalThis.ProgressEvent = originalProgress
+  }
+})
+
+test('an external reference outside the directory is refused before fetching', async () => {
+  const escaped = {
+    asset: { version: '2.0' },
+    buffers: [{ uri: '../scene.bin', byteLength: 44 }],
+  }
+  const originalFetch = globalThis.fetch
+  let fetched = false
+  globalThis.fetch = async () => {
+    fetched = true
+    return new Response(new ArrayBuffer(0))
+  }
+  try {
+    await assert.rejects(
+      parseModel(bundle, 'gltf', encoder.encode(JSON.stringify(escaped)).buffer, { baseDir: '/models' }),
+      (error) => error.key === 'model.resourceOutside',
+    )
+    assert.equal(fetched, false)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('the declared decoders are configured with the asset base', async () => {
+  const calls = []
+  const renderer = { name: 'fake-renderer' }
+  class FakeDraco {
+    constructor() { calls.push('draco') }
+    setDecoderPath(path) { calls.push(`draco:${path}`); return this }
+    dispose() { calls.push('draco:dispose') }
+  }
+  class FakeKtx2 {
+    constructor() { calls.push('ktx2') }
+    setTranscoderPath(path) { calls.push(`ktx2:${path}`); return this }
+    detectSupport(target) { calls.push(`ktx2:renderer:${target === renderer}`); return this }
+    dispose() { calls.push('ktx2:dispose') }
+  }
+  const scene = await parseModel(bundle, 'glb', minimalGlb(), {
+    extras: { DRACOLoader: FakeDraco, KTX2Loader: FakeKtx2, MeshoptDecoder: {} },
+    decoders: { draco: true, ktx2: true, meshopt: true },
+    assetBase: '/any-preview/asset/',
+    renderer,
+  })
+  assert.equal(countTriangles(scene), 1)
+  assert.deepEqual(calls, [
+    'draco',
+    'draco:/any-preview/asset/',
+    'ktx2',
+    'ktx2:/any-preview/asset/',
+    'ktx2:renderer:true',
+    'draco:dispose',
+    'ktx2:dispose',
+  ])
 })

@@ -207,13 +207,16 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 
 | 产物 | 体积 |
 |---|---|
-| `lib/client.js` | 156 KB（gzip 48 KB） |
-| `lib/three-chunk.js` | 770 KB（gzip 195 KB） |
+| `lib/client.js` | 167 KB（gzip 52 KB） |
+| `lib/three-chunk.js` | 776 KB（gzip 196 KB） |
+| `lib/model-extras-chunk.js` | 190 KB（gzip 61 KB，按需） |
+| 解码器 wasm/js（`lib/draco_*`、`lib/basis_*`） | 836 KB（按需 fetch） |
 
 - 启动只解析主包（约 8 ms，原来是 ~27 ms）；
-- 插件激活后用 `requestIdleCallback` 预热 chunk（3 秒兜底），打开 3D 时通常已在内存里；
-- `kernel/three-loader.ts` 只用**一个共享 promise**，预热与打开预览不会重复下载；
-- chunk 由回环路由 `/any-preview/asset/three-chunk.js` 提供（`text/javascript` + CORS），
+- 插件激活后用 `requestIdleCallback` 预热 `three` chunk（3 秒兜底），打开 3D 时通常已在内存里；
+- `kernel/three-loader.ts` / `model-extras-loader.ts` 共用一个按资产名缓存的 promise 表
+  （`kernel/chunk-loader.ts`），预热与打开预览不会重复下载；
+- chunk 由回环路由 `/any-preview/asset/<name>` 提供（`text/javascript` + CORS + 正确 MIME），
   `import()` 的说明符在运行时生成，打包器不会内联它；
 - 没有 `webServer` 的 profile 取不到 chunk，3D 预览会显示错误，其它格式不受影响。
 
@@ -235,17 +238,45 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **主题**：画布底色读 `--dsw-alias-bg-base`，网格由底色推色，浅色主题不再是深色方块。
 - **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
   网格也一并释放；`STLLoader` 已带法线，不再重算。
+- **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
+  `ACESFilmicToneMapping` 让 PBR 金属不再发黑；信息条显示三角形/顶点/材质数与包围盒尺寸，
+  工具栏提供重置视角、网格、线框、自动旋转、截图（渲染后 `toDataURL`）。
+  渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转停下后即停掉
+  `setAnimationLoop`，启动时只画一帧背景。
+
+### 解码器与外部资源
+
+- Draco / KTX2 / meshopt 的加载器在 `lib/model-extras-chunk.js`（`model-extras` 策略默认
+  `click`）；只有 glTF 的 `extensionsUsed` / `extensionsRequired` 声明了对应扩展时才加载，
+  解码器 wasm 再按需从资产路由取。OBJ 的 `MTLLoader` 随基础 chunk 一起加载。
+- 解码器二进制来自 three 自带的 `examples/jsm/libs/{draco/gltf,basis}`，
+  由 `scripts/sync-decoders.mjs` 在构建时拷进 `lib/`：不新增 npm 依赖，运行时也不走 CDN。
+  `ASSET_MIME` 同时是回环路由的白名单，wasm 声明为 `application/wasm`。
+- `.gltf` 的外部 `.bin`/贴图与 `.mtl` 里的贴图都经过 `previews/model/resources.ts` 的同目录
+  沙箱：拒绝绝对 URL、盘符、`//host`、`..` 以及百分号编码的穿越。glTF 的越界引用在解析前
+  就报错；OBJ 的材质库读取失败则降级为无材质并在信息条提示。
+- 外部资源不进入宿主的 `addResource` 依赖跟踪：改 `.mtl`/贴图不会自动刷新，重开文件即可。
 
 测试：`test/model-frame.test.mjs`（取景与网格算术）、`test/model-decode.test.mjs`
-（glb/obj/stl 解码、三角形计数、释放、流式读取），夹具在 `samples/`。
+（glb/obj/stl 解码、MTL、外部 buffer 走签名路由、三角形/顶点/材质统计、解码器装配、释放、
+流式读取）、`test/model-resources.test.mjs`（沙箱、扩展识别）、
+`test/model-extras-loader.test.mjs`（解码 chunk 的共享与重试），夹具在 `samples/`。
+
+已知限制：KTX2 的转码器跑在 `blob:` Worker 里（当前页面无 CSP，桌面 `dsh-app://` 下需实测）；
+动画/骨骼仍不播放；`preview_inspect` 还不认识 3D。
 
 ## 构建
 
-用 checkout 里的 tsdown（本包自身没有 node_modules）：
+用 checkout 里的 tsdown（本包自身没有 node_modules），再同步解码器二进制：
 
 ```sh
 node "D:\DSH\deepseek-harness\node_modules\tsdown\dist\run.mjs"
+node scripts/sync-decoders.mjs
 ```
+
+`sync-decoders.mjs` 把 three 自带的 Draco（glTF 构建）与 Basis 转码器从
+`node_modules/three/examples/jsm/libs/` 拷到 `lib/`，名字与 `ASSET_MIME` 对应；
+`npm run build` 会依次执行这两步。
 
 产物：
 

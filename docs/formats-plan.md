@@ -72,7 +72,7 @@ zip  ttf  otf  woff2  glb  gltf
 |---|---|
 | **zip** | 需读中央目录（可用 RPC 按 offset 读，不受代理影响），但解压要靠 `fflate`（约 10 KB gz）→ 可接受，优先级取决于是否真的要在侧边栏看压缩包 |
 | **字体 ttf/otf/woff2** | 需字形渲染，价值窄 |
-| **glb/gltf** | 依赖 3D 运行时，体积远超预算 |
+| ~~glb/gltf~~ | 已实现：three.js 主 chunk + 解码器按需 chunk，不占启动预算（见 README / internals） |
 
 ## 4. 与既有待办的顺序关系
 

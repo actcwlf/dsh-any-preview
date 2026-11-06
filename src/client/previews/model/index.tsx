@@ -8,17 +8,26 @@
  * Everything the pane shows is keyed by the file and its content revision: a
  * new file, or the toolbar's reload, starts a fresh load instead of painting the
  * previous model under a new header, and a failed load can be retried in place.
+ *
+ * Decoders are a second lazy chunk: only a model that declares Draco/KTX2/
+ * meshopt (or names an OBJ material library) loads it, and the wasm they need
+ * is fetched from the asset route only when that decoder runs.
  */
 import { PreviewError, errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { readRange } from '../../kernel/zip.ts'
 import { claimsFile } from '../dispatch.ts'
 import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
 import { loadThree } from '../../kernel/three-loader.ts'
-import { countTriangles, disposeObject, parseModel, readBody } from './decode.ts'
+import { loadModelExtras } from '../../kernel/model-extras-loader.ts'
+import { assetBaseUrl } from '../../kernel/assets.ts'
+import { directoryOf, modelNeeds } from './resources.ts'
+import { disposeObject, parseModel, readBody, summarize } from './decode.ts'
+import type { ModelExtras } from './decode.ts'
 import { frameForSphere, gridForBox } from './frame.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
@@ -45,6 +54,27 @@ const VIEW = ((): { x: number; y: number; z: number } => {
 /** `.obj` names two formats; this is the head we probe. */
 const PROBE_BYTES = 1023
 
+/** Last progress update, so a fast stream does not re-render every chunk. */
+const PROGRESS_INTERVAL_MS = 120
+
+/** What the viewport can toggle without rebuilding the scene. */
+interface ViewerSettings {
+  readonly grid: boolean
+  readonly wireframe: boolean
+  readonly autoRotate: boolean
+}
+
+/** Defaults for a first open. */
+const DEFAULT_SETTINGS: ViewerSettings = { grid: true, wireframe: false, autoRotate: false }
+
+/** Imperative operations the toolbar drives. */
+interface ViewerHandle {
+  apply(settings: ViewerSettings): void
+  resetView(): void
+  /** @returns whether the canvas produced an image. */
+  screenshot(): boolean
+}
+
 /** The `.obj`/COFF answer, tied to the URL it was read for. */
 interface Probe {
   readonly url: string
@@ -57,6 +87,13 @@ interface ViewState {
   readonly status: 'loading' | 'ready' | 'error'
   readonly detail: string
   readonly triangles: number
+  readonly vertices: number
+  readonly materials: number
+  readonly width: number
+  readonly height: number
+  readonly depth: number
+  /** A non-fatal caveat, such as a material library that would not load. */
+  readonly note: string
   /** Whether retrying could change the outcome (a size limit cannot). */
   readonly retryable: boolean
 }
@@ -69,10 +106,10 @@ interface Progress {
 }
 
 /** No file yet, or one this run has not settled: the pane is loading. */
-const IDLE: ViewState = { key: '', status: 'loading', detail: '', triangles: 0, retryable: true }
-
-/** Last progress update, so a fast stream does not re-render every chunk. */
-const PROGRESS_INTERVAL_MS = 120
+const IDLE: ViewState = {
+  key: '', status: 'loading', detail: '', triangles: 0, vertices: 0, materials: 0,
+  width: 0, height: 0, depth: 0, note: '', retryable: true,
+}
 
 /** Scene colours read from the host's theme tokens. */
 interface SceneTheme {
@@ -143,6 +180,34 @@ function themeOf(THREE: ThreeBundle['THREE'], host: HTMLElement): SceneTheme {
   }
 }
 
+/**
+ * Compact length for the info bar; units are whatever the file uses.
+ * @param value - model-space length.
+ * @returns a short decimal string.
+ */
+function measure(value: number): string {
+  if (!Number.isFinite(value)) return '—'
+  const abs = Math.abs(value)
+  if (abs >= 100) return value.toFixed(0)
+  if (abs >= 1) return value.toFixed(2).replace(/\.?0+$/u, '')
+  if (abs >= 0.01) return value.toFixed(3).replace(/\.?0+$/u, '')
+  return value.toExponential(1)
+}
+
+/**
+ * Trigger a browser download for one canvas image.
+ * @param dataUrl - PNG data URL.
+ * @param name - file name to save under.
+ */
+function download(dataUrl: string, name: string): void {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = name
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   useLocale()
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
@@ -151,6 +216,10 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const [probe, setProbe] = useState<Probe | null>(null)
   const [progress, setProgress] = useState<Progress | undefined>(undefined)
   const [attempt, setAttempt] = useState(0)
+  const [settings, setSettings] = useState<ViewerSettings>(DEFAULT_SETTINGS)
+  const [notice, setNotice] = useState<{ readonly key: string; readonly text: string } | null>(null)
+  const settingsRef = useRef<ViewerSettings>(DEFAULT_SETTINGS)
+  const viewerRef = useRef<ViewerHandle | null>(null)
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const extension = typeof absolutePath === 'string' ? extensionOf(absolutePath) : ''
@@ -162,6 +231,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     ? (probe !== null && probe.url === url ? probe.ok : null)
     : true
   const shownProgress = progress?.key === key ? progress : undefined
+  const shownNotice = notice?.key === key ? notice.text : ''
 
   // `.obj` also names a COFF object file; decide before parsing anything.
   useEffect(() => {
@@ -182,13 +252,21 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     }
   }, [url, extension, probe?.url])
 
+  // Toolbar settings reach a viewer that may not exist yet; keep the latest.
+  useEffect(() => {
+    settingsRef.current = settings
+    viewerRef.current?.apply(settings)
+  }, [settings])
+
   useEffect(() => {
     const host = mountRef.current
     if (host === null || url === undefined || formatOk === null) return
 
     const fail = (detail: string, retryable = true): void => {
       setProgress(undefined)
-      setView({ key, status: 'error', detail, triangles: 0, retryable })
+      setView({
+        ...IDLE, key, status: 'error', detail, retryable,
+      })
     }
     if (formatOk === false) {
       fail(t('model.notWavefront'), false)
@@ -249,13 +327,30 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       scene.background = theme.background
       const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10_000)
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+      renderer.toneMapping = THREE.ACESFilmicToneMapping
       renderer.domElement.style.width = '100%'
       renderer.domElement.style.height = '100%'
       renderer.domElement.style.display = 'block'
       host.appendChild(renderer.domElement)
 
+      // A neutral studio environment makes PBR metal and roughness read without
+      // asking the user for an HDR file; it is optional, never fatal.
+      let environment: any
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer)
+        const room = new bundle.RoomEnvironment()
+        const target = pmrem.fromScene(room, 0.04)
+        scene.environment = target.texture
+        pmrem.dispose()
+        disposeObject(room)
+        environment = target
+      } catch {
+        environment = undefined
+      }
+
       const controls = new bundle.OrbitControls(camera, renderer.domElement)
       controls.enableDamping = true
+      controls.autoRotateSpeed = 1.6
       // Lighting stays independent of the surface: the viewport colour follows
       // the theme, but a cool ground fill keeps shading readable on either one.
       scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.6))
@@ -268,6 +363,28 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       let radius = 0
       let framed = true
       let observer: ResizeObserver | undefined
+      let running = false
+
+      /**
+       * Render one frame and stop when damping/auto-rotation has settled.
+       *
+       * The pane used to run a 60 fps loop forever, even with the pointer at
+       * rest; now a frame is only requested by a change.
+       */
+      const frame = (): void => {
+        const changed = controls.update()
+        renderer.render(scene, camera)
+        if (!changed) {
+          running = false
+          renderer.setAnimationLoop(null)
+        }
+      }
+
+      const invalidate = (): void => {
+        if (running) return
+        running = true
+        renderer.setAnimationLoop(frame)
+      }
 
       const fit = (): void => {
         if (radius <= 0) return
@@ -280,6 +397,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         controls.minDistance = radius * 1.1
         controls.maxDistance = framing.distance * 8
         controls.update()
+        invalidate()
       }
 
       const resize = (): void => {
@@ -290,31 +408,76 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         camera.updateProjectionMatrix()
         // Refit only while the reader has not chosen a view of their own.
         if (framed) fit()
+        else invalidate()
       }
+
+      let viewer: ViewerHandle | undefined
+
+      /**
+       * Apply a toolbar toggle to the live scene.
+       * @param next - the settings to show.
+       */
+      const apply = (next: ViewerSettings): void => {
+        if (grid !== undefined) grid.visible = next.grid
+        if (model !== undefined) {
+          model.traverse((child: any) => {
+            const material = child.material
+            for (const one of Array.isArray(material) ? material : material === undefined ? [] : [material]) {
+              if (one !== null && typeof one === 'object' && 'wireframe' in one) one.wireframe = next.wireframe
+            }
+          })
+        }
+        controls.autoRotate = next.autoRotate
+        invalidate()
+      }
+
+      viewer = {
+        apply,
+        resetView: (): void => {
+          framed = true
+          fit()
+        },
+        screenshot: (): boolean => {
+          try {
+            // Render now: the drawing buffer is only readable in this task.
+            renderer.render(scene, camera)
+            const dataUrl = renderer.domElement.toDataURL('image/png')
+            const base = absolutePath === undefined ? 'model' : basenameOf(absolutePath).replace(/\.[^.]+$/u, '')
+            download(String(dataUrl), `${base === '' ? 'model' : base}.png`)
+            return true
+          } catch {
+            return false
+          }
+        },
+      }
+
       resize()
+      // Paint the themed surface once, even before a model exists.
+      invalidate()
       if (typeof ResizeObserver !== 'undefined') {
         observer = new ResizeObserver(resize)
         observer.observe(host)
       }
       const stopFraming = (): void => { framed = false }
       controls.addEventListener('start', stopFraming)
-
-      renderer.setAnimationLoop(() => {
-        controls.update()
-        renderer.render(scene, camera)
-      })
+      controls.addEventListener('change', invalidate)
 
       shutdown = (): void => {
+        running = false
         renderer.setAnimationLoop(null)
         observer?.disconnect()
         controls.removeEventListener('start', stopFraming)
+        controls.removeEventListener('change', invalidate)
         controls.dispose()
         if (model !== undefined) disposeObject(model)
         if (grid !== undefined) disposeObject(grid)
+        scene.environment = null
+        environment?.dispose?.()
         scene.clear()
         renderer.dispose()
         renderer.forceContextLoss()
         renderer.domElement.remove()
+        if (viewerRef.current === viewer) viewerRef.current = null
       }
 
       try {
@@ -335,15 +498,48 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
           })
         }
         const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-        const object = await parseModel(bundle, extension, buffer)
+        const text = extension === 'obj' ? new TextDecoder().decode(buffer) : undefined
+        const needs = modelNeeds(extension, buffer, text)
+        const baseDir = absolutePath === undefined ? undefined : directoryOf(absolutePath) || undefined
+
+        let extras: ModelExtras | undefined
+        let assetBase: string | undefined
+        if (needs.draco || needs.ktx2 || needs.meshopt) {
+          if (!isChunkEnabled('model-extras')) throw new PreviewError('model.decoderDisabled')
+          try {
+            extras = await loadModelExtras()
+            assetBase = await assetBaseUrl()
+          } catch (error) {
+            console.warn('[dsh-any-preview] model decoders unavailable', error)
+            throw new PreviewError('model.decoderUnavailable')
+          }
+        }
+
+        const object = await parseModel(bundle, extension, buffer, {
+          text,
+          baseDir,
+          extras,
+          decoders: needs,
+          assetBase,
+          renderer,
+          loadText: async (path) => {
+            const fileSource = fileUrl(path)
+            if (fileSource === undefined) throw new PreviewError('common.fileUrl')
+            const textResponse = await fetch(fileSource, { signal: controller.signal })
+            if (!textResponse.ok) throw new PreviewError('common.httpError', { status: textResponse.status })
+            return textResponse.text()
+          },
+        })
         if (!alive) {
           disposeObject(object)
           return
         }
-        const count = countTriangles(object)
-        if (count > MAX_TRIANGLES) {
+        const stats = summarize(object)
+        if (stats.triangles > MAX_TRIANGLES) {
           disposeObject(object)
-          throw new PreviewError('model.tooManyTriangles', { count: count.toLocaleString('en-US') })
+          throw new PreviewError('model.tooManyTriangles', {
+            count: stats.triangles.toLocaleString('en-US'),
+          })
         }
 
         // Centre the object and frame its bounding sphere, not its diagonal.
@@ -353,17 +549,33 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         radius = Number.isFinite(sphere.radius) && sphere.radius > 0 ? sphere.radius : 0.5
         model = object
         scene.add(object)
+        const extents = box.getSize(new THREE.Vector3())
 
         if (Number.isFinite(box.min.y)) {
-          const spec = gridForBox(box.max.x - box.min.x, box.max.z - box.min.z, box.min.y - sphere.center.y)
+          const spec = gridForBox(extents.x, extents.z, box.min.y - sphere.center.y)
           grid = new THREE.GridHelper(spec.size, spec.divisions, theme.gridMajor, theme.gridMinor)
           grid.position.y = spec.y
           scene.add(grid)
         }
 
+        viewerRef.current = viewer
         fit()
+        apply(settingsRef.current)
+        invalidate()
         setProgress(undefined)
-        setView({ key, status: 'ready', detail: '', triangles: count, retryable: true })
+        setView({
+          key,
+          status: 'ready',
+          detail: '',
+          triangles: stats.triangles,
+          vertices: stats.vertices,
+          materials: stats.materials,
+          width: extents.x,
+          height: extents.y,
+          depth: extents.z,
+          note: object.userData.materialsUnavailable === true ? t('model.materialsFailed') : '',
+          retryable: true,
+        })
       } catch (error) {
         if (!alive || controller.signal.aborted) return
         teardown()
@@ -381,16 +593,24 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const retry = useCallback((): void => {
     setProbe(null)
     setProgress(undefined)
-    setView({ key, status: 'loading', detail: '', triangles: 0, retryable: true })
+    setNotice(null)
+    setView({ ...IDLE, key })
     setAttempt((count) => count + 1)
   }, [key])
 
-  const loading = shown.status === 'loading'
-  const progressLabel = shownProgress === undefined
-    ? ''
-    : shownProgress.total === undefined
-      ? formatBytes(shownProgress.loaded)
-      : `${formatBytes(shownProgress.loaded)} / ${formatBytes(shownProgress.total)}`
+  const toggle = (field: keyof ViewerSettings): void => {
+    const next = { ...settingsRef.current, [field]: !settingsRef.current[field] }
+    settingsRef.current = next
+    setSettings(next)
+    viewerRef.current?.apply(next)
+  }
+
+  const screenshot = (): void => {
+    const ok = viewerRef.current?.screenshot() ?? false
+    if (!ok) setNotice({ key, text: t('model.screenshotFailed') })
+  }
+
+  const ready = shown.status === 'ready'
   const loadingText = shownProgress === undefined
     ? t('model.loading')
     : shownProgress.total === undefined
@@ -399,25 +619,71 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         loaded: formatBytes(shownProgress.loaded),
         total: formatBytes(shownProgress.total),
       })
+  const statsText = ready
+    ? [
+      shown.triangles > 0 ? t('model.triangles', { count: shown.triangles.toLocaleString('en-US') }) : '',
+      shown.vertices > 0 ? t('model.vertices', { count: shown.vertices.toLocaleString('en-US') }) : '',
+      shown.materials > 0 ? t('model.materials', { count: String(shown.materials) }) : '',
+      shown.width > 0
+        ? t('model.dimensions', { x: measure(shown.width), y: measure(shown.height), z: measure(shown.depth) })
+        : '',
+    ].join('')
+    : ''
+  const noticeText = shown.note !== '' ? shown.note : shownNotice
 
   return (
-    <div style={PANE_ROOT}>
+    <div style={PANE_ROOT} data-model-status={shown.status}>
       <div style={barStyle}>
-        <span>
+        <span style={titleStyle} title={typeof absolutePath === 'string' ? absolutePath : undefined}>
           {typeof absolutePath === 'string' ? basenameOf(absolutePath) : t('model.title')}
-          {shown.triangles > 0 && t('model.triangles', { count: shown.triangles.toLocaleString('en-US') })}
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>
-          {loading ? progressLabel : t('model.hint')}
+        {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
+        <span style={toolsStyle}>
+          <button
+            type="button" style={toolStyle} disabled={!ready} onClick={() => viewerRef.current?.resetView()}
+            title={t('model.resetView')} data-model-tool="reset"
+          >
+            {t('model.resetView')}
+          </button>
+          <button
+            type="button" style={activeToolStyle(settings.grid)} disabled={!ready} onClick={() => toggle('grid')}
+            title={t('model.grid')} aria-pressed={settings.grid} data-model-tool="grid"
+          >
+            {t('model.grid')}
+          </button>
+          <button
+            type="button" style={activeToolStyle(settings.wireframe)} disabled={!ready} onClick={() => toggle('wireframe')}
+            title={t('model.wireframe')} aria-pressed={settings.wireframe} data-model-tool="wireframe"
+          >
+            {t('model.wireframe')}
+          </button>
+          <button
+            type="button" style={activeToolStyle(settings.autoRotate)} disabled={!ready} onClick={() => toggle('autoRotate')}
+            title={t('model.autoRotate')} aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
+          >
+            {t('model.autoRotate')}
+          </button>
+          <button
+            type="button" style={toolStyle} disabled={!ready} onClick={screenshot}
+            title={t('model.screenshot')} data-model-tool="screenshot"
+          >
+            {t('model.screenshot')}
+          </button>
         </span>
       </div>
-      <div style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}>
+      {noticeText !== '' && <div style={noteStyle}>{noticeText}</div>}
+      <div
+        style={{ position: 'relative', flex: '1 1 auto', minHeight: 0 }}
+        title={t('model.hint')}
+        aria-label={t('model.title')}
+        role="group"
+      >
         <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
         {shown.status !== 'ready' && (
           // Transparent on purpose: the canvas (or the pane surface, before it
           // exists) is already the themed background the text was designed for.
           <div style={{ ...PANE_FILL, background: 'transparent' }}>
-            {loading
+            {shown.status === 'loading'
               ? <span>{loadingText}</span>
               : (
                 <div style={failureStyle} data-model-failure={shown.detail}>
@@ -437,8 +703,48 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
 }
 
 const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
+  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
+  padding: '5px 10px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+} as const
+
+const titleStyle = {
+  minWidth: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-primary)',
+} as const
+
+const statsStyle = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  color: 'var(--dsw-alias-label-tertiary)', fontSize: 11,
+} as const
+
+const toolsStyle = {
+  display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexWrap: 'wrap',
+} as const
+
+const toolStyle = {
+  padding: '2px 7px', fontSize: 11, lineHeight: '16px', borderRadius: 'var(--dsw-radius-xs)',
+  border: '0.5px solid var(--dsw-alias-border-l2)', background: 'transparent',
+  color: 'var(--dsw-alias-label-secondary)', cursor: 'pointer',
+} as const
+
+const toolActiveStyle = {
+  borderColor: 'var(--dsw-alias-state-business-primary)',
+  color: 'var(--dsw-alias-label-primary)',
+  background: 'color-mix(in srgb, var(--dsw-alias-state-business-primary) 14%, transparent)',
+} as const
+
+/**
+ * Style for one toggle button.
+ * @param active - whether the toggle is on.
+ * @returns the button style.
+ */
+function activeToolStyle(active: boolean): CSSProperties {
+  return active ? { ...toolStyle, ...toolActiveStyle } : toolStyle
+}
+
+const noteStyle = {
+  padding: '4px 10px', fontSize: 11, color: 'var(--dsw-alias-state-warn-primary)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const
 

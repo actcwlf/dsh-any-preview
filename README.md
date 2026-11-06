@@ -11,7 +11,7 @@
 | 日志 | `log` | 级别着色、搜索、尾部跟随 |
 | 结构化 | `jsonl` `ndjson` | 字段表格、坏行标出 |
 | 媒体 | `mp4/mkv/…` `mp3/wav/…` | 播放器 + 进度条；桌面版走回环 HTTP，可拖动、大文件不受内存上限约束 |
-| 3D | `glb` `gltf` `obj` `stl` | three.js、轨道控制、包围盒取景 |
+| 3D | `glb` `gltf` `obj` `stl` | three.js、轨道控制、包围盒取景；Draco/KTX2/meshopt、MTL 与外部资源、环境光、信息条与查看工具 |
 | 字体 | `ttf` `otf` `woff` `woff2` | FontFace + 字形表 |
 | 压缩包 | `zip` `tar` `tar.gz` `tgz` | 中央目录 / 顺序头解析；zip 条目按扩展名复用本插件渲染器，其余可一键解压后在主预览打开 |
 | 邮件 | `eml` | 头部、正文、附件名（不提取附件） |
@@ -99,6 +99,8 @@ dsh plugin --profile desktop remove dsh-any-preview
 - 列宽自动，不记忆用户拖拽
 - i18n：界面文案已中英双语；解析层内部诊断（ZIP 守卫、邮件头标签等）仍为中文
 - 回环媒体路由依赖 `webServer`，缺失该服务的 profile 会退回代理路径（受 Blob 上限约束）
+- 3D：Draco/KTX2/meshopt 的解码器随包分发（构建时从 three 拷贝）；KTX2 依赖 `blob:` Worker，
+  极端 CSP 环境可能不可用；动画/骨骼不播放；外部 `.mtl`/贴图不参与自动刷新
 - 加密压缩包、ZIP64、7z / rar 仍未支持
 - `.ts` 按源码处理（由内置代码预览接管）：多数 `.ts` 文件是 TypeScript，而渲染器选择只看路径；MPEG-TS 请用 `.m2ts` 或改扩展名
 

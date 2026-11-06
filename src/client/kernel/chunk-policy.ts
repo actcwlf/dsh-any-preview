@@ -12,7 +12,7 @@
  */
 
 /** Chunks that can be loaded on demand. */
-export type ChunkId = 'three' | 'mux'
+export type ChunkId = 'three' | 'mux' | 'model-extras'
 
 /** When a chunk is fetched. */
 export type ChunkStrategy = 'warm' | 'click' | 'never'
@@ -21,6 +21,8 @@ export type ChunkStrategy = 'warm' | 'click' | 'never'
 const DEFAULTS: Readonly<Record<ChunkId, ChunkStrategy>> = {
   three: 'warm',
   mux: 'click',
+  // Draco/KTX2/MTL support: only a model that declares one of them pays.
+  'model-extras': 'click',
 }
 
 const overrides = new Map<ChunkId, ChunkStrategy>()

@@ -25,14 +25,20 @@
     "lib/index.js",
     "lib/client.js",
     "lib/three-chunk.js",
+    "lib/model-extras-chunk.js",
     "lib/mux-chunk.js",
     "lib/lzma.wasm",
+    "lib/draco_wasm_wrapper.js",
+    "lib/draco_decoder.wasm",
+    "lib/basis_transcoder.js",
+    "lib/basis_transcoder.wasm",
     "cordis.patch.yml",
     "licenses"
   ],
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build": "tsdown",
+    "build:decoders": "node scripts/sync-decoders.mjs",
+    "build": "tsdown && node scripts/sync-decoders.mjs",
     "typecheck": "tsc --noEmit",
     "test": "node --test --test-isolation=none \"test/*.test.mjs\""
   },

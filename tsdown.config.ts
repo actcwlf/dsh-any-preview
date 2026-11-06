@@ -84,6 +84,23 @@ export default [
     outputOptions: { entryFileNames: 'three-chunk.js' },
   },
   {
+    // The lazy decoder chunk: Draco/KTX2/MTL loaders plus the meshopt decoder.
+    // Loaded only when a model declares one of those extensions.
+    name: `${ID}/model-extras-chunk`,
+    entry: { 'model-extras-chunk': 'src/chunk/model-extras.ts' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'browser',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
+    minify: true,
+    sourcemap: false,
+    deps: { alwaysBundle: [/^three(?:\/|$)/] },
+    outputOptions: { entryFileNames: 'model-extras-chunk.js' },
+  },
+  {
     // The lazy MPEG-TS chunk: remuxes TS packets to fMP4 for MediaSource.
     // Loaded only when a transport stream is opened.
     name: `${ID}/mux-chunk`,

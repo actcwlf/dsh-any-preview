@@ -13,6 +13,7 @@ test('defaults reproduce the previous behaviour', () => {
   resetChunkStrategies()
   assert.equal(chunkStrategy('three'), 'warm')
   assert.equal(chunkStrategy('mux'), 'click')
+  assert.equal(chunkStrategy('model-extras'), 'click', 'decoders load only when a model needs them')
   assert.deepEqual(warmableChunks(), ['three'])
 })
 

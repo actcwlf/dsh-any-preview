@@ -10,8 +10,14 @@
 | 组件 | 位置 | 许可 | 义务 | 说明 |
 |---|---|---|---|---|
 | three.js | `lib/three-chunk.js` | MIT | 保留版权与许可声明 | 3D 预览，懒加载 chunk |
+| Draco（glTF 构建） | `lib/draco_wasm_wrapper.js`、`lib/draco_decoder.wasm` | Apache-2.0 | 附许可全文与来源声明，见 `draco.md` | glTF 压缩网格解码 |
+| Basis Universal | `lib/basis_transcoder.js`、`lib/basis_transcoder.wasm` | Apache-2.0 | 附许可全文与来源声明，见 `basis-universal.md` | KTX2/Basis 贴图转码 |
+| meshoptimizer | `lib/model-extras-chunk.js` | MIT | 保留版权与许可声明，见 `meshoptimizer.md` | meshopt 压缩解码 |
 | mux.js | `lib/mux-chunk.js` | Apache-2.0 | 附许可全文（第 4 条） | TS/M2TS 重封装，懒加载 chunk |
 | React / `@deepseek-ai/*` | 不随包分发 | — | — | 由 DSH 平台提供（模块表外部依赖） |
+
+Draco 与 Basis Universal 同属 Apache-2.0，全文统一放在 `apache-2.0.txt`（逐字同步），
+两个组件的说明文件引用它。
 
 其余代码为本项目自有。
 
