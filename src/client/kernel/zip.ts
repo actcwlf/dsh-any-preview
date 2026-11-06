@@ -21,9 +21,19 @@ export const MAX_ENTRY_BYTES = LIMITS.archiveEntry
 /** Enough tail to cover an archive comment plus the end-of-central-directory record. */
 const TAIL_BYTES = 66_000
 
-/** Read an inclusive byte window, working whether or not the server honours Range. */
-export async function readRange(url: string, start: number, end: number): Promise<Uint8Array> {
-  const response = await fetch(url, { headers: { Range: `bytes=${String(start)}-${String(end)}` } })
+/**
+ * Read an inclusive byte window, working whether or not the server honours Range.
+ * @param url - file route address.
+ * @param start - first byte to read.
+ * @param end - last byte to read, inclusive.
+ * @param signal - cancels the request when its owner unmounts.
+ * @returns the bytes in that window.
+ */
+export async function readRange(url: string, start: number, end: number, signal?: AbortSignal): Promise<Uint8Array> {
+  const response = await fetch(url, {
+    headers: { Range: `bytes=${String(start)}-${String(end)}` },
+    ...(signal === undefined ? {} : { signal }),
+  })
   if (response.status === 206) return new Uint8Array(await response.arrayBuffer())
   if (response.status === 200) {
     // The server ignored Range and sent everything.

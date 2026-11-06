@@ -207,8 +207,8 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 
 | 产物 | 体积 |
 |---|---|
-| `lib/client.js` | 109 KB（gzip 33 KB） |
-| `lib/three-chunk.js` | 752 KB（gzip 189 KB） |
+| `lib/client.js` | 156 KB（gzip 48 KB） |
+| `lib/three-chunk.js` | 770 KB（gzip 195 KB） |
 
 - 启动只解析主包（约 8 ms，原来是 ~27 ms）；
 - 插件激活后用 `requestIdleCallback` 预热 chunk（3 秒兜底），打开 3D 时通常已在内存里；
@@ -216,6 +216,28 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - chunk 由回环路由 `/any-preview/asset/three-chunk.js` 提供（`text/javascript` + CORS），
   `import()` 的说明符在运行时生成，打包器不会内联它；
 - 没有 `webServer` 的 profile 取不到 chunk，3D 预览会显示错误，其它格式不受影响。
+
+## 3D 模型预览
+
+`previews/model/` 是唯一需要 WebGL 的预览：`loading: 'renderer'`，字节从
+`/api/any-preview/media` 整取（不走 base64 管道），解码在懒加载的 chunk 里完成。
+
+- **状态按文件归属**：视图状态、下载进度、`.obj` 判别结果都以 `url#revision` 为 key；
+  换文件或工具栏重载（`content.revision` 变化）时整体失效，不会把上一个模型的
+  三角形数、错误文案或场景留在新文件下。
+- **可恢复**：加载/解析失败在面板内显示并给出「重试」（`attempt` 让 effect 重跑）。
+  WebGL 创建失败只在本面板报错——若让异常冒泡，宿主的 slot 边界会把该 entry 退役，
+  本次会话后续所有模型都会变成空白。
+- **可取消**：一个 `AbortController` 同时管整文件 fetch 与 `.obj` 头部探测；
+  下载进度来自流式读取，桌面代理不给 `Content-Length` 时退化为「已读字节」。
+- **取景**：`model/frame.ts` 是纯函数，按包围球和垂直/水平 FOV 中较小者算距离，
+  near/far 跟随模型尺度（不再有 1000 的地板）；面板尺寸变化时，在用户手动操作前重新取景。
+- **主题**：画布底色读 `--dsw-alias-bg-base`，网格由底色推色，浅色主题不再是深色方块。
+- **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
+  网格也一并释放；`STLLoader` 已带法线，不再重算。
+
+测试：`test/model-frame.test.mjs`（取景与网格算术）、`test/model-decode.test.mjs`
+（glb/obj/stl 解码、三角形计数、释放、流式读取），夹具在 `samples/`。
 
 ## 构建
 
