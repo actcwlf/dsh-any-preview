@@ -176,6 +176,30 @@ async function loadMaterials(bundle: ModelBundle, options: ParseOptions, text: s
 }
 
 /**
+ * Render both faces of every mesh.
+ *
+ * OBJ carries no side convention and exporters disagree about winding: a
+ * clockwise file would otherwise be culled into an inside-out shell (the
+ * workspace's own `samples/cube.obj` is wound inward). STL has the same
+ * problem on some exports. glTF states `doubleSided`, so it is left alone.
+ * @param root - parsed object to walk.
+ * @param three - three.js module.
+ */
+function showBothSides(root: Object3D, three: any): void {
+  root.traverse((child: any) => {
+    if (child.isMesh !== true) return
+    const materials = Array.isArray(child.material)
+      ? child.material
+      : child.material === undefined ? [] : [child.material]
+    for (const material of materials) {
+      if (material !== null && typeof material === 'object' && 'side' in material) {
+        material.side = three.DoubleSide
+      }
+    }
+  })
+}
+
+/**
  * Decode an OBJ, applying its material library when one is reachable.
  *
  * A material library that cannot be read degrades to the default material and
@@ -201,6 +225,7 @@ async function parseObj(bundle: ModelBundle, bytes: ArrayBuffer, options: ParseO
   }
   if (materials !== undefined) loader.setMaterials(materials)
   const object = loader.parse(text)
+  showBothSides(object, bundle.THREE)
   if (materialsUnavailable) object.userData.materialsUnavailable = true
   return object
 }
@@ -224,9 +249,12 @@ export async function parseModel(
   if (extension === 'stl') {
     const { THREE } = bundle
     // STLLoader already writes per-face normals; recomputing them here only
-    // burned CPU on the largest meshes and changed nothing on screen.
+    // burned CPU on the largest meshes and changed nothing on screen. STL
+    // winding is not reliable either, so show both sides.
     const geometry = new bundle.STLLoader().parse(bytes)
-    return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xbfc4cc, metalness: 0.1, roughness: 0.7 }))
+    return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
+      color: 0xbfc4cc, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide,
+    }))
   }
   throw new PreviewError('model.unsupported', { ext: extension })
 }

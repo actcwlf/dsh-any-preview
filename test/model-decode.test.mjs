@@ -20,6 +20,9 @@ const bundle = { THREE, GLTFLoader, OBJLoader, STLLoader, MTLLoader }
 /** The real Blender export, when this workspace has the fixture. */
 const sampleGlb = new URL('../../samples/tetra.glb', import.meta.url)
 const sampleAvailable = existsSync(sampleGlb)
+/** The fixture whose winding is inward, so a one-sided material shows its inside. */
+const sampleObj = new URL('../../samples/cube.obj', import.meta.url)
+const sampleObjAvailable = existsSync(sampleObj)
 
 const encoder = new TextEncoder()
 
@@ -102,6 +105,18 @@ test('an obj decodes and its faces are triangulated', async () => {
   const obj = encoder.encode('v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n')
   const scene = await parseModel(bundle, 'obj', obj.buffer)
   assert.equal(countTriangles(scene), 2)
+  const mesh = scene.children.find(child => child.isMesh === true)
+  assert.equal(mesh.material.side, THREE.DoubleSide)
+})
+
+test('a clockwise OBJ renders both sides instead of its inside', { skip: !sampleObjAvailable }, async () => {
+  const bytes = readFileSync(sampleObj)
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  const scene = await parseModel(bundle, 'obj', buffer)
+  assert.equal(countTriangles(scene), 12)
+  scene.traverse((child) => {
+    if (child.isMesh === true) assert.equal(child.material.side, THREE.DoubleSide)
+  })
 })
 
 test('an stl decodes as a mesh with the material the viewer draws', async () => {
@@ -109,6 +124,7 @@ test('an stl decodes as a mesh with the material the viewer draws', async () => 
   assert.equal(object.isMesh, true)
   assert.equal(countTriangles(object), 1)
   assert.equal(object.material.type, 'MeshStandardMaterial')
+  assert.equal(object.material.side, THREE.DoubleSide)
 })
 
 test('a real Blender glb parses', { skip: !sampleAvailable }, async () => {
@@ -248,6 +264,7 @@ test('an OBJ material library is applied inside the sandbox', async () => {
   const mesh = scene.children.find(child => child.isMesh === true)
   assert.equal(mesh.material.name, 'red')
   assert.equal(mesh.material.color.getHexString(), 'ff0000')
+  assert.equal(mesh.material.side, THREE.DoubleSide)
 })
 
 test('an unreadable material library leaves a note instead of failing', async () => {

@@ -242,6 +242,9 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   不用重开文件。
 - **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
   网格也一并释放；`STLLoader` 已带法线，不再重算。
+- **面朝向**：OBJ 与 STL 默认 `DoubleSide`。OBJ 没有 side 约定，不同导出器的顺/逆时针
+  不一致；工作区自带的 `samples/cube.obj` 就是全部朝内绕序，单面渲染会把近侧面当背面
+  剔除、显示成一个"空房间"。glTF 仍按其 `doubleSided` 标记渲染，不替作者改 culling。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；信息条显示三角形/顶点/材质数与包围盒尺寸，
   工具栏提供重置视角、网格、线框、自动旋转，沿用宿主文档工具条的 28px 图标按钮
