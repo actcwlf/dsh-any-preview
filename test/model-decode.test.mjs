@@ -23,6 +23,9 @@ const sampleAvailable = existsSync(sampleGlb)
 /** The fixture whose winding is inward, so a one-sided material shows its inside. */
 const sampleObj = new URL('../../samples/cube.obj', import.meta.url)
 const sampleObjAvailable = existsSync(sampleObj)
+/** The fixture whose facet normals are all zero. */
+const sampleStl = new URL('../../samples/tetra.stl', import.meta.url)
+const sampleStlAvailable = existsSync(sampleStl)
 
 const encoder = new TextEncoder()
 
@@ -84,13 +87,14 @@ function minimalGlb() {
 
 /**
  * A one-triangle binary STL.
+ * @param {number[]} normal - facet normal written into the file.
  * @returns the file bytes.
  */
-function binaryStl() {
+function binaryStl(normal = [0, 0, 1]) {
   const out = new Uint8Array(84 + 50)
   const view = new DataView(out.buffer)
   view.setUint32(80, 1, true)
-  const values = [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]
+  const values = [...normal, 0, 0, 0, 1, 0, 0, 0, 1, 0]
   values.forEach((value, index) => { view.setFloat32(84 + index * 4, value, true) })
   return out.buffer
 }
@@ -125,6 +129,24 @@ test('an stl decodes as a mesh with the material the viewer draws', async () => 
   assert.equal(countTriangles(object), 1)
   assert.equal(object.material.type, 'MeshStandardMaterial')
   assert.equal(object.material.side, THREE.DoubleSide)
+})
+
+test('an STL with zero facet normals still shades', async () => {
+  const object = await parseModel(bundle, 'stl', binaryStl([0, 0, 0]))
+  const normal = object.geometry.getAttribute('normal')
+  assert.ok(Math.hypot(normal.getX(0), normal.getY(0), normal.getZ(0)) > 0.5)
+})
+
+test('the real STL fixture with zero normals is recomputed', { skip: !sampleStlAvailable }, async () => {
+  const bytes = readFileSync(sampleStl)
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  const object = await parseModel(bundle, 'stl', buffer)
+  const normal = object.geometry.getAttribute('normal')
+  let nonZero = 0
+  for (let index = 0; index < normal.count; index += 1) {
+    if (Math.hypot(normal.getX(index), normal.getY(index), normal.getZ(index)) > 0.5) nonZero += 1
+  }
+  assert.equal(nonZero, normal.count, 'every recomputed normal is a unit facet normal')
 })
 
 test('a real Blender glb parses', { skip: !sampleAvailable }, async () => {

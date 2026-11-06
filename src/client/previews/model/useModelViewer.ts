@@ -360,6 +360,13 @@ export function useModelViewer(
       const keyLight = new THREE.DirectionalLight(0xffffff, 2)
       keyLight.position.set(3, 5, 4)
       scene.add(keyLight)
+      // OBJ/MTL keep their native Phong materials, which do not receive the
+      // scene environment; without a fill, a downward face has only the dark
+      // hemisphere ground term and reads as black. A weak light from below
+      // keeps undersides readable without flattening the key light.
+      const fillLight = new THREE.DirectionalLight(0xffffff, 0.4)
+      fillLight.position.set(0, -4, 2)
+      scene.add(fillLight)
 
       let model: any
       let grid: any

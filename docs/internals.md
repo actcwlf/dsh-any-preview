@@ -241,12 +241,18 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   `MutationObserver` 监听这些属性：切换浅/深色时重算画布底色、重建网格、更新线框材质，
   不用重开文件。
 - **释放**：`disposeObject` 遍历所有带 geometry/material 的节点（不止 `Mesh`），
-  网格也一并释放；`STLLoader` 已带法线，不再重算。
+  网格也一并释放。
+- **STL 法线**：STL 的 facet normal 经常是全 0 或与绕序不一致（工作区的
+  `samples/tetra.stl` 就是 12 个全 0，直接渲染会因零向量归一化成 NaN 而全黑）；
+  解析后用 `computeVertexNormals()` 从绕序重算。STL 是非索引几何，得到的正是每个面的
+  平面法线，符合格式的 faceted 外观。
 - **面朝向**：OBJ 与 STL 默认 `DoubleSide`。OBJ 没有 side 约定，不同导出器的顺/逆时针
   不一致；工作区自带的 `samples/cube.obj` 就是全部朝内绕序，单面渲染会把近侧面当背面
   剔除、显示成一个"空房间"。glTF 仍按其 `doubleSided` 标记渲染，不替作者改 culling。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
-  `ACESFilmicToneMapping` 让 PBR 金属不再发黑；信息条显示三角形/顶点/材质数与包围盒尺寸，
+  `ACESFilmicToneMapping` 让 PBR 金属不再发黑；OBJ/MTL 保持原生 Phong（不吃
+  `scene.environment`），另有一盏低强度下方补光（`DirectionalLight` 0.4，位置
+  `(0, -4, 2)`）避免朝下表面只剩深色半球地面光。信息条显示三角形/顶点/材质数与包围盒尺寸，
   工具栏提供重置视角、网格、线框、自动旋转，沿用宿主文档工具条的 28px 图标按钮
   （15px、1px 线宽、`--dsw-alias-interactive-bg-hover` 悬停/按下态）；线框用无光照的
   `MeshBasicMaterial({ wireframe: true, toneMapped: false })` 替换网格材质，

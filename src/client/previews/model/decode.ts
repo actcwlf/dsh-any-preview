@@ -248,10 +248,13 @@ export async function parseModel(
   if (extension === 'obj') return parseObj(bundle, bytes, options)
   if (extension === 'stl') {
     const { THREE } = bundle
-    // STLLoader already writes per-face normals; recomputing them here only
-    // burned CPU on the largest meshes and changed nothing on screen. STL
-    // winding is not reliable either, so show both sides.
+    // Facet normals in STL are frequently zero or inconsistent between
+    // exporters (the workspace's `samples/tetra.stl` has twelve zero normals),
+    // and a zero normal makes the Standard shader normalize to NaN and render
+    // black. Recompute from the triangle winding instead; STL geometry is
+    // non-indexed, so this gives flat per-face normals as the format intends.
     const geometry = new bundle.STLLoader().parse(bytes)
+    geometry.computeVertexNormals()
     return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
       color: 0xbfc4cc, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide,
     }))
