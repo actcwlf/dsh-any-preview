@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { CHROME_CONTROL } from '../../kernel/ui.ts'
+import { BODY_ACTION, CHROME_CONTROL } from '../../kernel/ui.ts'
 import { contentModuleFor } from '../../kernel/content-modules.ts'
 import { errorText } from '../../kernel/errors.ts'
 import { formatBytes } from '../../kernel/format.ts'
@@ -175,11 +175,11 @@ export function EntryView(props: EntryViewProps) {
           aria-label={t('archive.dirLabel')}
           style={PATH_INPUT}
         />
-        <button type="button" onClick={() => { void choose() }} style={SMALL} className="dsh-preview-control">{t('common.choose')}</button>
-        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL} className="dsh-preview-control">
+        <button type="button" onClick={() => { void choose() }} style={SMALL} className="dsh-preview-action">{t('common.choose')}</button>
+        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL} className="dsh-preview-action">
           {extracting ? t('archive.extracting') : t('archive.extractOpen')}
         </button>
-        <button type="button" onClick={() => setHexView(true)} style={SMALL} className="dsh-preview-control">{t('archive.viewHex')}</button>
+        <button type="button" onClick={() => setHexView(true)} style={SMALL} className="dsh-preview-action">{t('archive.viewHex')}</button>
       </div>
       {notice !== undefined && <div style={NOTE}>{notice}</div>}
       {progress !== undefined && <div style={NOTE}>{Math.round(progress * 100)}%</div>}
@@ -192,7 +192,7 @@ export function EntryView(props: EntryViewProps) {
       <div>{notice ?? t('archive.openedNote')}</div>
       <div style={PATH_TEXT}>{existing}</div>
       <div style={ROW}>
-        <button type="button" onClick={() => { void extract(true) }} style={SMALL} className="dsh-preview-control">
+        <button type="button" onClick={() => { void extract(true) }} style={SMALL} className="dsh-preview-action">
           {extracting ? t('archive.extracting') : t('archive.reextract', { name: entry.name })}
         </button>
       </div>
@@ -219,7 +219,7 @@ export function EntryView(props: EntryViewProps) {
     body = (
       <>
         <div style={PANEL}>
-          <button type="button" onClick={() => setHexView(false)} style={SMALL} className="dsh-preview-control">{t('common.back')}</button>
+          <button type="button" onClick={() => setHexView(false)} style={SMALL} className="dsh-preview-action">{t('common.back')}</button>
           <span style={NOTE_INLINE}>{t('sevenzip.binaryHint')}</span>
         </div>
         <pre style={PRE}>{hexDump(loaded.bytes.subarray(0, MAX_HEX_BYTES))}</pre>
@@ -245,11 +245,9 @@ export function EntryView(props: EntryViewProps) {
   )
 }
 
-const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto' } as const
+const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: '0 1 auto' } as const
 const BACK = {
   ...CHROME_CONTROL,
-  padding: '0 8px',
-  color: 'var(--dsw-alias-label-primary)',
   flex: '0 0 auto',
 } as const
 const NAME = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 } as const
@@ -262,9 +260,8 @@ const PATH_INPUT = {
   border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const SMALL = {
-  font: 'inherit', fontSize: 12, padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
-  border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  ...BODY_ACTION,
+  flex: '0 0 auto',
 } as const
 const NOTE = { marginTop: 8, color: 'var(--dsw-alias-label-secondary)' } as const
 const FAIL = { marginTop: 8, color: 'var(--dsw-alias-state-error-primary)' } as const

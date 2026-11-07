@@ -25,9 +25,8 @@ import { CsvTable } from './table.tsx'
 import { OVERSCAN, ROW_HEIGHT, SCROLL_LIMIT_PX, SETTLE_MS, WINDOW_ROWS } from './layout.ts'
 
 const cancelStyle = {
-  font: 'inherit', fontSize: 11, padding: '0 6px', height: 22, borderRadius: 4, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-secondary)', background: 'transparent',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
+  font: 'inherit', fontSize: 11, padding: '0 6px', height: 22, borderRadius: 'var(--dsw-radius-xs)', cursor: 'pointer',
+  border: 'none',
 } as const
 
 /**

@@ -22,8 +22,8 @@ export const CHROME = {
   /** Bottom status line. */
   status: 28,
   /** Horizontal inset, host-style: more room before the title than after the tools. */
-  padding: '0 12px 0 16px',
-  gap: 8,
+  padding: '0 6px 0 16px',
+  gap: 4,
   /** Host header separator; the body uses the lighter l2 border. */
   border: '0.5px solid var(--dsw-alias-border-l3)',
 } as const
@@ -31,7 +31,7 @@ export const CHROME = {
 /** Typography roles. */
 export const TEXT = {
   chrome: { fontSize: 13, lineHeight: '20px' },
-  meta: { fontSize: 12, lineHeight: '16px' },
+  meta: { fontSize: 12, lineHeight: '18px' },
   table: { fontSize: 12, lineHeight: '18px' },
   code: { fontSize: 12, lineHeight: '18px' },
   caption: { fontSize: 11, lineHeight: '16px' },
@@ -96,36 +96,58 @@ export const CHROME_STATUS = {
   textOverflow: 'ellipsis',
 } as const
 
-/** A 28px text/select control in a toolbar. */
+/** A 28px host-style header control: ghost, secondary ink until hovered. */
 export const CHROME_CONTROL = {
   boxSizing: 'border-box' as const,
   height: CHROME.control,
   minHeight: CHROME.control,
-  padding: '0 10px',
+  padding: '0 6px',
   borderRadius: 'var(--dsw-radius-sm)',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-primary)',
+  border: 'none',
   fontFamily: 'inherit',
   fontSize: TEXT.meta.fontSize,
-  lineHeight: '18px',
+  lineHeight: TEXT.meta.lineHeight,
   cursor: 'pointer',
 } as const
 
-/** Hover/focus/disabled states shared by text buttons and selects. */
+/** A host-style content action: filled surface, hairline border, 13px label. */
+export const BODY_ACTION = {
+  boxSizing: 'border-box' as const,
+  minHeight: CHROME.control,
+  padding: '4px 10px',
+  borderRadius: 'var(--dsw-radius-sm)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  lineHeight: '20px',
+  cursor: 'pointer',
+} as const
+
+/** Hover/focus/disabled states shared by header controls and content actions. */
 export const PREVIEW_CONTROL_CSS = `
+.dsh-preview-control {
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+}
+.dsh-preview-action {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-2);
+}
 .dsh-preview-control:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
-.dsh-preview-control:active:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-active);
+.dsh-preview-action:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-3);
 }
-.dsh-preview-control:focus-visible {
+.dsh-preview-control:focus-visible,
+.dsh-preview-action:focus-visible {
   outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
-.dsh-preview-control:disabled {
-  opacity: .45;
+.dsh-preview-control:disabled,
+.dsh-preview-action:disabled {
+  color: var(--dsw-alias-label-tertiary);
   cursor: default;
 }
 `

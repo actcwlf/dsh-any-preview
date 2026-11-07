@@ -297,7 +297,7 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - `decode.ts`：字节解析与资源沙箱，不再靠一个 `if` 链增长格式分支。
 
 UI 基线在 `kernel/ui.ts`：所有预览共用 **32px** `PreviewChrome` 二级工具条（宿主
-文档头仍是 38px）、28px 控件、13/20 的 chrome 字体、12/16 的元信息、`--dsw-font-family` /
+文档头仍是 38px）、28px 控件、13/20 的 chrome 字体、12/18 的元信息、`--dsw-font-family` /
 `--dsw-font-mono`；模型与媒体也走同一个 `PreviewChrome`，不再自建不同高度的
 顶栏。格式自身的摘要/工具栏通过 `PreviewChrome` 的 `title` / `toolbar` / `status`
 传入，避免第二层 bar 和内容起点漂移。
@@ -307,6 +307,9 @@ UI 基线在 `kernel/ui.ts`：所有预览共用 **32px** `PreviewChrome` 二级
 本地化文案集中放在主标题/状态里。加载/错误状态用 `PreviewState` 保留同一根 32px bar；
 窄宽度下 Model/Archive/EPUB 用 `ToolbarOverflow`（⋯ 菜单）收纳次要控件，不再靠
 裁切；文本控件统一使用 `dsh-preview-control` 的 hover / focus-visible / disabled 状态。
+bar 的间距采用宿主的 `0 6px 0 16px` / 4px gap；header 控件是 28px ghost（无描边、
+secondary ink），内容区动作另用 `dsh-preview-action`（`bg-layer-2` + 细边框 + 13/20）。
+根节点正文行高与宿主一致为 1.6。
 元数据检查器的 `Summary` 现在位于内容滚动区顶部，不再是一条独立的 32px chrome
 strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一个 32px bar 决定。
 `PreviewChrome.status` 只在 `tone` 为 `warning` / `critical` 时渲染；正常信息不再

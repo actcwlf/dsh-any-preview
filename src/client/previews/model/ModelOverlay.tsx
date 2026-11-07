@@ -6,6 +6,7 @@
  */
 import { t } from '../../i18n.ts'
 import { PANE_FILL } from '../../kernel/layout.ts'
+import { BODY_ACTION } from '../../kernel/ui.ts'
 
 /** Props for the overlay. */
 export interface ModelOverlayProps {
@@ -29,14 +30,13 @@ export interface ModelOverlayProps {
 export function ModelOverlay({ status, detail, retryable, loadingText, onRetry }: ModelOverlayProps) {
   if (status === 'ready') return null
   return (
-    <div style={{ ...PANE_FILL, background: 'transparent' }}>
-      {status === 'loading'
+    <div style={{ ...PANE_FILL, background: 'transparent' }}>      {status === 'loading'
         ? <span>{loadingText}</span>
         : (
           <div style={failureStyle} data-model-failure={detail}>
             <span style={failureTextStyle}>{t('common.error', { detail })}</span>
             {retryable && (
-              <button type="button" style={retryStyle} className="dsh-preview-control" onClick={onRetry}>
+              <button type="button" style={retryStyle} className="dsh-preview-action" onClick={onRetry}>
                 {t('model.retry')}
               </button>
             )}
@@ -54,7 +54,5 @@ const failureStyle = {
 const failureTextStyle = { textAlign: 'center', lineHeight: 1.5 } as const
 
 const retryStyle = {
-  height: 28, padding: '0 12px', fontSize: 12, borderRadius: 'var(--dsw-radius-sm)',
-  border: '0.5px solid var(--dsw-alias-border-l2)', background: 'transparent',
-  color: 'var(--dsw-alias-label-primary)', cursor: 'pointer',
+  ...BODY_ACTION,
 } as const

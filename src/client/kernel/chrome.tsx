@@ -65,7 +65,7 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
         ...PANE_ROOT,
         fontFamily: FONT_SANS,
         fontSize: 'var(--dsh-content-font-size-secondary, 13px)',
-        lineHeight: 1.5,
+        lineHeight: 1.6,
         color: 'var(--dsw-alias-label-primary)',
       }}
       data-chrome-width={String(width)}

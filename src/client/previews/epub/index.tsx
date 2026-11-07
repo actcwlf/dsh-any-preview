@@ -174,7 +174,7 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
       display: 'flex',
       flexDirection: stacked ? 'column' : 'row',
       alignItems: stacked ? 'stretch' : 'center',
-      gap: 6,
+      gap: 4,
       flex: '0 0 auto',
     }}>
       <button type="button" style={buttonStyle} className="dsh-preview-control" disabled={current === 0}
@@ -222,8 +222,7 @@ const buttonStyle = {
 const selectStyle = {
   ...CHROME_CONTROL,
   maxWidth: 180,
-  padding: '0 8px',
-  background: 'var(--dsw-alias-bg-layer-2)',
+  padding: '0 6px',
 } as const
 
 /** What the client entry registers for this format. */

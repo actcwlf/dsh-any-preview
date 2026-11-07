@@ -80,7 +80,7 @@ export function ArchiveList(props: ArchiveListProps) {
 }
 
 const ACTIONS = {
-  display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)',
+  display: 'flex', alignItems: 'center', gap: 4, color: 'var(--dsw-alias-label-tertiary)',
   flex: '0 1 auto', minWidth: 0, overflow: 'hidden',
 } as const
 const SMALL = {

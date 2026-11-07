@@ -114,5 +114,5 @@ export function ModelToolbar({
 }
 
 const toolsStyle = {
-  display: 'flex', alignItems: 'center', gap: 2, marginLeft: 'auto', flexWrap: 'nowrap',
+  display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', flexWrap: 'nowrap',
 } as const

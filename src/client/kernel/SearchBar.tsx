@@ -106,8 +106,8 @@ export function SearchBar({
           .*
         </button>
       </div>
-      <button type="button" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-      <button type="button" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+      <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+      <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
       {!compact && (
         <>
           {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
@@ -131,7 +131,7 @@ const compactRow = {
 } as const
 
 const rowStyle = {
-  display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto',
+  display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
 } as const
 
 const fieldStyle = {
@@ -164,17 +164,16 @@ function inlineToggle(on: boolean) {
 }
 
 const navStyle = {
-  font: 'inherit', fontSize: 11, lineHeight: '20px', padding: '0 7px', borderRadius: 'var(--dsw-radius-xs)',
-  cursor: 'pointer', height: 22, color: 'var(--dsw-alias-label-secondary)',
-  background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  font: 'inherit', fontSize: 12, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-sm)',
+  cursor: 'pointer', height: 28, minWidth: 28, flex: '0 0 auto', border: 'none',
 } as const
 
 const countStyle = {
-  color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, whiteSpace: 'nowrap',
-  minWidth: 48, textAlign: 'center',
+  color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, lineHeight: '18px',
+  whiteSpace: 'nowrap', minWidth: 48, textAlign: 'center',
 } as const
 
 const labelStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-secondary)', fontSize: 12, whiteSpace: 'nowrap',
+  color: 'var(--dsw-alias-label-secondary)', fontSize: 12, lineHeight: '18px', whiteSpace: 'nowrap',
 } as const
