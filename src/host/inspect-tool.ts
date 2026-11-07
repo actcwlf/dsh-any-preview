@@ -239,6 +239,270 @@ function sizeFact(size: number): string {
   return `${formatBytes(size)} (${size.toLocaleString('en-US')} bytes)`
 }
 
+/** Big-endian 16-bit read. */
+function u16be(bytes: Uint8Array, at: number): number {
+  return ((bytes[at] ?? 0) << 8) | (bytes[at + 1] ?? 0)
+}
+
+/** Big-endian 32-bit read. */
+function u32be(bytes: Uint8Array, at: number): number {
+  return (((bytes[at] ?? 0) << 24) | ((bytes[at + 1] ?? 0) << 16)
+    | ((bytes[at + 2] ?? 0) << 8) | (bytes[at + 3] ?? 0)) >>> 0
+}
+
+/** Little-endian 24-bit read, used by WebP canvas dimensions. */
+function u24le(bytes: Uint8Array, at: number): number {
+  return (bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8) | ((bytes[at + 2] ?? 0) << 16)
+}
+
+/** Image format and dimensions from a short head. */
+function imageInfo(bytes: Uint8Array): { format: string, width?: number, height?: number } | undefined {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && ascii(bytes, 1, 4) === 'PNG') {
+    return bytes.length >= 24
+      ? { format: 'PNG', width: u32be(bytes, 16), height: u32be(bytes, 20) }
+      : { format: 'PNG' }
+  }
+  if (bytes.length >= 6 && (ascii(bytes, 0, 6) === 'GIF87a' || ascii(bytes, 0, 6) === 'GIF89a')) {
+    return bytes.length >= 10
+      ? { format: 'GIF', width: u16(bytes, 6), height: u16(bytes, 8) }
+      : { format: 'GIF' }
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let at = 2
+    while (at + 9 < bytes.length) {
+      if (bytes[at] !== 0xff) { at += 1; continue }
+      const marker = bytes[at + 1] ?? 0
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return { format: 'JPEG', width: u16be(bytes, at + 7), height: u16be(bytes, at + 5) }
+      }
+      const length = u16be(bytes, at + 2)
+      if (length < 2) break
+      at += 2 + length
+    }
+    return { format: 'JPEG' }
+  }
+  if (bytes.length >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') {
+    const chunk = ascii(bytes, 12, 16)
+    if (chunk === 'VP8X' && bytes.length >= 30) {
+      return { format: 'WebP', width: u24le(bytes, 24) + 1, height: u24le(bytes, 27) + 1 }
+    }
+    if (chunk === 'VP8 ' && bytes.length >= 30) {
+      return { format: 'WebP', width: u16(bytes, 26) & 0x3fff, height: u16(bytes, 28) & 0x3fff }
+    }
+    if (chunk === 'VP8L' && bytes.length >= 25) {
+      const b1 = bytes[21] ?? 0
+      const b2 = bytes[22] ?? 0
+      const b3 = bytes[23] ?? 0
+      const b4 = bytes[24] ?? 0
+      return {
+        format: 'WebP',
+        width: 1 + (((b2 & 0x3f) << 8) | b1),
+        height: 1 + (((b4 & 0xf) << 10) | (b3 << 2) | ((b2 & 0xc0) >> 6)),
+      }
+    }
+    return { format: 'WebP' }
+  }
+  if (bytes.length >= 14 && ascii(bytes, 0, 2) === 'BM') {
+    return bytes.length >= 26
+      ? { format: 'BMP', width: u32(bytes, 18), height: Math.abs(u32(bytes, 22) | 0) }
+      : { format: 'BMP' }
+  }
+  if (bytes.length >= 4 && (ascii(bytes, 0, 4) === '<svg' || ascii(bytes, 0, 5) === '<?xml')) {
+    const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 4096))
+    if (!/<svg\b/iu.test(text)) return undefined
+    const width = /width=["']([\d.]+)/iu.exec(text)?.[1]
+    const height = /height=["']([\d.]+)/iu.exec(text)?.[1]
+    return {
+      format: 'SVG',
+      width: width === undefined ? undefined : Number(width),
+      height: height === undefined ? undefined : Number(height),
+    }
+  }
+  return undefined
+}
+
+/**
+ * Describe an image without decoding its pixels.
+ * @param bytes - image head.
+ * @param size - file size.
+ * @returns the image metadata.
+ */
+export function inspectImage(bytes: Uint8Array, size: number): InspectResult {
+  const info = imageInfo(bytes)
+  if (info === undefined) throw new Error('image: unrecognized image header')
+  const dimensions = info.width !== undefined && info.height !== undefined
+    ? `${String(info.width)}×${String(info.height)}`
+    : 'unknown'
+  return {
+    kind: 'image',
+    summary: `${info.format} image · ${dimensions} · ${formatBytes(size)}`,
+    facts: [
+      `format: ${info.format}`,
+      `dimensions: ${dimensions}`,
+      `size: ${sizeFact(size)}`,
+    ],
+    schema: [],
+    notes: [],
+    next: ['在面板中打开图片预览查看像素'],
+    truncated: false,
+  }
+}
+
+/**
+ * Describe a PDF header.
+ * @param bytes - first bytes.
+ * @param size - file size.
+ * @returns the PDF metadata.
+ */
+export function inspectPdf(bytes: Uint8Array, size: number): InspectResult {
+  const header = ascii(bytes, 0, 16)
+  const version = /^%PDF-(\d+\.\d+)/u.exec(header)?.[1]
+  if (version === undefined) throw new Error('pdf: header mismatch')
+  return {
+    kind: 'pdf',
+    summary: `PDF ${version} · ${formatBytes(size)}`,
+    facts: [`version: ${version}`, `size: ${sizeFact(size)}`],
+    schema: [],
+    notes: [],
+    next: ['在面板中打开 PDF 预览查看页面'],
+    truncated: false,
+  }
+}
+
+/**
+ * Describe a font from its sfnt/WOFF table directory.
+ * @param bytes - font head.
+ * @param size - file size.
+ * @returns the font metadata.
+ */
+export function inspectFont(bytes: Uint8Array, size: number): InspectResult {
+  const signature = ascii(bytes, 0, 4)
+  const format = signature === 'OTTO' ? 'OpenType CFF'
+    : signature === 'wOFF' ? 'WOFF'
+      : signature === 'wOF2' ? 'WOFF2'
+        : signature === 'ttcf' ? 'TrueType collection'
+          : 'TrueType'
+  const numTables = signature === 'wOFF' || signature === 'wOF2' ? u16be(bytes, 12) : u16be(bytes, 4)
+  const tables: string[] = []
+  let glyphs: number | undefined
+  if (signature !== 'wOFF' && signature !== 'wOF2' && signature !== 'ttcf') {
+    for (let index = 0; index < numTables; index += 1) {
+      const at = 12 + index * 16
+      if (at + 16 > bytes.length) break
+      const tag = ascii(bytes, at, at + 4)
+      tables.push(tag)
+      if (tag === 'maxp') {
+        const offset = u32be(bytes, at + 8)
+        if (offset + 6 <= bytes.length) glyphs = u16be(bytes, offset + 4)
+      }
+    }
+  }
+  return {
+    kind: 'font',
+    summary: `${format} font · ${glyphs === undefined ? 'unknown' : String(glyphs)} glyphs · ${formatBytes(size)}`,
+    facts: [
+      `format: ${format}`,
+      `tables: ${String(numTables)}`,
+      ...(glyphs === undefined ? [] : [`glyphs: ${String(glyphs)}`]),
+      `size: ${sizeFact(size)}`,
+    ],
+    schema: tables.slice(0, MAX_ITEMS),
+    notes: [],
+    next: ['在面板中打开字体预览查看字样'],
+    truncated: false,
+  }
+}
+
+/**
+ * Describe a glTF JSON document or a GLB container.
+ * @param bytes - head of the model file.
+ * @param size - file size.
+ * @returns the model metadata.
+ */
+export function inspectModel(bytes: Uint8Array, size: number): InspectResult {
+  let glb = false
+  let json = ''
+  if (bytes.length >= 20 && ascii(bytes, 0, 4) === 'glTF') {
+    glb = true
+    const chunkLength = u32(bytes, 12)
+    const chunkType = ascii(bytes, 16, 20)
+    if (chunkType !== 'JSON') throw new Error('glb: first chunk is not JSON')
+    json = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(20, 20 + chunkLength))
+  } else {
+    json = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+  }
+  const parsed = JSON.parse(json) as {
+    asset?: { version?: string, generator?: string }
+    scene?: number
+    scenes?: unknown[]
+    nodes?: Array<{ name?: string }>
+    meshes?: unknown[]
+    materials?: unknown[]
+    animations?: unknown[]
+  }
+  const version = parsed.asset?.version
+  if (version === undefined) throw new Error('gltf: asset.version missing')
+  const count = (value: unknown[] | undefined): number => value?.length ?? 0
+  const nodes = parsed.nodes ?? []
+  return {
+    kind: glb ? 'glb' : 'gltf',
+    summary: `glTF ${version} · ${String(count(parsed.meshes))} meshes · ${String(count(parsed.materials))} materials`,
+    facts: [
+      `asset version: ${version}`,
+      ...(parsed.asset?.generator === undefined ? [] : [`generator: ${parsed.asset.generator}`]),
+      `scenes: ${String(count(parsed.scenes))}`,
+      `nodes: ${String(nodes.length)}`,
+      `meshes: ${String(count(parsed.meshes))}`,
+      `materials: ${String(count(parsed.materials))}`,
+      `animations: ${String(count(parsed.animations))}`,
+      ...(parsed.scene === undefined ? [] : [`default scene: ${String(parsed.scene)}`]),
+      `size: ${sizeFact(size)}`,
+    ],
+    schema: nodes.slice(0, MAX_ITEMS).map(node => node.name ?? '(unnamed)'),
+    notes: [],
+    next: ['在面板中打开 3D 预览查看模型'],
+    truncated: false,
+  }
+}
+
+/**
+ * Describe a media container without probing codecs or duration.
+ * @param bytes - first bytes.
+ * @param size - file size.
+ * @returns the media metadata.
+ */
+export function inspectMedia(bytes: Uint8Array, size: number): InspectResult {
+  let format = ''
+  const facts: string[] = []
+  if (ascii(bytes, 4, 8) === 'ftyp') {
+    format = `ISO BMFF (${ascii(bytes, 8, 12).trim()})`
+  } else if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WAVE') {
+    format = 'WAV'
+    const channels = u16(bytes, 22)
+    const sampleRate = u32(bytes, 24)
+    facts.push(`channels: ${String(channels)}`, `sample rate: ${String(sampleRate)} Hz`)
+  } else if (bytes.length >= 4 && bytes[0] === 0x1a && bytes[1] === 0x45 && bytes[2] === 0xdf && bytes[3] === 0xa3) {
+    format = 'Matroska/WebM'
+  } else if (ascii(bytes, 0, 4) === 'OggS') {
+    format = 'Ogg'
+  } else if (ascii(bytes, 0, 3) === 'ID3') {
+    format = 'MP3'
+  } else if (bytes.length >= 3 && bytes[0] === 0x47 && bytes[1] === 0x40) {
+    format = 'MPEG-TS'
+  } else {
+    throw new Error('media: unrecognized container')
+  }
+  return {
+    kind: 'media',
+    summary: `${format} media · ${formatBytes(size)}`,
+    facts: [`container: ${format}`, ...facts, `size: ${sizeFact(size)}`],
+    schema: [],
+    notes: ['Codec and duration probing are not part of preview_inspect.'],
+    next: ['在面板中打开媒体预览播放'],
+    truncated: false,
+  }
+}
+
 /**
  * A successful result for a file the sidebar can preview but this tool cannot
  * structurally inspect. This is deliberately not an exception: the file is
@@ -890,6 +1154,23 @@ async function inspectEntryBytes(name: string, bytes: Uint8Array, read: Reader):
   }
   if (suffix === 'eml') return inspected(inspectEml(bytes))
   if (suffix === 'diff' || suffix === 'patch') return inspected(inspectDiff(bytes))
+  if (suffix === 'png' || suffix === 'jpg' || suffix === 'jpeg' || suffix === 'gif'
+    || suffix === 'webp' || suffix === 'bmp' || suffix === 'svg') {
+    return inspected(inspectImage(bytes, size))
+  }
+  if (suffix === 'pdf') return inspected(inspectPdf(bytes, size))
+  if (suffix === 'ttf' || suffix === 'otf' || suffix === 'woff' || suffix === 'woff2') {
+    return inspected(inspectFont(bytes, size))
+  }
+  if (suffix === 'gltf' || suffix === 'glb') return inspected(inspectModel(bytes, size))
+  const mediaFamily = PREVIEW_FAMILIES[suffix]
+  if (mediaFamily === 'video' || mediaFamily === 'audio') {
+    try {
+      return inspected(inspectMedia(bytes, size))
+    } catch {
+      return previewOnlyResult(mediaFamily, size, suffix)
+    }
+  }
   if (suffix === 'gguf') {
     if (!looksLikeGguf(bytes)) throw new Error('not a GGUF file (magic mismatch)')
     return inspected(inspectGguf(bytes))
@@ -1177,7 +1458,8 @@ export function registerInspectTool(ctx: InspectContext): () => void {
         description: 'Describe the structure of a file instead of reading its bytes: one summary line, '
           + 'a few facts, a schema (columns or tensors), warnings, and concrete next steps. '
           + 'Supports CSV/TSV, JSONL, ZIP/EPUB, TAR/TGZ, Office OOXML, EML, diff, 7z, '
-          + 'SQLite, SafeTensors, GGUF, notebooks and reST. '
+          + 'SQLite, SafeTensors, GGUF, notebooks, reST, images, PDF, fonts, glTF/GLB '
+          + 'and common media containers. '
           + 'For other previewable files it returns a preview-only capability envelope instead of an error.',
         parameters: PARAMETERS,
         output: {
@@ -1271,9 +1553,35 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             return inspected(inspectEml(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
           }
 
+          const imageSuffixes = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg']
+          if (imageSuffixes.includes(suffix)) {
+            return inspected(inspectImage(new Uint8Array(await read(0, Math.min(size, 64 * 1024))), size))
+          }
+
+          if (suffix === 'pdf') {
+            return inspected(inspectPdf(new Uint8Array(await read(0, Math.min(size, 1024))), size))
+          }
+
+          if (suffix === 'ttf' || suffix === 'otf' || suffix === 'woff' || suffix === 'woff2') {
+            return inspected(inspectFont(new Uint8Array(await read(0, Math.min(size, 128 * 1024))), size))
+          }
+
+          if (suffix === 'gltf' || suffix === 'glb') {
+            return inspected(inspectModel(new Uint8Array(await read(0, Math.min(size, HEAD_BYTES))), size))
+          }
+
           if (suffix === 'diff' || suffix === 'patch') {
             const length = Math.min(size, TEXT_BYTES)
             return inspected(inspectDiff(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
+          }
+
+          const mediaFamily = PREVIEW_FAMILIES[suffix]
+          if (mediaFamily === 'video' || mediaFamily === 'audio') {
+            try {
+              return inspected(inspectMedia(new Uint8Array(await read(0, Math.min(size, 64 * 1024))), size))
+            } catch {
+              return previewOnlyResult(mediaFamily, size, suffix)
+            }
           }
 
           if (suffix === 'jsonl' || suffix === 'ndjson') {
@@ -1329,6 +1637,22 @@ export function registerInspectTool(ctx: InspectContext): () => void {
           if (detected === '7z') return inspected(await inspectSevenZip(read))
           if (detected === 'sqlite') return inspected(await inspectSqlite(read))
           if (detected === 'tar') return inspected(await inspectTar(size, read))
+          if (detected === 'png' || detected === 'jpeg' || detected === 'gif' || detected === 'webp') {
+            return inspected(inspectImage(new Uint8Array(await read(0, Math.min(size, 64 * 1024))), size))
+          }
+          if (detected === 'pdf') {
+            return inspected(inspectPdf(new Uint8Array(await read(0, Math.min(size, 1024))), size))
+          }
+          if (detected === 'glb') {
+            return inspected(inspectModel(new Uint8Array(await read(0, Math.min(size, HEAD_BYTES))), size))
+          }
+          if (detected === 'video' || detected === 'audio') {
+            try {
+              return inspected(inspectMedia(new Uint8Array(await read(0, Math.min(size, 64 * 1024))), size))
+            } catch {
+              return previewOnlyResult(detected === 'video' ? 'video' : 'audio', size)
+            }
+          }
           if (detected === 'gguf') {
             const bytes = new Uint8Array(await read(0, Math.min(size, HEAD_BYTES)))
             return inspected(inspectGguf(bytes))

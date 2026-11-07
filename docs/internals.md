@@ -512,11 +512,12 @@ ctx.inject(['tools'], (toolsCtx) => {
 `read` 负责按行给内容，二者互补；不要再用工具重复 `read` 的能力。
 
 已结构化支持：CSV/TSV/TAB、JSONL/NDJSON、ZIP、EPUB、TAR/TGZ、Office OOXML
-（docx/xlsx/pptx）、EML、diff/patch、7z、SQLite、SafeTensors、GGUF、Notebook、reST。
-其余可预览格式（PDF / 图片 / HTML / Markdown / 代码 / 字体 / 媒体 / 3D / 旧版
-Office）返回 `preview-only`，而不是报错；完全无法识别的文件返回 `unknown`。未知
-扩展名会先读最多 1 KB 做 magic 探测，命中 ZIP / TAR / 7z / SQLite / GGUF 时仍走
-真实 inspector。`path` 可用 `archive.zip!/member` 或 `archive.tar.gz!/member`
+（docx/xlsx/pptx）、EML、diff/patch、7z、SQLite、SafeTensors、GGUF、Notebook、reST，
+以及图片尺寸、PDF 版本、字体表、glTF/GLB 场景和常见媒体容器。其余可预览格式
+（HTML / Markdown / 代码 / 旧版 Office / OBJ / STL / log）返回 `preview-only`，
+而不是报错；完全无法识别的文件返回 `unknown`。未知扩展名会先读最多 1 KB 做
+magic 探测，命中 ZIP / TAR / 7z / SQLite / GGUF / 图片 / PDF / GLB / 媒体时仍走
+对应 inspector。`path` 可用 `archive.zip!/member` 或 `archive.tar.gz!/member`
 语法直接检查 ZIP/TAR 成员，不必先解压。只读窗口：二进制 4 MB、文本 1 MB；输出
 有界（各 ≤ 20 项）。
 
