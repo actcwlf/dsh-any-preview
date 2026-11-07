@@ -159,7 +159,7 @@ export function SearchBar({
                   ? t('search.submitFull')
                   : matches === 0
                     ? t('search.noMatches')
-                    : `${index + 1}/${matches}`}
+                    : `${String(index + 1)}/${matches.toLocaleString('en-US')}`}
           </span>
         )}
         {scanning && onCancel !== undefined && (

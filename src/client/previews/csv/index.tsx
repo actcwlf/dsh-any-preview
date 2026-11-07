@@ -127,9 +127,10 @@ export function CsvBody(props: PreviewBodyProps) {
   const fullSearch: FullSearchState = complete
     ? 'complete'
     : scanning ? 'scanning' : scanned ? 'done' : stopped ? 'stopped' : 'idle'
-  // While a scan runs (or after the reader stopped it), the visible total is what
-  // the scan has found, not the fallback in-memory count.
-  const displayMatches = scanning || stopped ? (scanState?.matches ?? scan.count) : scan.count
+  // The display count is the whole scan result. The navigable row list may be
+  // shorter (its cap is reported by the status line), but the reader still sees
+  // the true total.
+  const displayMatches = scanState?.matches ?? scan.count
   const submit = (): void => {
     if (complete || scanned) {
       scan.next()

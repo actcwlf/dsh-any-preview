@@ -497,6 +497,9 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   await enter()
   await tick(800)
   assert.match(view.container.textContent ?? '', /共 120,000 处匹配（可跳转前 5,000 处）/u)
+  const capped = view.container.querySelector('[data-search-feedback="done"]')
+  assert.ok(capped, 'the search row still reports the full total')
+  assert.match(capped.textContent ?? '', /1\/120,000/u, 'the count shows the whole scan, not the navigable cap')
 })
 
 test('an active search hit does not pin the view in the proportional mode', { skip: !available }, async (t) => {
