@@ -100,6 +100,7 @@ test('extraction is reusable, reportable and cleanable', { skip: !available }, a
 
   assert.equal(await cleanExtractionDir(dir), 1)
   assert.equal(await extractedPathOf('data.csv', dir), undefined)
+  assert.equal(existsSync(`${root}/.dsh-any-preview`), false, 'empty parent directory is removed')
   // Only a direct archive subdirectory of `.dsh-any-preview` may be removed.
   await assert.rejects(() => cleanExtractionDir(root))
   rmSync(root, { recursive: true, force: true })
@@ -114,6 +115,21 @@ test('different entry directories stay separate', { skip: !available }, async ()
   assert.notEqual(first, second)
   assert.match(first.replaceAll('\\', '/'), /\/x\/readme\.txt$/u)
   assert.match(second.replaceAll('\\', '/'), /\/y\/readme\.txt$/u)
+  rmSync(root, { recursive: true, force: true })
+})
+
+test('cleaning one archive keeps a non-empty extraction parent', { skip: !available }, async () => {
+  const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
+  const parent = `${root}/.dsh-any-preview`
+  const first = `${parent}/a.zip`
+  const second = `${parent}/b.zip`
+  await writeEntryBytesTo(new Uint8Array([1]), 'first.txt', first)
+  await writeEntryBytesTo(new Uint8Array([2]), 'second.txt', second)
+
+  assert.equal(await cleanExtractionDir(first), 1)
+  assert.equal(existsSync(parent), true, 'another archive still uses the parent')
+  assert.equal(await cleanExtractionDir(second), 1)
+  assert.equal(existsSync(parent), false, 'the now-empty parent is removed')
   rmSync(root, { recursive: true, force: true })
 })
 

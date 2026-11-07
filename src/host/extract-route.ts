@@ -6,7 +6,7 @@
  * sanitized base name. Anything that would escape that directory is refused.
  */
 import { LIMITS } from '../shared/limits.ts'
-import { appendFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { zipEntryBytes } from '../shared/zip/parse.ts'
@@ -143,20 +143,35 @@ export async function extractedPathOf(entryName: string, targetDir: string): Pro
   return info !== undefined && info.isFile() ? path : undefined
 }
 
+async function removeEmptyParent(parent: string): Promise<void> {
+  try {
+    const remaining = await readdir(parent)
+    if (remaining.length === 0) await rmdir(parent)
+  } catch {
+    // The parent is already gone, or another extraction filled it again.
+  }
+}
+
 /**
- * Remove an extraction directory. Only `.dsh-any-preview` directories are
- * removable, so a mistyped path cannot delete a user directory.
+ * Remove an extraction directory. Only one archive subdirectory under
+ * `.dsh-any-preview` is removable; when that removal leaves the shared parent
+ * empty, the parent is removed too.
  * @param targetDir - the directory the client extracted into.
- * @returns how many files were removed.
+ * @returns how many top-level entries were removed.
  */
 export async function cleanExtractionDir(targetDir: string): Promise<number> {
-  if (basename(dirname(targetDir)) !== EXTRACTION_DIR) {
+  const parent = dirname(targetDir)
+  if (basename(parent) !== EXTRACTION_DIR) {
     throw new Error('只能清理 .dsh-any-preview 下的压缩包子目录')
   }
   const info = await stat(targetDir).catch(() => undefined)
-  if (info === undefined) return 0
+  if (info === undefined) {
+    await removeEmptyParent(parent)
+    return 0
+  }
   const before = await readdir(targetDir).catch(() => [] as string[])
   await rm(targetDir, { recursive: true, force: true })
+  await removeEmptyParent(parent)
   return before.length
 }
 

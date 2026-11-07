@@ -647,7 +647,8 @@ loading/error 用单层 Entry shell（`TEXT` 或 `ARCHIVE`），因此压缩包�
 每个压缩包一个子目录，条目保留相对路径；Host 写入、`check`、流式 part 文件、
 `extractedAddress` 和 clean 都使用同一套 `safeEntryPath`，避免两个压缩包或同包两个
 目录的同名条目落到同一个文件。clean 只允许删除 `.dsh-any-preview/<archive-name>/`
-这一层，不再删除共享根目录。
+这一层，不再删除共享根目录；如果删除后 `.dsh-any-preview` 已经为空，会连同空的
+父目录一起删除。
 
 ### 为什么"重新解压"必须在列表栏
 
