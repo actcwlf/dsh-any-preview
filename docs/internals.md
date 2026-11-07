@@ -317,7 +317,9 @@ UI 基线在 `kernel/ui.ts`：所有预览共用 **32px** `PreviewChrome` 二级
 裁切；文本控件统一使用 `dsh-preview-control` 的 hover / focus-visible / disabled 状态。
 bar 的间距采用宿主的 `0 6px 0 16px` / 4px gap；header 控件是 28px ghost（无描边、
 secondary ink），内容区动作另用 `dsh-preview-action`（`bg-layer-2` + 细边框 + 13/20）。
-根节点正文行高与宿主一致为 1.6。
+根节点正文行高与宿主一致为 1.6。CSV / JSONL / Archive / Inspect 的列头共用
+`DATA_TABLE_HEADER`：28px、4% ink tint、12/18、600、16px 左右内边距；Model 动画条
+降为 28px 的内容 transport，不再和 32px chrome 同权。
 元数据检查器的 `Summary` 现在位于内容滚动区顶部，不再是一条独立的 32px chrome
 strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一个 32px bar 决定。
 `PreviewChrome.status` 只在 `tone` 为 `warning` / `critical` 时渲染；正常信息不再

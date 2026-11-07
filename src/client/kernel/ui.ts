@@ -123,9 +123,24 @@ export const BODY_ACTION = {
   cursor: 'pointer',
 } as const
 
+/** Shared column header for CSV, JSONL, archive and inspect tables. */
+export const DATA_TABLE_HEADER = {
+  boxSizing: 'border-box' as const,
+  height: 28,
+  padding: '0 16px',
+  fontSize: TEXT.meta.fontSize,
+  lineHeight: TEXT.meta.lineHeight,
+  fontWeight: 600,
+  color: 'var(--dsw-alias-label-primary)',
+  // A wash of ink, not bg-layer-2: the layer palette is white in the light theme,
+  // so it cannot make a visible header band.
+  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, var(--dsw-alias-bg-base))',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
+  whiteSpace: 'nowrap' as const,
+} as const
+
 /** Hover/focus/disabled states shared by header controls and content actions. */
-export const PREVIEW_CONTROL_CSS = `
-.dsh-preview-control {
+export const PREVIEW_CONTROL_CSS = `.dsh-preview-control {
   color: var(--dsw-alias-label-secondary);
   background: transparent;
 }

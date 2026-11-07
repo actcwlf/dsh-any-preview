@@ -6,6 +6,7 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
+import { DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { toFileRow } from '../../kernel/row-numbering.ts'
 import type { ProportionalGeometry, WindowedBody } from '../../kernel/window-state.ts'
 
@@ -113,28 +114,13 @@ export function CsvTable(props: CsvTableProps) {
   )
 }
 
-const shared = {
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
-  // A wash of the ink colour rather than a layer token: the layer palette is white in
-  // the light theme, so it cannot make a header band. 4 % of the label colour is a
-  // subtle grey in light and a subtle lift in dark.
-  //
-  // It is mixed with the pane colour, not with transparent: this band is sticky, so a
-  // translucent one lets the rows scrolling underneath show through it.
-  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, var(--dsw-alias-bg-base))',
-} as const
-
 const headerStyle = {
-  ...shared,
+  ...DATA_TABLE_HEADER,
   position: 'sticky' as const,
   top: 0,
   zIndex: 1,
-  // 6 + 6 + 15 + 0.5 = 27.5, which is the 28px the scroll geometry budgets for.
-  padding: '6px 12px',
-  lineHeight: '15px',
   textAlign: 'left' as const,
-  fontWeight: 600,
-  color: 'var(--dsw-alias-label-primary)',
+  verticalAlign: 'middle' as const,
 }
 
 const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
@@ -155,7 +141,7 @@ const indexStyle = {
 } as const
 
 const cellStyle = {
-  padding: '0 12px',
+  padding: '0 16px',
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',
 } as const

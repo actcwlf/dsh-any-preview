@@ -7,7 +7,7 @@
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
-import { TEXT } from './ui.ts'
+import { TEXT, DATA_TABLE_HEADER } from './ui.ts'
 
 /** One summary fact shown above the content. */
 export interface InspectField {
@@ -98,13 +98,12 @@ const tableStyle = {
   fontSize: TEXT.table.fontSize, lineHeight: TEXT.table.lineHeight,
 } as const
 const thStyle = {
-  position: 'sticky' as const, top: 0, padding: '4px 10px', fontWeight: 600,
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', whiteSpace: 'nowrap' as const,
-  lineHeight: TEXT.table.lineHeight,
+  ...DATA_TABLE_HEADER,
+  position: 'sticky' as const, top: 0,
+  textAlign: 'left' as const, verticalAlign: 'middle' as const,
 } as const
 const tdStyle = {
-  padding: '3px 10px', color: 'var(--dsw-alias-label-primary)',
+  padding: '3px 16px', color: 'var(--dsw-alias-label-primary)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)', whiteSpace: 'nowrap' as const,
   lineHeight: TEXT.table.lineHeight,
 } as const

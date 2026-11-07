@@ -6,6 +6,7 @@ import { Marked } from '../../kernel/marks.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
+import { DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -143,21 +144,14 @@ function cellOf(value: unknown, column: string): string {
   return formatValue((value as Record<string, unknown>)[column])
 }
 
-const shared = {
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
-  background: 'var(--dsw-alias-bg-layer-2)',
-} as const
-
 const headerStyle = {
-  ...shared,
+  ...DATA_TABLE_HEADER,
   position: 'sticky' as const,
   top: 0,
   zIndex: 1,
-  padding: '5px 12px',
   textAlign: 'left' as const,
-  fontWeight: 600,
-  color: 'var(--dsw-alias-label-primary)',
-} as const
+  verticalAlign: 'middle' as const,
+}
 
 const cornerStyle = { ...headerStyle, left: 0, zIndex: 2, width: 1 }
 
@@ -176,7 +170,7 @@ const indexStyle = {
 } as const
 
 const cellStyle = {
-  padding: '0 12px',
+  padding: '0 16px',
   lineHeight: '20px',
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)',
   color: 'var(--dsw-alias-label-primary)',

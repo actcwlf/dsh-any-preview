@@ -6,7 +6,7 @@
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
-import { CHROME_CONTROL, TEXT } from '../../kernel/ui.ts'
+import { CHROME_CONTROL, DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
 import type { EntryLike } from './EntryView.tsx'
@@ -120,13 +120,9 @@ const TABLE = {
   fontFamily: 'var(--dsw-font-family)', fontSize: 12, lineHeight: '18px',
 } as const
 const HEADER = {
-  position: 'sticky' as const, top: 0, height: 28, padding: '0 16px',
+  ...DATA_TABLE_HEADER,
+  position: 'sticky' as const, top: 0,
   textAlign: 'left' as const, verticalAlign: 'middle' as const,
-  fontWeight: 600, fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
-  letterSpacing: '0.02em',
-  color: 'var(--dsw-alias-label-secondary)',
-  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, var(--dsw-alias-bg-base))',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const CELL = {
   height: 28, padding: '0 16px', verticalAlign: 'middle' as const,

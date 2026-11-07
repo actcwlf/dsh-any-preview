@@ -192,8 +192,8 @@ const MENU_CSS = `
 
 const barStyle = {
   boxSizing: 'border-box' as const,
-  display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto',
-  height: 32, padding: '0 12px 0 16px', fontSize: 12, lineHeight: '18px',
+  display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
+  height: 28, padding: '0 6px 0 16px', fontSize: 12, lineHeight: '18px',
   color: 'var(--dsw-alias-label-secondary)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
