@@ -101,9 +101,16 @@ dsh plugin --profile desktop remove dsh-any-preview
 - 回环媒体路由依赖 `webServer`，缺失该服务的 profile 会退回代理路径（受 Blob 上限约束）
 - 3D：Draco/KTX2/meshopt 的解码器随包分发（构建时从 three 拷贝）；KTX2 依赖 `blob:` Worker，
   极端 CSP 环境会显示本地化解码失败；外部 `.mtl`/贴图不参与自动刷新；
-  贴图总量超过 64 MB 会被拒绝
+  压缩贴图总量超过 64 MB 会被拒绝，单张最长边超过 4096 或解码总像素超过 32 MP 会在上传前降采样
 - 加密压缩包、ZIP64、7z / rar 仍未支持
 - `.ts` 按源码处理（由内置代码预览接管）：多数 `.ts` 文件是 TypeScript，而渲染器选择只看路径；MPEG-TS 请用 `.m2ts` 或改扩展名
+
+## 分支
+
+- `master`：正式版本，只接受发布合并
+- `dev`：集成分支，日常功能开发以它为基线
+- `feature/*`、`fix/*`：从 `dev` 分叉，完成后合并回 `dev`
+- 发布：`dev` 验证通过后合并到 `master`
 
 ## 文档
 
