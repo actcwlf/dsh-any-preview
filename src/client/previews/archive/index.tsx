@@ -46,6 +46,7 @@ async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
 export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   const { meta, absolutePath, version } = useDocument(content, resourceAddress, useResource)
   const size = meta?.size ?? 0
+  const defaultDir = typeof absolutePath === 'string' ? defaultTargetDir(absolutePath) : ''
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
   const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
@@ -64,14 +65,17 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   useEffect(() => () => {
     if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
   }, [])
-  const [dir, setDir] = useState('')
+  const [dir, setDir] = useState(defaultDir)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
-  const defaultDir = typeof absolutePath === 'string' ? defaultTargetDir(absolutePath) : ''
   const name = typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() ?? '' : ''
   const lower = name.toLowerCase()
+
+  useEffect(() => {
+    if (defaultDir !== '') setDir(current => (current === '' ? defaultDir : current))
+  }, [defaultDir])
 
   useEffect(() => {
     if (url === undefined) return

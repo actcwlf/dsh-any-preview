@@ -34,7 +34,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
 
   const [listing, setListing] = useState<Listing>({ status: 'loading' })
   const [selected, setSelected] = useState<SevenZipEntry | undefined>(undefined)
-  const [dir, setDir] = useState('')
+  const [dir, setDir] = useState(defaultDir)
   const [lastEntry, setLastEntry] = useState<SevenZipEntry | undefined>(undefined)
   const [notice, setNotice] = useState<ArchiveNotice | undefined>(undefined)
   const noticeId = useRef(0)
