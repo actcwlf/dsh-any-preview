@@ -6,8 +6,8 @@
  * strip exposes a compact multi-select menu instead of a row of buttons; the
  * menu scales to models with many clips.
  */
-import { useEffect, useRef, useState } from 'react'
 import { t } from '../../i18n.ts'
+import { PreviewMenu } from '../../kernel/PreviewMenu.tsx'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
 import type { ModelAnimationInfo } from './animation-runtime.ts'
 
@@ -54,33 +54,6 @@ export function ModelAnimationBar({
   onToggle,
   onSeek,
 }: ModelAnimationBarProps) {
-  const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
-  const menuRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const doc = triggerRef.current?.ownerDocument
-    if (doc === undefined || doc === null) return
-    const closeOnOutside = (event: PointerEvent): void => {
-      const target = event.target as Node | null
-      if (target === null) return
-      if (menuRef.current?.contains(target) === true) return
-      if (triggerRef.current?.contains(target) === true) return
-      setOpen(false)
-    }
-    const closeOnEscape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      setOpen(false)
-      triggerRef.current?.focus()
-    }
-    doc.addEventListener('pointerdown', closeOnOutside, true)
-    doc.addEventListener('keydown', closeOnEscape)
-    return () => {
-      doc.removeEventListener('pointerdown', closeOnOutside, true)
-      doc.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [open])
 
   if (clips.length === 0) return null
   const duration = active.reduce(
@@ -129,52 +102,45 @@ export function ModelAnimationBar({
         {formatClock(position)} / {formatClock(duration)}
       </span>
       {clips.length > 1 && (
-        <span style={menuWrapStyle}>
-          <button
-            ref={triggerRef}
-            type="button"
-            className="dsh-model-clip-trigger"
-            style={triggerStyle}
-            onClick={() => setOpen((value) => !value)}
-            aria-expanded={open}
-            aria-label={t('model.animation')}
-            title={activeNames.length > 0 ? activeNames.join(' · ') : t('model.animation')}
-          >
-            <span>{t('model.animation')} {active.length}/{clips.length}</span>
-            <span aria-hidden="true" style={chevronStyle(open)}>▾</span>
-          </button>
-          {open && (
-            <div
-              ref={menuRef}
-              style={menuStyle}
-              role="group"
-              aria-label={t('model.animation')}
+        <PreviewMenu
+          label={t('model.animation')}
+          panelStyle={{ width: 240, overflow: 'hidden' }}
+          trigger={({ open, ...triggerProps }) => (
+            <button
+              {...triggerProps}
+              type="button"
+              className="dsh-model-clip-trigger"
+              style={triggerStyle}
+              title={activeNames.length > 0 ? activeNames.join(' · ') : t('model.animation')}
             >
-              <div style={menuListStyle}>
-                {clips.map((clip, index) => {
-                  const isActive = active.includes(index)
-                  const label = clipLabel(clip, index)
-                  return (
-                    <label
-                      key={index}
-                      className="dsh-model-clip-row"
-                      style={rowStyle}
-                      title={label}
-                    >
-                      <input
-                        type="checkbox"
-                        style={checkboxStyle}
-                        checked={isActive}
-                        onChange={() => onToggleClip(index)}
-                      />
-                      <span style={rowLabelStyle}>{label}</span>
-                    </label>
-                  )
-                })}
-              </div>
-            </div>
+              <span>{t('model.animation')} {active.length}/{clips.length}</span>
+              <span aria-hidden="true" style={chevronStyle(open)}>▾</span>
+            </button>
           )}
-        </span>
+        >
+          <div style={menuListStyle}>
+            {clips.map((clip, index) => {
+              const isActive = active.includes(index)
+              const label = clipLabel(clip, index)
+              return (
+                <label
+                  key={index}
+                  className="dsh-model-clip-row"
+                  style={rowStyle}
+                  title={label}
+                >
+                  <input
+                    type="checkbox"
+                    style={checkboxStyle}
+                    checked={isActive}
+                    onChange={() => onToggleClip(index)}
+                  />
+                  <span style={rowLabelStyle}>{label}</span>
+                </label>
+              )
+            })}
+          </div>
+        </PreviewMenu>
       )}
     </div>
   )
@@ -213,10 +179,6 @@ const timeStyle = {
   color: 'var(--dsw-alias-label-tertiary)',
 } as const
 
-const menuWrapStyle = {
-  position: 'relative', display: 'inline-flex', flex: '0 0 auto',
-} as const
-
 const triggerStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
   height: 24, padding: '0 8px', borderRadius: 'var(--dsw-radius-sm)',
@@ -234,17 +196,6 @@ function chevronStyle(open: boolean) {
     transition: 'transform 120ms ease',
   } as const
 }
-
-const menuStyle = {
-  position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 40,
-  width: 240, maxWidth: '80vw', maxHeight: 260,
-  display: 'flex', flexDirection: 'column', overflow: 'hidden',
-  padding: 4, borderRadius: 'var(--dsw-radius-md)',
-  background: 'var(--dsw-specific-menu, var(--dsw-alias-bg-base))',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
-  boxShadow: 'var(--dsw-shadow-lv2)',
-  backdropFilter: 'var(--dsw-menu-backdrop-filter, none)',
-} as const
 
 const menuListStyle = {
   display: 'flex', flexDirection: 'column', gap: 1,

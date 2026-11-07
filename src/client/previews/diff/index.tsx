@@ -92,7 +92,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
       tone={diff.truncated ? 'warning' : 'normal'}
     >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <div style={{ fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55 }}>
+        <div style={{ fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: '18px' }}>
           {visible.map(({ line, index }) => (
             <div
               key={index}
