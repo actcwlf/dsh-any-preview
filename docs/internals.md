@@ -638,6 +638,17 @@ loading/error 用单层 Entry shell（`TEXT` 或 `ARCHIVE`），因此压缩包�
 
 列表额外需要 `onReextract` / `onClean` 两个回调——**不要**在组件内部假设解压由谁执行。
 
+解压布局由 `shared/archive-paths.ts` 统一：
+
+```text
+<archive-parent>/.dsh-any-preview/<archive-name>/<entry-relative-path>
+```
+
+每个压缩包一个子目录，条目保留相对路径；Host 写入、`check`、流式 part 文件、
+`extractedAddress` 和 clean 都使用同一套 `safeEntryPath`，避免两个压缩包或同包两个
+目录的同名条目落到同一个文件。clean 只允许删除 `.dsh-any-preview/<archive-name>/`
+这一层，不再删除共享根目录。
+
 ### 为什么"重新解压"必须在列表栏
 
 解压成功后文件在主预览打开，侧栏的压缩包面板回到列表页；条目页的「重新解压」只存在于

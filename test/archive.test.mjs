@@ -1,11 +1,12 @@
-﻿/** Zip and tar parsing against the real fixtures in samples/. */
+/** Zip and tar parsing against the real fixtures in samples/. */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/shared/zip/parse.ts'
-import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName } from '../src/host/extract-route.ts'
+import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName, writeEntryBytesTo } from '../src/host/extract-route.ts'
 import { defaultTargetDir, extractedAddress } from '../src/client/previews/archive/paths.ts'
+import { safeEntryPath } from '../src/shared/archive-paths.ts'
 
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
@@ -72,6 +73,9 @@ test('entry names cannot escape the target directory', () => {
   assert.equal(safeEntryName('a/b/c.txt'), 'c.txt')
   assert.equal(safeEntryName('..'), '_')
   assert.equal(safeEntryName(''), 'entry')
+  assert.equal(safeEntryPath('../../evil.sh'), 'evil.sh')
+  assert.equal(safeEntryPath('a/b/c.txt'), 'a/b/c.txt')
+  assert.equal(safeEntryPath('a/../b.txt'), 'a/b.txt')
 })
 
 test('an entry extracts to disk with its content', { skip: !available }, async () => {
@@ -84,7 +88,7 @@ test('an entry extracts to disk with its content', { skip: !available }, async (
 
 test('extraction is reusable, reportable and cleanable', { skip: !available }, async () => {
   const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
-  const dir = `${root}/.dsh-any-preview`
+  const dir = `${root}/.dsh-any-preview/b.zip`
   const archive = new Uint8Array(readFileSync(ZIP))
 
   const first = await extractEntryTo(archive, 'data.csv', dir)
@@ -96,23 +100,35 @@ test('extraction is reusable, reportable and cleanable', { skip: !available }, a
 
   assert.equal(await cleanExtractionDir(dir), 1)
   assert.equal(await extractedPathOf('data.csv', dir), undefined)
-  // Only a directory actually named `.dsh-any-preview` may be removed.
+  // Only a direct archive subdirectory of `.dsh-any-preview` may be removed.
   await assert.rejects(() => cleanExtractionDir(root))
   rmSync(root, { recursive: true, force: true })
 })
 
+test('different entry directories stay separate', { skip: !available }, async () => {
+  const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
+  const dir = `${root}/.dsh-any-preview/b.zip`
+  const payload = new Uint8Array([1, 2, 3])
+  const first = await writeEntryBytesTo(payload, 'x/readme.txt', dir)
+  const second = await writeEntryBytesTo(payload, 'y/readme.txt', dir)
+  assert.notEqual(first, second)
+  assert.match(first.replaceAll('\\', '/'), /\/x\/readme\.txt$/u)
+  assert.match(second.replaceAll('\\', '/'), /\/y\/readme\.txt$/u)
+  rmSync(root, { recursive: true, force: true })
+})
+
 test('the extraction directory sits beside the archive', () => {
-  assert.equal(defaultTargetDir('F:/w/samples/b.zip'), 'F:/w/samples/.dsh-any-preview')
-  assert.equal(defaultTargetDir('C:\\w\\b.zip'), 'C:/w/.dsh-any-preview')
-  assert.equal(defaultTargetDir('b.zip'), './.dsh-any-preview')
+  assert.equal(defaultTargetDir('F:/w/samples/b.zip'), 'F:/w/samples/.dsh-any-preview/b.zip')
+  assert.equal(defaultTargetDir('C:\\w\\b.zip'), 'C:/w/.dsh-any-preview/b.zip')
+  assert.equal(defaultTargetDir('b.zip'), './.dsh-any-preview/b.zip')
 })
 
 test('only a default-directory extraction gets a session address', () => {
   const archive = 'dsh-resource://file/session/abc/dir/samples/b.zip'
-  const expected = 'F:/w/samples/.dsh-any-preview'
+  const expected = 'F:/w/samples/.dsh-any-preview/b.zip'
   assert.equal(
     extractedAddress(archive, 'img/cover.png', expected, expected),
-    'dsh-resource://file/session/abc/dir/samples/.dsh-any-preview/cover.png',
+    'dsh-resource://file/session/abc/dir/samples/.dsh-any-preview/b.zip/img/cover.png',
   )
   assert.equal(extractedAddress(archive, 'a.png', 'F:/elsewhere', expected), undefined)
   assert.equal(extractedAddress('dsh-resource://file/absolute/x', 'a.png', expected, expected), undefined)

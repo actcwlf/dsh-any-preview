@@ -2,22 +2,29 @@
  * Pure path arithmetic for archive extraction.
  *
  * Kept out of the body component so it can be tested without rendering: these
- * two functions decide where a member is written and whether that location can
+ * functions decide where a member is written and whether that location can
  * be opened by the standard preview at all.
  */
+import {
+  EXTRACTION_DIR,
+  safeArchiveName,
+  safeEntryPath,
+} from '../../../shared/archive-paths.ts'
 
 /** Folder the viewer extracts into, relative to the archive. */
-export const EXTRACTION_DIR = '.dsh-any-preview'
+export { EXTRACTION_DIR }
 
 /**
- * Default extraction directory: a hidden folder beside the archive.
+ * Default extraction directory for one archive: a hidden folder beside the
+ * archive, with one subdirectory per archive name.
  * @param archivePath - absolute path of the archive.
  * @returns that folder's path, sharing the archive's separators.
  */
 export function defaultTargetDir(archivePath: string): string {
   const normalized = archivePath.replaceAll('\\', '/')
   const cut = normalized.lastIndexOf('/')
-  return `${cut < 0 ? '.' : normalized.slice(0, cut)}/${EXTRACTION_DIR}`
+  const parent = cut < 0 ? '.' : normalized.slice(0, cut)
+  return `${parent}/${EXTRACTION_DIR}/${safeArchiveName(normalized)}`
 }
 
 /**
@@ -42,10 +49,14 @@ export function extractedAddress(
   const segments = resourceAddress.slice(prefix.length).split('/')
   const sessionId = segments[0]
   if (sessionId === undefined || sessionId === '') return undefined
-  const relative = segments.slice(1).map(decodeURIComponent).join('/')
-  const cut = relative.lastIndexOf('/')
-  const directory = cut < 0 ? '' : relative.slice(0, cut)
-  const name = entryName.replaceAll('\\', '/').split('/').pop() ?? entryName
-  const encodedDir = directory === '' ? '' : `${directory.split('/').map(encodeURIComponent).join('/')}/`
-  return `${prefix}${sessionId}/${encodedDir}${EXTRACTION_DIR}/${encodeURIComponent(name)}`
+  const archiveRelative = segments.slice(1).map(decodeURIComponent).join('/')
+  const cut = archiveRelative.lastIndexOf('/')
+  const directory = cut < 0 ? '' : archiveRelative.slice(0, cut)
+  const archiveName = safeArchiveName(archiveRelative)
+  const entryRelative = safeEntryPath(entryName)
+  const directoryPath = directory === ''
+    ? ''
+    : `${directory.split('/').map(encodeURIComponent).join('/')}/`
+  const entryPath = entryRelative.split('/').map(encodeURIComponent).join('/')
+  return `${prefix}${sessionId}/${directoryPath}${EXTRACTION_DIR}/${encodeURIComponent(archiveName)}/${entryPath}`
 }

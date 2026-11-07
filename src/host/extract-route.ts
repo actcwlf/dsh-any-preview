@@ -7,10 +7,17 @@
  */
 import { LIMITS } from '../shared/limits.ts'
 import { appendFile, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
-import { basename, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { zipEntryBytes } from '../shared/zip/parse.ts'
+import {
+  EXTRACTION_DIR,
+  safeEntryPath,
+  safeEntryName,
+} from '../shared/archive-paths.ts'
 import type { RouteContext } from './contracts.ts'
+
+export { safeEntryName } from '../shared/archive-paths.ts'
 
 /** Refuse archives larger than this before loading them into memory. */
 const MAX_ARCHIVE_BYTES = LIMITS.hostArchive
@@ -37,17 +44,6 @@ interface ExtractRequest {
 }
 
 /**
- * Reduce a member path to one safe file name.
- * @param name - member name as stored in the archive.
- * @returns a base name with separators and traversal removed.
- */
-export function safeEntryName(name: string): string {
-  const base = basename(name.replaceAll('\\', '/'))
-  const cleaned = base.replace(/[\0<>:"|?*]/gu, '_').replace(/^\.+$/u, '_')
-  return cleaned === '' ? 'entry' : cleaned
-}
-
-/**
  * Write one member into a directory and return the file it wrote.
  * @param archiveBytes - the whole archive.
  * @param entryName - exact member name.
@@ -64,14 +60,14 @@ export async function extractEntryTo(
   if (data.byteLength > MAX_ENTRY_BYTES) {
     throw new Error(`条目解压后 ${String(data.byteLength)} 字节，超过上限`)
   }
-  const path = join(targetDir, safeEntryName(entryName))
+  const path = join(targetDir, safeEntryPath(entryName))
   // Reuse an identical previous extraction: reopening an entry should not
   // rewrite it, and the file stays openable by the standard preview.
   if (!force) {
     const existing = await stat(path).catch(() => undefined)
     if (existing !== undefined && existing.isFile() && existing.size === data.byteLength) return path
   }
-  await mkdir(targetDir, { recursive: true })
+  await mkdir(dirname(path), { recursive: true })
   await writeFile(path, data)
   return path
 }
@@ -94,26 +90,27 @@ export async function writeEntryBytesTo(
   if (data.byteLength > MAX_ENTRY_BYTES) {
     throw new Error(`条目解压后 ${String(data.byteLength)} 字节，超过上限`)
   }
-  const path = join(targetDir, safeEntryName(entryName))
+  const path = join(targetDir, safeEntryPath(entryName))
   if (!force) {
     const existing = await stat(path).catch(() => undefined)
     if (existing !== undefined && existing.isFile() && existing.size === data.byteLength) return path
   }
-  await mkdir(targetDir, { recursive: true })
+  await mkdir(dirname(path), { recursive: true })
   await writeFile(path, data)
   return path
 }
 
 /** Path of the partial file used while a streaming extraction is in progress. */
 export function partPathOf(entryName: string, targetDir: string): string {
-  return join(targetDir, `.${safeEntryName(entryName)}.part`)
+  return join(targetDir, `${safeEntryPath(entryName)}.part`)
 }
 
-/** Start a streaming extraction: an empty partial file beside the archive. */
+/** Start a streaming extraction: an empty partial file under the target. */
 export async function beginExtraction(entryName: string, targetDir: string): Promise<string> {
-  await mkdir(targetDir, { recursive: true })
-  await writeFile(partPathOf(entryName, targetDir), new Uint8Array())
-  return join(targetDir, safeEntryName(entryName))
+  const part = partPathOf(entryName, targetDir)
+  await mkdir(dirname(part), { recursive: true })
+  await writeFile(part, new Uint8Array())
+  return join(targetDir, safeEntryPath(entryName))
 }
 
 /** Append one decoded chunk, refusing to grow past the entry limit. */
@@ -130,7 +127,7 @@ export async function appendExtraction(entryName: string, targetDir: string, chu
 
 /** Finish a streaming extraction: the partial file takes its final name. */
 export async function endExtraction(entryName: string, targetDir: string): Promise<string> {
-  const final = join(targetDir, safeEntryName(entryName))
+  const final = join(targetDir, safeEntryPath(entryName))
   await rename(partPathOf(entryName, targetDir), final)
   return final
 }
@@ -141,7 +138,7 @@ export async function abortExtraction(entryName: string, targetDir: string): Pro
 }
 /** Whether a previous extraction of this member is still on disk. */
 export async function extractedPathOf(entryName: string, targetDir: string): Promise<string | undefined> {
-  const path = join(targetDir, safeEntryName(entryName))
+  const path = join(targetDir, safeEntryPath(entryName))
   const info = await stat(path).catch(() => undefined)
   return info !== undefined && info.isFile() ? path : undefined
 }
@@ -153,8 +150,8 @@ export async function extractedPathOf(entryName: string, targetDir: string): Pro
  * @returns how many files were removed.
  */
 export async function cleanExtractionDir(targetDir: string): Promise<number> {
-  if (basename(targetDir) !== '.dsh-any-preview') {
-    throw new Error('只能清理 .dsh-any-preview 目录')
+  if (basename(dirname(targetDir)) !== EXTRACTION_DIR) {
+    throw new Error('只能清理 .dsh-any-preview 下的压缩包子目录')
   }
   const info = await stat(targetDir).catch(() => undefined)
   if (info === undefined) return 0
@@ -195,11 +192,11 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
       return json({ exists: path !== undefined, path: path ?? null })
     }
 
-    const partPath = join(targetDir, `.${safeEntryName(entry)}.part`)
-    const finalPath = join(targetDir, safeEntryName(entry))
+    const partPath = partPathOf(entry, targetDir)
+    const finalPath = join(targetDir, safeEntryPath(entry))
 
     if (action === 'begin') {
-      await mkdir(targetDir, { recursive: true })
+      await mkdir(dirname(partPath), { recursive: true })
       await writeFile(partPath, new Uint8Array())
       return json({ path: finalPath })
     }
@@ -218,6 +215,7 @@ async function handle(request: Request, ctx: ExtractRouteContext): Promise<Respo
     }
 
     if (action === 'end') {
+      await mkdir(dirname(finalPath), { recursive: true })
       await rename(partPath, finalPath)
       return json({ path: finalPath })
     }
