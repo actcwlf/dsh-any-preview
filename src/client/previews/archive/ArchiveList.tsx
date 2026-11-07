@@ -6,7 +6,7 @@
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
-import { CHROME_CONTROL } from '../../kernel/ui.ts'
+import { CHROME_CONTROL, TEXT } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
 import type { EntryLike } from './EntryView.tsx'
@@ -25,9 +25,9 @@ export interface ArchiveListProps {
 
 export function ArchiveList(props: ArchiveListProps) {
   const { entries, summary, notice, lastEntry, onSelect, onReextract, onClean } = props
+  const hasActions = (lastEntry !== undefined && onReextract !== undefined) || onClean !== undefined
   const actions = (
     <>
-      <span>{notice ?? t('archive.hint')}</span>
       {lastEntry !== undefined && onReextract !== undefined && (
         <button type="button" onClick={onReextract} style={SMALL} className="dsh-preview-control">
           {t('archive.reextract', { name: lastEntry.name })}
@@ -43,41 +43,64 @@ export function ArchiveList(props: ArchiveListProps) {
     <PreviewChrome
       kind="ARCHIVE"
       title={summary}
-      toolbar={compact => (
-        compact
-          ? <ToolbarOverflow label={t('common.more')}>{actions}</ToolbarOverflow>
-          : <span style={ACTIONS}>{actions}</span>
-      )}
+      toolbar={!hasActions
+        ? undefined
+        : compact => (
+          compact
+            ? <ToolbarOverflow label={t('common.more')}>{actions}</ToolbarOverflow>
+            : <span style={ACTIONS}>{actions}</span>
+        )}
     >
-      <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <table style={TABLE}>
-          <thead>
-            <tr>
-              <th style={HEADER}>{t('common.name')}</th>
-              <th style={{ ...HEADER, textAlign: 'right', width: 90 }}>{t('common.size')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((entry, index) => (
-              <tr
-                key={`${String(index)}:${entry.name}`}
-                onClick={entry.directory ? undefined : () => onSelect(entry)}
-                style={{ cursor: entry.directory ? 'default' : 'pointer' }}
-              >
-                <td style={{ ...CELL, color: entry.directory ? 'var(--dsw-alias-label-secondary)' : 'var(--dsw-alias-label-primary)' }}>
-                  {entry.name}
-                </td>
-                <td style={{ ...CELL, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)' }}>
-                  {entry.directory ? '' : formatBytes(entry.size)}
-                </td>
+      <style>{ARCHIVE_CSS}</style>
+      <div style={BODY}>
+        <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
+          <table style={TABLE} title={t('archive.hint')}>
+            <thead>
+              <tr>
+                <th style={HEADER}>{t('common.name')}</th>
+                <th style={{ ...HEADER, textAlign: 'right', width: 90 }}>{t('common.size')}</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {entries.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={EMPTY}>{t('archive.hint')}</td>
+                </tr>
+              )}
+              {entries.map((entry, index) => (
+                <tr
+                  key={`${String(index)}:${entry.name}`}
+                  className={entry.directory ? undefined : 'dsh-archive-row'}
+                  onClick={entry.directory ? undefined : () => onSelect(entry)}
+                  style={{ cursor: entry.directory ? 'default' : 'pointer' }}
+                >
+                  <td
+                    style={{ ...CELL, color: entry.directory ? 'var(--dsw-alias-label-secondary)' : 'var(--dsw-alias-label-primary)' }}
+                    title={entry.name}
+                  >
+                    {entry.name}
+                  </td>
+                  <td style={{ ...CELL, textAlign: 'right', color: 'var(--dsw-alias-label-tertiary)' }}>
+                    {entry.directory ? '' : formatBytes(entry.size)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {notice !== undefined && notice !== '' && (
+          <div style={TOAST} role="status" data-archive-notice="true">{notice}</div>
+        )}
       </div>
     </PreviewChrome>
   )
 }
+
+const ARCHIVE_CSS = `
+.dsh-archive-row:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+`
 
 const ACTIONS = {
   display: 'flex', alignItems: 'center', gap: 4, color: 'var(--dsw-alias-label-tertiary)',
@@ -87,16 +110,41 @@ const SMALL = {
   ...CHROME_CONTROL,
   flex: '0 0 auto',
 } as const
+const BODY = {
+  position: 'relative' as const,
+  display: 'flex', flexDirection: 'column' as const,
+  flex: '1 1 auto', minHeight: 0,
+} as const
 const TABLE = {
-  borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12,
-  lineHeight: '18px',
+  borderCollapse: 'collapse' as const, tableLayout: 'fixed' as const, width: '100%',
+  fontFamily: 'var(--dsw-font-family)', fontSize: 12, lineHeight: '18px',
 } as const
 const HEADER = {
-  position: 'sticky' as const, top: 0, padding: '5px 12px', textAlign: 'left' as const, fontWeight: 600,
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
+  position: 'sticky' as const, top: 0, height: 28, padding: '0 16px',
+  textAlign: 'left' as const, verticalAlign: 'middle' as const,
+  fontWeight: 600, fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
+  letterSpacing: '0.02em',
+  color: 'var(--dsw-alias-label-secondary)',
+  background: 'color-mix(in srgb, var(--dsw-alias-label-primary) 4%, var(--dsw-alias-bg-base))',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const CELL = {
-  padding: '4px 12px', fontFamily: 'var(--dsw-font-family)', fontSize: 12, lineHeight: '18px',
+  height: 28, padding: '0 16px', verticalAlign: 'middle' as const,
+  fontFamily: 'var(--dsw-font-family)', fontSize: 12, lineHeight: '18px',
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const,
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
+} as const
+const EMPTY = {
+  padding: '16px', textAlign: 'center' as const,
+  fontSize: 12, lineHeight: '18px', color: 'var(--dsw-alias-label-tertiary)',
+} as const
+const TOAST = {
+  position: 'absolute' as const, right: 12, bottom: 12, zIndex: 2,
+  maxWidth: 'calc(100% - 24px)', padding: '6px 10px', pointerEvents: 'none' as const,
+  borderRadius: 'var(--dsw-radius-sm)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
+  background: 'var(--dsw-alias-bg-layer-2)',
+  boxShadow: 'var(--dsw-shadow-lv2)',
+  color: 'var(--dsw-alias-label-secondary)',
+  fontSize: 12, lineHeight: '18px',
 } as const

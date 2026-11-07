@@ -610,9 +610,13 @@ zip/tar 与 7z 的差别只在"字节从哪来、怎么写盘"，交互必须完
 
 ```
 previews/archive/EntryView.tsx   条目页：富渲染 / 解压面板 / 自动打开 / 重新解压
-previews/archive/ArchiveList.tsx 列表页：摘要 / 提示 / 重新解压 / 清理解压 / 表头
+previews/archive/ArchiveList.tsx 列表页：摘要 / 动作 / 列头 / 行 / 通知
 kernel/content-modules.ts        按扩展名挑"能只靠内容渲染"的预览（csv/md/jsonl/…）
 ```
+
+列表页保持和 CSV 相同的第一行起点：`38px` 宿主 header + `32px` chrome +
+`28px` 列头 = `98px`。列头使用 4% ink tint 和 caption 字重；文件行动作使用
+28px 固定行高和 hover，操作结果用底部 toast，不再把提示文字塞进工具栏。
 
 ### 容器要提供的三件事
 
