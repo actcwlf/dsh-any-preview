@@ -26,6 +26,10 @@ export const LIMITS = {
   modelTriangles: 3_000_000,
   /** Declared image bytes accepted before decoding; decoded pixels can be several times larger. */
   modelTextureBytes: 64 * MB,
+  /** Longest decoded texture edge; larger images are downscaled before upload. */
+  modelTextureDimension: 4_096,
+  /** Total decoded pixels across a model; keeps 4K atlases from exhausting the GPU. */
+  modelTexturePixels: 32 * 1024 * 1024,
   /** A book read whole; EPUB is a zip, so the container must fit. */
   epubBook: 64 * MB,
   /** Chapters rendered from one book. */

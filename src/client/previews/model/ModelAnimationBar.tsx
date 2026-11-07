@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
-import type { ModelAnimationInfo } from './useModelViewer.ts'
+import type { ModelAnimationInfo } from './animation-runtime.ts'
 
 /** What the animation strip needs from the viewer. */
 export interface ModelAnimationBarProps {

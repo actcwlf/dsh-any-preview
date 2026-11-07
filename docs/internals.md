@@ -265,6 +265,12 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   不随 clip 数量挤占播放条。
   `SkinnedMesh` 关闭视锥剔除，避免骨骼把网格移出绑定姿态包围盒后被裁掉；销毁时
   `Skeleton.dispose()` 释放骨骼纹理。OBJ/STL 没有动画。
+- **动画取景**：加载后对默认激活 clip 的起点、中点、终点采样当前姿态的包围盒
+  （`SkinnedMesh.computeBoundingBox()` 走骨骼变形后的顶点；超密网格退回骨骼位置），
+  用并集居中、取景和铺网格，避免动画抬手/移动根节点后镜头裁切。采样后恢复原动作时间。
+- **纹理预算**：除了压缩字节上限，还限制单张最长边 4096、总解码像素 32 MP；
+  超限图片在首次上传前用 `createImageBitmap` + canvas 降采样，并保持相对分辨率；
+  信息条提示已降采样。KTX2/compressed texture 跳过该路径。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；OBJ/MTL 保持原生 Phong（不吃
   `scene.environment`），另有一盏低强度下方补光（`DirectionalLight` 0.4，位置
@@ -281,7 +287,14 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 
 实现分层：`index.tsx` 只做四个扩展名的注册；`ModelBody.tsx` 负责文件名、统计与布局；
 `ModelToolbar.tsx` / `ModelAnimationBar.tsx` / `ModelOverlay.tsx` / `model-icons.tsx` 是纯展示；
-`useModelViewer.ts` 独占 WebGL 生命周期、解码编排、动画/主题跟随与清理。
+`useModelViewer.ts` 只做 React 生命周期、加载编排、限制与状态发布：
+
+- `scene-runtime.ts`：renderer、camera、OrbitControls、灯光/环境、grid、线框、主题背景、
+  resize 和按需 `setAnimationLoop`；
+- `animation-runtime.ts`：mixer、actions、active clip、播放/暂停/seek 与姿态包围盒采样；
+- `theme.ts` / `animation.ts` / `frame.ts` / `animated-bounds.ts` / `texture-budget.ts`：纯逻辑；
+- `format.ts`：格式适配器注册表，内置 glTF/OBJ/STL，后续 PMX 可独立注册；
+- `decode.ts`：字节解析与资源沙箱，不再靠一个 `if` 链增长格式分支。
 
 ### 解码器与外部资源
 
@@ -301,21 +314,25 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 测试：`test/model-frame.test.mjs`（取景与网格算术）、`test/model-decode.test.mjs`
 （glb/obj/stl 解码、MTL、外部 buffer 走签名路由、三角形/顶点/材质统计、解码器装配、
 动画 clip 挂载与 `AnimationMixer` 推进、释放、流式读取）、`test/model-resources.test.mjs`
-（沙箱、扩展识别）、`test/model-extras-loader.test.mjs`（解码 chunk 的共享与重试），
-夹具在 `samples/`。
+（沙箱、扩展识别）、`test/model-extras-loader.test.mjs`（解码 chunk 的共享与重试）、
+`test/model-animation-runtime.test.mjs`（多 clip 默认叠加/播放/seek）、
+`test/model-format.test.mjs`（格式适配器注册）、`test/model-texture-budget.test.mjs`
+（降采样计划）、`test/model-animated-bounds.test.mjs`（动画包围盒），夹具在 `samples/`。
 
 已知限制：KTX2 的转码器跑在 `blob:` Worker 里（当前页面无 CSP，桌面 `dsh-app://` 下需实测）；
 动画只支持 glTF clip，默认循环播放，不提供单次播放/倍速/根运动特判；多个
 clip 同时播放时按轨道名去重，默认只叠加互不冲突的 clip，手动叠加冲突 clip 的
-覆盖顺序由 `AnimationMixer` 决定；`preview_inspect` 还不认识 3D。
+覆盖顺序由 `AnimationMixer` 决定；动画包围盒只在加载时按默认 clip 采样三次，
+不会随播放实时重算；超密网格的包围盒退回骨骼位置，可能略小于真实蒙皮范围；
+`preview_inspect` 还不认识 3D。
 
 ## 构建
 
-用 checkout 里的 tsdown（本包自身没有 node_modules），再同步解码器二进制：
+`tsdown` 是 devDependency；安装依赖后一次构建即可：
 
 ```sh
-node "D:\DSH\deepseek-harness\node_modules\tsdown\dist\run.mjs"
-node scripts/sync-decoders.mjs
+npm install
+npm run build
 ```
 
 `sync-decoders.mjs` 把 three 自带的 Draco（glTF 构建）与 Basis 转码器从

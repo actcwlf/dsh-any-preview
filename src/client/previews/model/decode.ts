@@ -17,6 +17,7 @@ import {
   declaredImageBytes,
   externalReferences,
   gltfJson,
+  modelNeeds,
   mtllibNames,
   resourceBase,
   resourceTarget,
@@ -24,6 +25,7 @@ import {
   unsafeGltfReference,
 } from './resources.ts'
 import type { ModelNeeds } from './resources.ts'
+import { modelFormatFor, registerModelFormat } from './format.ts'
 
 /** The loaders one decode needs. */
 export type ModelBundle = Pick<ThreeBundle, 'THREE' | 'GLTFLoader' | 'OBJLoader' | 'STLLoader' | 'MTLLoader'>
@@ -417,23 +419,51 @@ export async function parseModel(
   bytes: ArrayBuffer,
   options: ParseOptions = {},
 ): Promise<Object3D> {
-  if (extension === 'glb' || extension === 'gltf') return parseGltf(bundle, extension, bytes, options)
-  if (extension === 'obj') return parseObj(bundle, bytes, options)
-  if (extension === 'stl') {
-    const { THREE } = bundle
+  const suffix = extension.toLowerCase()
+  const adapter = modelFormatFor(suffix)
+  if (adapter === undefined) {
+    throw new PreviewError('model.unsupported', { ext: suffix })
+  }
+  return adapter.parse({ bundle, extension: suffix, bytes, options })
+}
+
+// Built-in adapters. A future format owns its own registration so this file
+// stays an orchestrator rather than becoming a switchboard of format details.
+registerModelFormat({
+  extensions: ['glb', 'gltf'],
+  needs: (extension, bytes, text) => modelNeeds(extension, bytes, text),
+  parse: ({ bundle, extension, bytes, options }) => (
+    parseGltf(bundle as ModelBundle, extension, bytes, options as ParseOptions)
+  ),
+})
+
+registerModelFormat({
+  extensions: ['obj'],
+  needs: (extension, bytes, text) => modelNeeds(extension, bytes, text),
+  parse: ({ bundle, bytes, options }) => (
+    parseObj(bundle as ModelBundle, bytes, options as ParseOptions)
+  ),
+})
+
+registerModelFormat({
+  extensions: ['stl'],
+  needs: (extension, bytes, text) => modelNeeds(extension, bytes, text),
+  parse: ({ bundle, bytes }) => {
+    const typed = bundle as ModelBundle
+    const { THREE } = typed
     // Facet normals in STL are frequently zero or inconsistent between
-    // exporters (the workspace's `samples/tetra.stl` has twelve zero normals),
-    // and a zero normal makes the Standard shader normalize to NaN and render
-    // black. Recompute from the triangle winding instead; STL geometry is
-    // non-indexed, so this gives flat per-face normals as the format intends.
-    const geometry = new bundle.STLLoader().parse(bytes)
+    // exporters (the workspace's own `samples/tetra.stl` has twelve zero
+    // normals), and a zero normal makes the Standard shader normalize to NaN
+    // and render black. Recompute from the triangle winding instead; STL
+    // geometry is non-indexed, so this gives flat per-face normals as the
+    // format intends.
+    const geometry = new typed.STLLoader().parse(bytes)
     geometry.computeVertexNormals()
     return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
       color: 0xbfc4cc, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide,
     }))
-  }
-  throw new PreviewError('model.unsupported', { ext: extension })
-}
+  },
+})
 
 /** Visit every node without letting one odd child abort the walk. */
 function visit(root: Object3D, callback: (child: any) => void): void {

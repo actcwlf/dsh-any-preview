@@ -22,12 +22,16 @@ import { isChunkEnabled } from '../../kernel/chunk-policy.ts'
 import { loadThree } from '../../kernel/three-loader.ts'
 import { loadModelExtras } from '../../kernel/model-extras-loader.ts'
 import { assetBaseUrl } from '../../kernel/assets.ts'
-import { directoryOf, modelNeeds } from './resources.ts'
-import { selectDefaultClips } from './animation.ts'
+import { directoryOf } from './resources.ts'
+import { modelNeedsFor } from './format.ts'
+import { AnimationRuntime } from './animation-runtime.ts'
+import type { AnimationSnapshot, ModelAnimationInfo } from './animation-runtime.ts'
+import { ModelSceneRuntime } from './scene-runtime.ts'
+import { enforceTextureBudget } from './texture-budget.ts'
+import { themeOf } from './theme.ts'
+import type { BackgroundMode } from './theme.ts'
 import { disposeObject, parseModel, readBody, summarize } from './decode.ts'
 import type { ModelExtras } from './decode.ts'
-import { frameForSphere, gridForBox } from './frame.ts'
-import type { GridSpec } from './frame.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
@@ -43,14 +47,11 @@ const MAX_TRIANGLES = LIMITS.modelTriangles
 /** Declared texture bytes accepted; decoded pixels can be several times larger. */
 const MAX_TEXTURE_BYTES = LIMITS.modelTextureBytes
 
-/** Unit direction the camera sits along, measured from the model's centre. */
-const VIEW = ((): { x: number; y: number; z: number } => {
-  const x = 1
-  const y = 0.75
-  const z = 1
-  const length = Math.hypot(x, y, z)
-  return { x: x / length, y: y / length, z: z / length }
-})()
+/** Decoded-image limits applied before three uploads a texture. */
+const TEXTURE_BUDGET = {
+  maxDimension: LIMITS.modelTextureDimension,
+  maxPixels: LIMITS.modelTexturePixels,
+}
 
 /** `.obj` names two formats; this is the head we probe. */
 const PROBE_BYTES = 1023
@@ -59,7 +60,7 @@ const PROBE_BYTES = 1023
 const PROGRESS_INTERVAL_MS = 120
 
 /** The backdrop follows the host theme unless the reader overrides it. */
-export type BackgroundMode = 'theme' | 'light' | 'dark'
+export type { BackgroundMode } from './theme.ts'
 
 /** Boolean viewport toggles; background is a three-state cycle instead. */
 export type ViewerToggle = 'grid' | 'wireframe' | 'autoRotate'
@@ -114,10 +115,7 @@ export interface ModelProgress {
 }
 
 /** One glTF animation clip the pane can play. */
-export interface ModelAnimationInfo {
-  readonly name: string
-  readonly duration: number
-}
+export type { ModelAnimationInfo } from './animation-runtime.ts'
 
 /** What the component above the hook receives. */
 export interface ModelViewer {
@@ -141,13 +139,8 @@ export interface ModelViewer {
 }
 
 /** Animation state plus the file identity it belongs to. */
-interface AnimationState {
+interface AnimationState extends AnimationSnapshot {
   readonly key: string
-  readonly clips: readonly ModelAnimationInfo[]
-  readonly active: readonly number[]
-  readonly primary: number
-  readonly playing: boolean
-  readonly time: number
 }
 
 /** No clips yet, or one this run has not settled. */
@@ -180,15 +173,6 @@ const IDLE: ModelViewState = {
 /** The empty keyed state. */
 const EMPTY_VIEW: KeyedView = { key: '', ...IDLE }
 
-/** Scene colours read from the host's theme tokens. */
-interface SceneTheme {
-  readonly background: any
-  readonly gridMajor: any
-  readonly gridMinor: any
-  /** Wireframe lines: unlit, so they need a fixed contrast against the surface. */
-  readonly wire: any
-}
-
 /**
  * Lowercase suffix of a path.
  * @param path - absolute path, either separator.
@@ -198,89 +182,6 @@ function extensionOf(path: string): string {
   const name = path.replaceAll('\\', '/')
   const dot = name.lastIndexOf('.')
   return dot < 0 ? '' : name.slice(dot + 1).toLowerCase()
-}
-
-/**
- * Resolve one theme custom property to a CSS colour.
- *
- * `getComputedStyle` only substitutes `var()` for a real declaration, so a
- * throwaway element carries the token and the canvas follows the same surface
- * as the pane around it.
- * @param host - element whose inherited tokens to read.
- * @param property - custom property name, including `--`.
- * @param fallback - colour used when the token is absent.
- * @returns a CSS colour string.
- */
-function resolveColor(host: HTMLElement, property: string, fallback: string): string {
-  const view = host.ownerDocument.defaultView
-  if (view === null) return fallback
-  const probe = host.ownerDocument.createElement('span')
-  probe.style.color = `var(${property}, ${fallback})`
-  probe.style.display = 'none'
-  host.appendChild(probe)
-  const color = view.getComputedStyle(probe).color
-  probe.remove()
-  return color === '' ? fallback : color
-}
-
-/**
- * Read the viewport colours for the host's current theme.
- * @param THREE - three.js module.
- * @param host - element whose inherited tokens decide the surface.
- * @returns background and grid/wire colours.
- */
-function themeOf(THREE: ThreeBundle['THREE'], host: HTMLElement): SceneTheme {
-  const background = new THREE.Color(resolveColor(host, '--dsw-alias-bg-base', '#101216'))
-  // Colour components are linear here, so the threshold is on linear luminance.
-  const luminance = background.r * 0.2126 + background.g * 0.7152 + background.b * 0.0722
-  const light = luminance > 0.4
-  // Fixed rather than derived from the surface: a background-relative grid
-  // stayed a few percent off white in the light theme and read as almost gone.
-  return {
-    background,
-    gridMajor: new THREE.Color(light ? 0x9aa1aa : 0x5f6672),
-    gridMinor: new THREE.Color(light ? 0xd2d6db : 0x363c46),
-    wire: new THREE.Color(light ? 0x2b3038 : 0xe3e7ec),
-  }
-}
-
-/** Fixed palettes for the explicit light/dark backdrop, independent of the host. */
-const LIGHT_THEME = { background: 0xf5f6f8, gridMajor: 0x9aa1aa, gridMinor: 0xd2d6db, wire: 0x2b3038 }
-const DARK_THEME = { background: 0x101216, gridMajor: 0x5f6672, gridMinor: 0x363c46, wire: 0xe3e7ec }
-
-/**
- * Pick the scene colours for a background mode.
- * @param THREE - three.js module.
- * @param host - element whose inherited tokens decide the theme.
- * @param mode - theme-following or an explicit light/dark backdrop.
- * @returns background and grid/wire colours.
- */
-function sceneThemeFor(
-  THREE: ThreeBundle['THREE'],
-  host: HTMLElement,
-  mode: BackgroundMode,
-): SceneTheme {
-  if (mode === 'theme') return themeOf(THREE, host)
-  const fixed = mode === 'light' ? LIGHT_THEME : DARK_THEME
-  return {
-    background: new THREE.Color(fixed.background),
-    gridMajor: new THREE.Color(fixed.gridMajor),
-    gridMinor: new THREE.Color(fixed.gridMinor),
-    wire: new THREE.Color(fixed.wire),
-  }
-}
-
-/**
- * Compare two theme snapshots by their rendered colours.
- * @param left - previous snapshot.
- * @param right - candidate snapshot.
- * @returns whether every colour is unchanged.
- */
-function sameTheme(left: SceneTheme, right: SceneTheme): boolean {
-  return left.background.getHexString() === right.background.getHexString()
-    && left.gridMajor.getHexString() === right.gridMajor.getHexString()
-    && left.gridMinor.getHexString() === right.gridMinor.getHexString()
-    && left.wire.getHexString() === right.wire.getHexString()
 }
 
 /**
@@ -386,7 +287,7 @@ export function useModelViewer(
 
     let alive = true
     let torndown = false
-    let renderer: any
+    let runtime: ModelSceneRuntime | undefined
     let shutdown: (() => void) | undefined
     const controller = new AbortController()
     let lastProgress = 0
@@ -399,9 +300,8 @@ export function useModelViewer(
         return
       }
       // Setup stopped before the full shutdown was installed; still drop the canvas.
-      renderer?.dispose?.()
-      renderer?.forceContextLoss?.()
-      renderer?.domElement?.remove?.()
+      runtime?.dispose()
+      runtime = undefined
     }
 
     void (async () => {
@@ -417,8 +317,36 @@ export function useModelViewer(
       if (!alive) return
       const THREE = bundle.THREE
 
+      let animator: AnimationRuntime | undefined
+      let themeObserver: MutationObserver | undefined
+      let lastUiUpdate = 0
+
       try {
-        renderer = new THREE.WebGLRenderer({ antialias: true })
+        runtime = new ModelSceneRuntime(THREE, bundle, host, {
+          onContextLost: (): void => {
+            if (alive) fail(t('model.contextLost'))
+          },
+          isAnimating: (): boolean => animator?.isPlaying ?? false,
+          onFrame: (delta: number): void => {
+            if (animator === undefined) return
+            try {
+              animator.update(delta)
+            } catch (error) {
+              // A malformed clip should freeze the animation, not the render loop.
+              console.warn('[dsh-any-preview] animation update failed', error)
+              animator.pause()
+              setAnimation({ key, ...animator.snapshot() })
+              return
+            }
+            const now = performance.now()
+            if (now - lastUiUpdate <= 100) return
+            lastUiUpdate = now
+            const snapshot = animator.snapshot()
+            setAnimation((previous) => previous.key === key
+              ? { ...previous, ...snapshot }
+              : previous)
+          },
+        })
       } catch (error) {
         // No context is a normal outcome on remote desktops and blocklisted GPUs.
         // Throwing here would crash the slot entry and blank every later model.
@@ -427,328 +355,50 @@ export function useModelViewer(
         return
       }
 
-      const scene = new THREE.Scene()
-      let currentTheme = themeOf(THREE, host)
-      scene.background = currentTheme.background
-      const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10_000)
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
-      renderer.toneMapping = THREE.ACESFilmicToneMapping
-      renderer.domElement.style.width = '100%'
-      renderer.domElement.style.height = '100%'
-      renderer.domElement.style.display = 'block'
-      host.appendChild(renderer.domElement)
-
-      // A neutral studio environment makes PBR metal and roughness read without
-      // asking the user for an HDR file; it is optional, never fatal.
-      let environment: any
-      try {
-        const pmrem = new THREE.PMREMGenerator(renderer)
-        const room = new bundle.RoomEnvironment()
-        const target = pmrem.fromScene(room, 0.04)
-        scene.environment = target.texture
-        pmrem.dispose()
-        disposeObject(room)
-        environment = target
-      } catch {
-        environment = undefined
-      }
-
-      const controls = new bundle.OrbitControls(camera, renderer.domElement)
-      controls.enableDamping = true
-      controls.autoRotateSpeed = 1.6
-      // Lighting stays independent of the surface: the viewport colour follows
-      // the theme, but a cool ground fill keeps shading readable on either one.
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x333344, 1.6))
-      const keyLight = new THREE.DirectionalLight(0xffffff, 2)
-      keyLight.position.set(3, 5, 4)
-      scene.add(keyLight)
-      // OBJ/MTL keep their native Phong materials, which do not receive the
-      // scene environment; without a fill, a downward face has only the dark
-      // hemisphere ground term and reads as black. A weak light from below
-      // keeps undersides readable without flattening the key light.
-      const fillLight = new THREE.DirectionalLight(0xffffff, 0.4)
-      fillLight.position.set(0, -4, 2)
-      scene.add(fillLight)
-
-      let model: any
-      let grid: any
-      let gridSpec: GridSpec | undefined
-      let radius = 0
-      let framed = true
-      let observer: ResizeObserver | undefined
-      let themeObserver: MutationObserver | undefined
-      let running = false
-      let contextLost = false
-      /** Unlit wire material, created on first use and shared by every mesh. */
-      let wireMaterial: any
-      /** Materials replaced while wireframe is on, so turning it off restores them. */
-      const originalMaterials = new WeakMap<any, any>()
-
-      const onContextLost = (event: Event): void => {
-        // Keep the browser from trying to restore a context we cannot use; the
-        // pane offers Retry, which rebuilds the renderer from scratch.
-        event.preventDefault()
-        contextLost = true
-        running = false
-        renderer.setAnimationLoop(null)
-        console.warn('[dsh-any-preview] WebGL context lost')
-        if (alive) fail(t('model.contextLost'))
-      }
-      renderer.domElement.addEventListener('webglcontextlost', onContextLost)
-
-      /**
-       * Swap every mesh's material for an unlit wireframe one.
-       *
-       * `material.wireframe` draws lines through the lit material, so a light
-       * model on the light theme produced near-white one-device-pixel lines that
-       * read as faint or dashed. An unlit material with a fixed contrast colour
-       * renders the same pure-wireframe view, crisply.
-       * @param on - whether wireframe is shown.
-       */
-      const setWireframe = (on: boolean): void => {
-        if (model === undefined) return
-        if (on) {
-          wireMaterial ??= new THREE.MeshBasicMaterial({
-            color: currentTheme.wire,
-            wireframe: true,
-            toneMapped: false,
-          })
-          model.traverse((child: any) => {
-            if (child.isMesh !== true || child.material === undefined) return
-            if (!originalMaterials.has(child)) originalMaterials.set(child, child.material)
-            child.material = Array.isArray(child.material)
-              ? child.material.map(() => wireMaterial)
-              : wireMaterial
-          })
-          return
-        }
-        model.traverse((child: any) => {
-          const original = originalMaterials.get(child)
-          if (original === undefined) return
-          child.material = original
-          originalMaterials.delete(child)
-        })
-      }
-
-      /** Animation clips and the mixer driving their skeletons. */
-      let mixer: any
-      let mixerRoot: any
-      let actions: any[] = []
-      let clips: ModelAnimationInfo[] = []
-      const active = new Set<number>()
-      let primary = 0
-      let animationPlaying = false
-      let lastFrame = 0
-      let lastUiUpdate = 0
-
-      /** Longest duration among the clips currently playing. */
-      const activeDuration = (): number => {
-        let duration = 0
-        for (const index of active) {
-          duration = Math.max(duration, clips[index]?.duration ?? 0)
-        }
-        return duration
-      }
-
-      /** Keep `primary` pointing at a clip that is actually active. */
-      const ensurePrimary = (): void => {
-        if (active.has(primary)) return
-        const first = active.values().next().value
-        primary = first ?? 0
-      }
-
       /**
        * Publish the current animation state to the bar.
        * @param time - override the primary clip time, for a seek or clip switch.
        */
       const publishAnimation = (time?: number): void => {
-        ensurePrimary()
+        const snapshot = animator?.snapshot()
+        if (snapshot === undefined) {
+          setAnimation({ key, clips: [], active: [], primary: 0, playing: false, time: 0 })
+          return
+        }
         setAnimation({
           key,
-          clips,
-          active: [...active],
-          primary,
-          playing: animationPlaying,
-          time: time ?? actions[primary]?.time ?? 0,
+          ...snapshot,
+          time: time ?? snapshot.time,
         })
-      }
-
-      /**
-       * Render one frame and stop when damping/auto-rotation has settled.
-       *
-       * The pane used to run a 60 fps loop forever, even with the pointer at
-       * rest; now a frame is only requested by a change. An animation keeps the
-       * loop alive while it plays, and advances the mixer with a clamped delta
-       * so a backgrounded tab does not jump the clip.
-       * @param time - the animation-loop timestamp, when the browser supplies it.
-       */
-      const frame = (time?: number): void => {
-        const now = typeof time === 'number' ? time : performance.now()
-        const delta = lastFrame === 0 ? 0 : Math.min((now - lastFrame) / 1000, 0.1)
-        lastFrame = now
-        if (animationPlaying && mixer !== undefined) {
-          try {
-            mixer.update(delta)
-          } catch (error) {
-            // A malformed clip should freeze the animation, not the render loop.
-            console.warn('[dsh-any-preview] animation update failed', error)
-            animationPlaying = false
-            publishAnimation()
-          }
-          if (now - lastUiUpdate > 100) {
-            lastUiUpdate = now
-            const action = actions[primary]
-            if (action !== undefined) {
-              setAnimation((previous) => previous.key === key
-                ? {
-                  ...previous,
-                  clips,
-                  active: [...active],
-                  primary,
-                  playing: animationPlaying,
-                  time: action.time,
-                }
-                : previous)
-            }
-          }
-        }
-        const changed = controls.update()
-        renderer.render(scene, camera)
-        // Auto-rotate's first step is below OrbitControls' change epsilon, so
-        // `changed` can be false on the frame that starts it. Keep the loop
-        // alive while rotation or an animation is requested; stop only when
-        // both are off and the camera has settled.
-        if (!changed && !controls.autoRotate && !animationPlaying) {
-          running = false
-          lastFrame = 0
-          renderer.setAnimationLoop(null)
-        }
-      }
-
-      const invalidate = (): void => {
-        if (running) return
-        running = true
-        renderer.setAnimationLoop(frame)
-      }
-
-      const fit = (): void => {
-        if (radius <= 0) return
-        const framing = frameForSphere(radius, camera.fov, camera.aspect)
-        camera.position.set(VIEW.x * framing.distance, VIEW.y * framing.distance, VIEW.z * framing.distance)
-        camera.near = framing.near
-        camera.far = framing.far
-        camera.updateProjectionMatrix()
-        controls.target.set(0, 0, 0)
-        controls.minDistance = radius * 1.1
-        controls.maxDistance = framing.distance * 8
-        controls.update()
-        invalidate()
-      }
-
-      const resize = (): void => {
-        const width = Math.max(1, host.clientWidth)
-        const height = Math.max(1, host.clientHeight)
-        renderer.setSize(width, height, false)
-        camera.aspect = width / height
-        camera.updateProjectionMatrix()
-        // Refit only while the reader has not chosen a view of their own.
-        if (framed) fit()
-        else invalidate()
-      }
-
-      /**
-       * Build (or rebuild) the floor grid from the current theme.
-       * @param spec - extent, divisions and height measured from the model.
-       * @returns the grid object added to the scene.
-       */
-      const buildGrid = (spec: GridSpec): any => {
-        const next = new THREE.GridHelper(spec.size, spec.divisions, currentTheme.gridMajor, currentTheme.gridMinor)
-        next.position.y = spec.y
-        // Grid colours are picked for contrast, not tone-mapped into the scene.
-        next.material.toneMapped = false
-        scene.add(next)
-        return next
       }
 
       let viewer: ViewerHandle | undefined
 
-      /**
-       * Swap the scene surface and the colours that must contrast with it.
-       * @param next - theme snapshot to apply.
-       */
-      const applySceneTheme = (next: SceneTheme): void => {
-        if (sameTheme(currentTheme, next)) return
-        currentTheme = next
-        scene.background = next.background
-        if (grid !== undefined && gridSpec !== undefined) {
-          const visible = grid.visible
-          scene.remove(grid)
-          disposeObject(grid)
-          grid = buildGrid(gridSpec)
-          grid.visible = visible
-        }
-        wireMaterial?.color?.copy?.(next.wire)
-        invalidate()
-      }
-
-      /**
-       * Apply a toolbar toggle to the live scene.
-       * @param next - the settings to show.
-       */
-      const apply = (next: ViewerSettings): void => {
-        applySceneTheme(sceneThemeFor(THREE, host, next.background))
-        if (grid !== undefined) grid.visible = next.grid
-        setWireframe(next.wireframe)
-        controls.autoRotate = next.autoRotate
-        invalidate()
-      }
-
       viewer = {
-        apply,
+        apply: (next: ViewerSettings): void => {
+          runtime?.applySettings(next)
+        },
         resetView: (): void => {
-          framed = true
-          fit()
+          runtime?.resetView()
         },
         toggleAnimationClip: (index: number): void => {
-          if (mixer === undefined || actions[index] === undefined) return
-          if (active.has(index)) {
-            active.delete(index)
-            actions[index].stop()
-          } else {
-            const resumeTime = active.size > 0 ? actions[primary]?.time ?? 0 : 0
-            active.add(index)
-            const action = actions[index]
-            action.reset().play()
-            action.time = Math.min(resumeTime, clips[index]?.duration ?? 0)
-          }
-          if (active.size === 0) {
-            animationPlaying = false
-          } else {
-            ensurePrimary()
-            if (animationPlaying && activeDuration() <= 0) animationPlaying = false
-          }
+          if (animator === undefined) return
+          animator.toggleClip(index)
           lastUiUpdate = 0
-          mixer.update(0)
           publishAnimation()
-          invalidate()
+          runtime?.requestRender()
         },
         toggleAnimation: (): void => {
-          if (mixer === undefined || active.size === 0 || activeDuration() <= 0) return
-          animationPlaying = !animationPlaying
+          if (animator === undefined) return
+          animator.toggle()
           publishAnimation()
-          invalidate()
+          runtime?.requestRender()
         },
         seekAnimation: (time: number): void => {
-          if (mixer === undefined || active.size === 0) return
-          const duration = activeDuration()
-          const clamped = Math.min(Math.max(0, Number.isFinite(time) ? time : 0), duration)
-          for (const index of active) {
-            const action = actions[index]
-            if (action !== undefined) action.time = Math.min(clamped, clips[index]?.duration ?? 0)
-          }
-          mixer.update(0)
-          publishAnimation(clamped)
-          invalidate()
+          if (animator === undefined) return
+          animator.seek(time)
+          publishAnimation()
+          runtime?.requestRender()
         },
       }
 
@@ -762,7 +412,7 @@ export function useModelViewer(
       const retheme = (): void => {
         // An explicit backdrop wins until the reader cycles back to "theme".
         if (settingsRef.current.background !== 'theme') return
-        applySceneTheme(themeOf(THREE, host))
+        runtime?.applyTheme(themeOf(THREE, host))
       }
       if (typeof MutationObserver !== 'undefined') {
         themeObserver = new MutationObserver(retheme)
@@ -778,54 +428,30 @@ export function useModelViewer(
         }
       }
 
-      resize()
-      // Paint the themed surface once, even before a model exists.
-      invalidate()
-      if (typeof ResizeObserver !== 'undefined') {
-        observer = new ResizeObserver(resize)
-        observer.observe(host)
-      }
-      const stopFraming = (): void => { framed = false }
-      controls.addEventListener('start', stopFraming)
-      controls.addEventListener('change', invalidate)
+      // The runtime paints the themed surface in its constructor.
 
       shutdown = (): void => {
-        running = false
-        renderer.setAnimationLoop(null)
-        renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
-        observer?.disconnect()
         themeObserver?.disconnect()
-        controls.removeEventListener('start', stopFraming)
-        controls.removeEventListener('change', invalidate)
-        controls.dispose()
-        // Restore the real materials first, so disposing the model frees them
-        // rather than the wireframe stand-in.
-        setWireframe(false)
-        wireMaterial?.dispose?.()
-        wireMaterial = undefined
-        animationPlaying = false
-        mixer?.stopAllAction?.()
-        if (mixer !== undefined && mixerRoot !== undefined) mixer.uncacheRoot?.(mixerRoot)
-        mixer = undefined
-        mixerRoot = undefined
-        actions = []
-        active.clear()
-        primary = 0
+        themeObserver = undefined
+        animator?.dispose()
+        animator = undefined
+        const model = runtime?.detachModel()
         model?.userData?.releaseBlobs?.()
         if (model !== undefined) disposeObject(model)
-        if (grid !== undefined) disposeObject(grid)
-        scene.environment = null
-        environment?.dispose?.()
-        scene.clear()
-        renderer.dispose()
-        renderer.forceContextLoss()
-        renderer.domElement.remove()
+        runtime?.dispose()
+        runtime = undefined
         if (viewerRef.current === viewer) viewerRef.current = null
       }
 
       try {
         const response = await fetch(url, { signal: controller.signal })
         if (!response.ok) throw new PreviewError('common.httpError', { status: response.status })
+        const announced = Number.parseInt(response.headers.get('content-length') ?? '', 10)
+        if (Number.isFinite(announced) && announced > MAX_BYTES) {
+          throw new PreviewError('model.tooLarge', {
+            size: formatBytes(announced), limit: formatBytes(MAX_BYTES),
+          })
+        }
         const bytes = await readBody(response, (loaded, total) => {
           if (!alive) return
           const now = performance.now()
@@ -844,9 +470,11 @@ export function useModelViewer(
         // which has no byte progress but is still worth naming.
         setProgress(undefined)
         setView({ ...IDLE, key, status: 'loading', phase: 'decoding' })
-        const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+        const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+          ? bytes.buffer as ArrayBuffer
+          : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
         const text = extension === 'obj' ? new TextDecoder().decode(buffer) : undefined
-        const needs = modelNeeds(extension, buffer, text)
+        const needs = modelNeedsFor(extension, buffer, text)
         const baseDir = absolutePath === undefined ? undefined : directoryOf(absolutePath) || undefined
 
         let extras: ModelExtras | undefined
@@ -878,16 +506,30 @@ export function useModelViewer(
           extras,
           decoders: needs,
           assetBase,
-          renderer,
+          renderer: runtime?.renderer,
           loadBinary,
           loadText: async (path) => (await loadBinary(path)).text(),
           textureBudget: MAX_TEXTURE_BYTES,
         })
-        if (!alive || contextLost) {
+        if (!alive || (runtime?.isContextLost() ?? false)) {
           object.userData?.releaseBlobs?.()
           disposeObject(object)
           return
         }
+        let texturesDownscaled = false
+        try {
+          texturesDownscaled = await enforceTextureBudget(object, TEXTURE_BUDGET)
+        } catch (error) {
+          // Best effort: an old browser without canvas/bitmap support keeps the
+          // original textures rather than losing the model.
+          console.warn('[dsh-any-preview] texture budget unavailable', error)
+        }
+        if (!alive || (runtime?.isContextLost() ?? false)) {
+          object.userData?.releaseBlobs?.()
+          disposeObject(object)
+          return
+        }
+        if (texturesDownscaled) object.userData.texturesDownscaled = true
         const stats = summarize(object)
         if (stats.triangles > MAX_TRIANGLES) {
           object.userData?.releaseBlobs?.()
@@ -897,76 +539,54 @@ export function useModelViewer(
           })
         }
 
-        // Centre the object with a pivot rather than moving its root: a clip
-        // may animate that root's position, which would otherwise overwrite the
-        // centring offset.
-        const box = new THREE.Box3().setFromObject(object)
-        const sphere = box.getBoundingSphere(new THREE.Sphere())
-        const pivot = new THREE.Group()
-        pivot.position.copy(sphere.center).multiplyScalar(-1)
-        pivot.add(object)
-        radius = Number.isFinite(sphere.radius) && sphere.radius > 0 ? sphere.radius : 0.5
-        model = pivot
-        scene.add(pivot)
-        if (typeof object.userData.releaseBlobs === 'function') {
-          pivot.userData.releaseBlobs = object.userData.releaseBlobs
-        }
         // A skinned mesh's bounding volume is computed at bind pose; an
         // animation can move it outside that box, so culling would pop it away.
         object.traverse((child: any) => {
           if (child.isSkinnedMesh === true) child.frustumCulled = false
         })
         const animated = Array.isArray(object.userData.animations) ? object.userData.animations : []
-        clips = animated.map((clip: any) => ({
-          name: typeof clip?.name === 'string' ? clip.name : '',
-          duration: Number.isFinite(clip?.duration) ? clip.duration : 0,
-        }))
-        if (clips.length > 0) {
+        if (animated.length > 0) {
           try {
-            mixerRoot = object
-            mixer = new THREE.AnimationMixer(object)
-            actions = animated.map((clip: any) => mixer.clipAction(clip))
-            const trackSets = animated.map((clip: any) => Array.isArray(clip?.tracks)
-              ? clip.tracks.map((track: any) => String(track?.name ?? ''))
-              : [])
-            const defaults = selectDefaultClips(trackSets)
-            for (const index of defaults) active.add(index)
-            primary = defaults[0] ?? 0
-            animationPlaying = defaults.some((index) => (clips[index]?.duration ?? 0) > 0)
-            for (const index of defaults) actions[index]?.reset().play()
-            mixer.update(0)
+            animator = new AnimationRuntime(THREE, object, animated)
           } catch (error) {
             // A malformed clip should not hide the model; fall back to a still
             // preview and keep the original error in the console.
             console.warn('[dsh-any-preview] animation setup failed', error)
-            mixer = undefined
-            mixerRoot = undefined
-            actions = []
-            clips = []
-            active.clear()
-            primary = 0
-            animationPlaying = false
+            animator?.dispose()
+            animator = undefined
           }
         }
+
+        // Frame the animation's full range, not just the bind pose. The pivot
+        // uses the sampled centre, so an animation that lifts a limb or moves
+        // the root stays in view when fit() runs.
+        const initialBox = new THREE.Box3().setFromObject(object)
+        let frameBox = initialBox
+        if (animator !== undefined) {
+          try {
+            frameBox = animator.sampleBounds(THREE, object) ?? initialBox
+          } catch (error) {
+            console.warn('[dsh-any-preview] animation bounds failed', error)
+          }
+        }
+        const sphere = frameBox.getBoundingSphere(new THREE.Sphere())
+        const pivot = new THREE.Group()
+        pivot.position.copy(sphere.center).multiplyScalar(-1)
+        pivot.add(object)
+        runtime?.attachModel(pivot, frameBox, sphere)
+        if (typeof object.userData.releaseBlobs === 'function') {
+          pivot.userData.releaseBlobs = object.userData.releaseBlobs
+        }
+        const snapshot = animator?.snapshot()
         setAnimation({
           key,
-          clips,
-          active: [...active],
-          primary,
-          playing: animationPlaying,
-          time: 0,
+          ...(snapshot ?? { clips: [], active: [], primary: 0, playing: false, time: 0 }),
         })
-        const extents = box.getSize(new THREE.Vector3())
-
-        if (Number.isFinite(box.min.y)) {
-          gridSpec = gridForBox(extents.x, extents.z, box.min.y - sphere.center.y)
-          grid = buildGrid(gridSpec)
-        }
-
+        const extents = initialBox.getSize(new THREE.Vector3())
         viewerRef.current = viewer
-        fit()
-        apply(settingsRef.current)
-        invalidate()
+        runtime?.fit()
+        runtime?.applySettings(settingsRef.current)
+        runtime?.requestRender()
         setProgress(undefined)
         setView({
           key,
@@ -981,7 +601,9 @@ export function useModelViewer(
           depth: extents.z,
           note: object.userData.texturesUnavailable === true
             ? t('model.texturesFailed')
-            : object.userData.materialsUnavailable === true ? t('model.materialsFailed') : '',
+            : object.userData.materialsUnavailable === true
+              ? t('model.materialsFailed')
+              : texturesDownscaled ? t('model.texturesDownscaled') : '',
           retryable: true,
         })
       } catch (error) {
@@ -990,7 +612,7 @@ export function useModelViewer(
         // pane only ever shows a localized sentence.
         console.error('[dsh-any-preview] model load failed', error)
         teardown()
-        if (!contextLost) fail(failureText(error))
+        if (!(runtime?.isContextLost() ?? false)) fail(failureText(error))
       }
     })()
 
