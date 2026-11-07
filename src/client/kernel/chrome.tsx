@@ -30,9 +30,9 @@ export interface PreviewChromeProps {
   readonly title?: ReactNode
   /** Search, filters and view switches; a function receives the compact flag. */
   readonly toolbar?: ReactNode | ((compact: boolean) => ReactNode)
-  /** One line at the bottom: row budget, truncation, errors. */
+  /** One line at the bottom for a caveat or failure; normal status is not rendered. */
   readonly status?: ReactNode
-  /** Colours the status line; `warning` for caveats, `critical` for failures. */
+  /** Colours the status line; only `warning` and `critical` make it visible. */
   readonly tone?: 'normal' | 'warning' | 'critical'
   readonly children: ReactNode
 }
@@ -50,7 +50,7 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
   // shows the file name. A title-only preview keeps its label: dropping it would
-  // leave an empty 38px bar.
+  // leave an empty 32px bar.
   const showTitle = title !== undefined
     && (toolbar !== undefined || width === 0 || width >= COMPACT_WIDTH)
   const compact = width > 0 && width < COMPACT_WIDTH
@@ -89,7 +89,7 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
       <div style={{ flex: '1 1 auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {children}
       </div>
-      {status !== undefined && status !== '' && (
+      {status !== undefined && status !== '' && tone !== 'normal' && (
         <div
           style={{
             ...CHROME_STATUS,

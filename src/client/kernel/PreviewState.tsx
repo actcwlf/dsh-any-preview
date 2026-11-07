@@ -1,7 +1,7 @@
 /**
  * A loading/error state that keeps the preview chrome in place.
  *
- * Returning a bare PANE_FILL removed the 38px bar until the file finished
+ * Returning a bare PANE_FILL removed the chrome until the file finished
  * parsing, so the body jumped downward on every open. This shell always renders
  * the type badge + title and only swaps the body for the message.
  */

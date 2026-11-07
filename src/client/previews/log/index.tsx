@@ -82,6 +82,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
         </SearchBar>
         )}
         status={log.truncated ? t('common.truncated') : undefined}
+        tone={log.truncated ? 'warning' : 'normal'}
       >
       <div
           ref={setScroller}

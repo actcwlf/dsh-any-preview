@@ -296,19 +296,21 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - `format.ts`：格式适配器注册表，内置 glTF/OBJ/STL，后续 PMX 可独立注册；
 - `decode.ts`：字节解析与资源沙箱，不再靠一个 `if` 链增长格式分支。
 
-UI 基线在 `kernel/ui.ts`：所有预览共用 38px `PreviewChrome`（与 DSH 文档头一致）、
-28px 控件、13/20 的 chrome 字体、12/16 的元信息、`--dsw-font-family` /
+UI 基线在 `kernel/ui.ts`：所有预览共用 **32px** `PreviewChrome` 二级工具条（宿主
+文档头仍是 38px）、28px 控件、13/20 的 chrome 字体、12/16 的元信息、`--dsw-font-family` /
 `--dsw-font-mono`；模型与媒体也走同一个 `PreviewChrome`，不再自建不同高度的
 顶栏。格式自身的摘要/工具栏通过 `PreviewChrome` 的 `title` / `toolbar` / `status`
 传入，避免第二层 bar 和内容起点漂移。
 `PreviewChrome` 的左侧统一由 `PreviewTitle` 渲染：小号格式 badge（CSV/LOG/EPUB/3D…）
 加 13/20、500 字重的主标题；主标题可以是内容摘要、文件名或书名，但字号、字重和
 颜色不再由各预览自行决定。格式 badge 保留 ASCII 缩写，作为文件类型标识不翻译；
-本地化文案集中放在主标题/状态里。加载/错误状态用 `PreviewState` 保留同一根 38px bar；
+本地化文案集中放在主标题/状态里。加载/错误状态用 `PreviewState` 保留同一根 32px bar；
 窄宽度下 Model/Archive/EPUB 用 `ToolbarOverflow`（⋯ 菜单）收纳次要控件，不再靠
 裁切；文本控件统一使用 `dsh-preview-control` 的 hover / focus-visible / disabled 状态。
-元数据检查器的 `Summary` 是固定 32px 的单行 strip（超出横向滚动），不再因 chip
-换行改变内容起点。
+元数据检查器的 `Summary` 现在位于内容滚动区顶部，不再是一条独立的 32px chrome
+strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一个 32px bar 决定。
+`PreviewChrome.status` 只在 `tone` 为 `warning` / `critical` 时渲染；正常信息不再
+额外占用一条 28px 底栏。
 
 ### 解码器与外部资源
 

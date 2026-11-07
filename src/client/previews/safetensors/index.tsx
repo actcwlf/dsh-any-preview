@@ -74,14 +74,15 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
       kind="SAFETENSORS"
       title={<span>{t('common.tensors') + ' ' + header.tensors.length.toLocaleString('en-US')}</span>}
       status={header.tensors.length > shown.length ? t('tensors.count', { count: header.tensors.length, shown: shown.length }) : undefined}
+      tone={header.tensors.length > shown.length ? 'warning' : 'normal'}
     >
-      <Summary fields={[
-        { label: t('common.tensors'), value: header.tensors.length.toLocaleString('en-US') },
-        { label: t('common.params'), value: header.totalParams.toLocaleString('en-US') },
-        { label: t('common.header'), value: formatBytes(header.headerBytes) },
-        ...header.dtypes.map(([dtype, count]) => ({ label: dtype, value: t('count.units', { count }) })),
-      ]} />
-      <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '0 12px 16px' }}>
+      <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 12px 16px' }}>
+        <Summary fields={[
+          { label: t('common.tensors'), value: header.tensors.length.toLocaleString('en-US') },
+          { label: t('common.params'), value: header.totalParams.toLocaleString('en-US') },
+          { label: t('common.header'), value: formatBytes(header.headerBytes) },
+          ...header.dtypes.map(([dtype, count]) => ({ label: dtype, value: t('count.units', { count }) })),
+        ]} />
         {header.metadata.length > 0 && (
           <section style={{ marginTop: 10 }}>
             <div style={sectionTitle}>{t('common.metadata')}</div>

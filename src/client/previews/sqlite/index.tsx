@@ -107,13 +107,13 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
       kind="SQLITE"
       title={t('count.items', { count: objects.length.toLocaleString('en-US') })}
     >
-      <Summary fields={[
-        { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
-        { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },
-        { label: t('common.encoding'), value: header.encoding },
-        ...[...counts.entries()].map(([type, count]) => ({ label: typeLabel(type), value: String(count) })),
-      ]} />
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 12px 20px' }}>
+        <Summary fields={[
+          { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
+          { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },
+          { label: t('common.encoding'), value: header.encoding },
+          ...[...counts.entries()].map(([type, count]) => ({ label: typeLabel(type), value: String(count) })),
+        ]} />
         {objects.length === 0 && <Note>{t('sqlite.noObjects')}</Note>}
         {objects.map(object => (
           <section key={`${object.type}:${object.name}`} style={{ marginBottom: 12 }}>

@@ -1,10 +1,12 @@
 /**
  * Shared preview UI measurements and typography.
  *
- * The host document header is 38px with 13/20 text. Every preview toolbar
- * follows the same measurements so changing format does not move the content
- * or change the size of a button. Values are intentionally constants rather
- * than a themeable API: this is one product surface, not a component kit.
+ * The host document header is 38px; the preview's own utility bar is a
+ * secondary 32px row below it, so the two never compete for the same visual
+ * weight. Every format uses the same measurements so changing format does not
+ * move the content or change the size of a button. Values are intentionally
+ * constants rather than a themeable API: this is one product surface, not a
+ * component kit.
  */
 
 /** Canonical host font families, with safe fallbacks for tests. */
@@ -13,8 +15,8 @@ export const FONT_MONO = 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Men
 
 /** Standard chrome metrics. */
 export const CHROME = {
-  /** Matches DSH's document header height. */
-  height: 38,
+  /** Secondary toolbar below DSH's 38px document header. */
+  height: 32,
   /** One button/input target inside a bar. */
   control: 28,
   /** Bottom status line. */

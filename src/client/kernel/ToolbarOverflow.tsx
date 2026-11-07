@@ -1,7 +1,7 @@
 /**
  * A compact `⋯` control for toolbars that cannot fit every action.
  *
- * The bar keeps its 38px height; only the controls move into this panel. That is
+ * The bar keeps its 32px height; only the controls move into this panel. That is
  * preferable to wrapping the bar or hiding tools behind `overflow: hidden`.
  */
 import { useEffect, useRef, useState } from 'react'

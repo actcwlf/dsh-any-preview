@@ -93,16 +93,17 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
       kind="GGUF"
       title={<span>{`v${String(header.version)}`}</span>}
       status={header.kvCount > header.kv.length ? t('metadata.count', { count: header.kvCount, shown: header.kv.length }) : undefined}
+      tone={header.kvCount > header.kv.length ? 'warning' : 'normal'}
     >
-      <Summary fields={[
-        { label: t('common.version'), value: String(header.version) },
-        { label: t('common.architecture'), value: kvOf(header, 'general.architecture') ?? '' },
-        { label: t('common.name'), value: kvOf(header, 'general.name') ?? '' },
-        { label: t('common.tensors'), value: header.tensorCount.toLocaleString('en-US') },
-        { label: t('common.metadata'), value: t('count.items', { count: header.kvCount.toLocaleString('en-US') }) },
-        ...header.quantizations.slice(0, 3).map(([type, count]) => ({ label: type, value: t('count.units', { count }) })),
-      ]} />
-      <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '0 12px 16px' }}>
+      <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 12px 16px' }}>
+        <Summary fields={[
+          { label: t('common.version'), value: String(header.version) },
+          { label: t('common.architecture'), value: kvOf(header, 'general.architecture') ?? '' },
+          { label: t('common.name'), value: kvOf(header, 'general.name') ?? '' },
+          { label: t('common.tensors'), value: header.tensorCount.toLocaleString('en-US') },
+          { label: t('common.metadata'), value: t('count.items', { count: header.kvCount.toLocaleString('en-US') }) },
+          ...header.quantizations.slice(0, 3).map(([type, count]) => ({ label: type, value: t('count.units', { count }) })),
+        ]} />
         <section style={{ marginTop: 10 }}>
           <div style={sectionTitle}>{t('common.metadata')}</div>
           <KeyValueTable entries={header.kv.map(entry => [entry.key, entry.value])} />

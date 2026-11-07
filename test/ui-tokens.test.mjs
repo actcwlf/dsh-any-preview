@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { CHROME, CHROME_BAR, TEXT } from '../src/client/kernel/ui.ts'
 
 test('chrome uses the DSH-aligned height and control size', () => {
-  assert.equal(CHROME.height, 38)
+  assert.equal(CHROME.height, 32)
   assert.equal(CHROME.control, 28)
   assert.equal(CHROME.status, 28)
   assert.equal(CHROME_BAR.height, CHROME.height)

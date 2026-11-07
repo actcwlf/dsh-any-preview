@@ -260,6 +260,7 @@ export function CsvBody(props: PreviewBodyProps) {
         </SearchBar>
       )}
       status={status === '' ? undefined : status}
+      tone={status === '' ? 'normal' : 'warning'}
     >
       <CsvTable
         bindScroller={scroll.bindScroller}

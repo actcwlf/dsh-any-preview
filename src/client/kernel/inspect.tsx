@@ -79,12 +79,8 @@ export function KeyValueTable({ entries }: { readonly entries: readonly (readonl
 }
 
 const summaryStyle = {
-  boxSizing: 'border-box' as const,
-  display: 'flex', alignItems: 'center', flexWrap: 'nowrap' as const,
-  gap: 6, height: 32, padding: '0 16px',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-  minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
-  whiteSpace: 'nowrap' as const,
+  display: 'flex', flexWrap: 'wrap' as const, alignItems: 'center',
+  gap: 6, margin: '0 0 10px',
 } as const
 
 const chipStyle = {

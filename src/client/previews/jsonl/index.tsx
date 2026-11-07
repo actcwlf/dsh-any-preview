@@ -81,6 +81,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
       status={jsonl.truncated
         ? t('common.truncated')
         : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : undefined}
+      tone={jsonl.truncated || hidden > 0 ? 'warning' : 'normal'}
     >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontFamily: 'var(--dsw-font-family)', fontSize: 12, whiteSpace: 'nowrap' }}>
