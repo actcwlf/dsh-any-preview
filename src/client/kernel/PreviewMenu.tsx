@@ -136,6 +136,7 @@ export function PreviewMenu({ label, trigger, children, align = 'end', panelStyl
           }}
           role="group"
           aria-label={label}
+          data-preview-menu="true"
         >
           {children}
         </div>,

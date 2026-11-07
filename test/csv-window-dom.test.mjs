@@ -1,11 +1,14 @@
 /**
- * Mounts the built CSV body in a DOM, the way the document owner does, and checks the
- * two-tier window load: placeholders while the scroll moves, real rows once it settles,
- * and the cached window when the scroll comes back.
+ * Mounts the built CSV and Archive bodies in a DOM, the way the document owner does.
  *
- * Requires the DSH checkout for React and jsdom; override with DSH_REPO. The last test
- * also uses the 22 MB `samples/huge.csv` fixture when it is on this machine; point
- * DSH_HUGE_CSV at it to use another path.
+ * CSV checks the two-tier window load: placeholders while the scroll moves, real rows
+ * once it settles, and the cached window when the scroll comes back. Archive checks
+ * keyboard row activation, the single embedded entry chrome, and the portalled
+ * toolbar menu.
+ *
+ * Requires the DSH checkout for React and jsdom; override with DSH_REPO. The large CSV
+ * test uses the 22 MB `samples/huge.csv` fixture when it is on this machine; point
+ * DSH_HUGE_CSV at it to use another path. Archive tests use `samples/bundle.zip`.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -27,6 +30,10 @@ const SETTLE = 320
 /** The 22 MB fixture the windowing was designed against, when the machine has it. */
 const hugeCsv = process.env.DSH_HUGE_CSV ?? new URL('../../samples/huge.csv', import.meta.url)
 const hugeAvailable = available && existsSync(hugeCsv)
+
+/** A tiny two-member zip for the archive seat and its portal menu. */
+const archiveZip = new URL('../../samples/bundle.zip', import.meta.url)
+const archiveAvailable = available && existsSync(archiveZip)
 
 const React = available ? anchorRequire('react') : undefined
 /**
@@ -69,10 +76,11 @@ async function waitFor(check, timeout = 6_000) {
 }
 
 /**
- * Install a DOM, load the built bundle into it, and return the registered CSV seat.
+ * Install a DOM, load the built bundle into it, and return one registered seat.
+ * @param {string} key - document preview seat, e.g. `dsh-any-preview/csv`.
  * @returns {Promise<{window: object, component: Function}>} what to mount.
  */
-async function mountCsv() {
+async function mountPreview(key) {
   const { JSDOM } = rootRequire('jsdom')
   const dom = new JSDOM('<!doctype html><html lang="zh"><body><div id="root"></div></body></html>', {
     pretendToBeVisual: true,
@@ -115,9 +123,81 @@ async function mountCsv() {
       register: (entry, component) => (seats.push({ entry, component }), () => {}),
     },
   })
-  const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')
-  assert.ok(seat, 'the csv preview registers a body')
+  const seat = seats.find(entry => entry.entry.key === key)
+  assert.ok(seat, `${key} registers a body`)
   return { window, component: seat.component }
+}
+
+/** Mount the CSV seat. */
+async function mountCsv() {
+  return await mountPreview('dsh-any-preview/csv')
+}
+
+/**
+ * Install a fake Host for one zip: ranged media reads plus the extraction
+ * `check` probe EntryView uses when an entry is opened.
+ * @param {Uint8Array} bytes - the archive bytes.
+ * @returns {{ restore: () => void }} how to undo the fake.
+ */
+function installArchiveHost(bytes) {
+  const original = globalThis.fetch
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input), 'http://127.0.0.1:4233/')
+    if (url.pathname === '/api/any-preview/extract') {
+      const body = JSON.parse(init.body ?? '{}')
+      if (body.action === 'check') return Response.json({ exists: false, path: null })
+      return Response.json({ removed: 0 })
+    }
+    if (url.pathname !== '/api/any-preview/media') return new Response('no route', { status: 404 })
+    const range = init.headers?.Range ?? init.headers?.range
+    const match = /bytes=(\d+)-(\d+)/u.exec(String(range ?? ''))
+    if (match === null) return new Response(bytes)
+    const start = Number(match[1])
+    const end = Math.min(Number(match[2]), bytes.length - 1)
+    return new Response(bytes.subarray(start, end + 1), {
+      status: 206,
+      headers: { 'content-range': `bytes ${start}-${end}/${String(bytes.length)}` },
+    })
+  }
+  return { restore: () => { globalThis.fetch = original } }
+}
+
+/**
+ * Mount the archive seat at a sidebar width that forces the toolbar overflow.
+ * @param {Uint8Array} bytes - the zip fixture.
+ * @returns {Promise<object>} the mounted view.
+ */
+async function mountArchive(bytes) {
+  const { window, component } = await mountPreview('dsh-any-preview/archive')
+  Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', {
+    configurable: true,
+    get() { return 320 },
+  })
+  const container = document.getElementById('root')
+  const root = createRoot(container)
+  const useResource = () => ({
+    value: {
+      absolutePath: 'F:/DSH/workspace/ext_preview/samples/bundle.zip',
+      version: 'v1',
+      size: bytes.length,
+    },
+  })
+  await act(async () => {
+    root.render(React.createElement(component, {
+      content: { kind: 'renderer', loaded: () => {} },
+      resourceAddress: 'dsh-resource://file/session/s/samples/bundle.zip',
+      wrap: false,
+      useResource,
+    }))
+  })
+  const ready = await waitFor(() => container.querySelectorAll('[data-archive-row="file"]').length > 0)
+  assert.ok(ready, 'archive rows render')
+  return {
+    window,
+    container,
+    root,
+    dispose: async () => { await act(async () => root.unmount()) },
+  }
 }
 
 /**
@@ -610,5 +690,60 @@ test('the shared chrome keeps a fixed 32px bar', { skip: !available }, async (t)
   assert.equal(bar.style.height, '32px')
   assert.match(bar.textContent ?? '', /CSV/u)
   assert.ok(view.container.querySelector('.dsh-preview-search'), 'the host-style search field is mounted')
+})
+
+test('archive rows are keyboard reachable and open a single embedded chrome', { skip: !archiveAvailable }, async (t) => {
+  const bytes = new Uint8Array(readFileSync(archiveZip))
+  const host = installArchiveHost(bytes)
+  const view = await mountArchive(bytes)
+  t.after(async () => {
+    await view.dispose()
+    host.restore()
+  })
+
+  const row = view.container.querySelector('[data-archive-row="file"]')
+  assert.ok(row, 'the archive has a file row')
+  assert.equal(row.getAttribute('tabindex'), '0', 'file rows are tabbable')
+
+  await act(async () => {
+    row.focus()
+    row.dispatchEvent(new view.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  assert.ok(await waitFor(() => view.container.querySelector('[data-preview-back]') !== null), 'Enter opens the entry')
+  assert.equal(
+    view.container.querySelectorAll('[data-preview-chrome="bar"]').length,
+    1,
+    'the entry renders one chrome bar, not nested archive + module bars',
+  )
+
+  const back = view.container.querySelector('[data-preview-back]')
+  assert.ok(back, 'the embedded entry has a back button')
+  await act(async () => back.click())
+  assert.ok(await waitFor(() => view.container.querySelector('[data-archive-row="file"]') !== null), 'back returns to the list')
+})
+
+test('the archive overflow menu portals to the document body and closes on Escape', { skip: !archiveAvailable }, async (t) => {
+  const bytes = new Uint8Array(readFileSync(archiveZip))
+  const host = installArchiveHost(bytes)
+  const view = await mountArchive(bytes)
+  t.after(async () => {
+    await view.dispose()
+    host.restore()
+  })
+
+  const trigger = view.container.querySelector('[data-preview-overflow="true"]')
+  assert.ok(trigger, 'the compact archive toolbar has an overflow trigger')
+  await act(async () => trigger.click())
+
+  const panel = view.window.document.body.querySelector('[data-preview-menu="true"]')
+  assert.ok(panel, 'the menu is mounted')
+  assert.equal(panel.parentElement, view.window.document.body, 'the menu is portalled to body')
+  assert.equal(panel.closest('[data-preview-chrome="bar"]'), null, 'the menu is outside the clipped bar')
+
+  await act(async () => {
+    view.window.document.dispatchEvent(new view.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  assert.equal(view.window.document.body.querySelector('[data-preview-menu="true"]'), null, 'Escape closes the menu')
+  assert.equal(view.window.document.activeElement, trigger, 'Escape returns focus to the trigger')
 })
 

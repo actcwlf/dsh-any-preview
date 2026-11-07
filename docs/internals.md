@@ -406,10 +406,11 @@ npm test
 - `test/csv-index.test.mjs` / `test/csv-window.test.mjs` / `test/window-state.test.mjs` / `test/csv-state.test.mjs`：
   稀疏索引的锚点与估算、窗口读取与整串解析逐行一致、窗口算术（读哪一段、画哪些行、撑高、
   行高缩放）
-- `test/csv-window-dom.test.mjs`：用 jsdom 真正挂载 CSV 正文，验证「首屏出首窗、拖动出占位、
-  拖回来命中缓存、撑高精确」；文件源用假 Host（同一个 `alignTextSlice`）验证「按字节跳转、
-  行号带 `~`、拖到底看到文件尾部、后台走完后换精确值」；机器上有 `samples/huge.csv` 时还会
-  用 22 MB 夹具跑第 20 万行
+- `test/csv-window-dom.test.mjs`：用 jsdom 真正挂载 CSV / Archive 正文。CSV 覆盖「首屏出首窗、
+  拖动出占位、拖回来命中缓存、撑高精确」；Archive 覆盖文件行 Tab + Enter、条目页只有一层
+  chrome、返回列表，以及 `PreviewMenu` portal 到 `document.body`、Escape 关闭并归还焦点。
+  文件源用假 Host（同一个 `alignTextSlice`）验证「按字节跳转、行号带 `~`、拖到底看到文件
+  尾部、后台走完后换精确值」；机器上有 `samples/huge.csv` 时还会用 22 MB 夹具跑第 20 万行
 - `test/text-route.test.mjs`：文本切片路由的行对齐、UTF-8 边界、越界与错误码
 - `test/render.test.mjs`：按浏览器方式加载 `lib/client.js`，用真实 React 做 SSR，
   校验每个格式的注册元数据与渲染输出（含 >2 MB 文件的首屏行数与占位）
