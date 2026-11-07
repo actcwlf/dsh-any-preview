@@ -71,6 +71,9 @@ const DEFAULT_SETTINGS: ViewerSettings = { grid: true, wireframe: false, autoRot
 export interface ViewerHandle {
   apply(settings: ViewerSettings): void
   resetView(): void
+  selectAnimation(index: number): void
+  toggleAnimation(): void
+  seekAnimation(time: number): void
 }
 
 /** What the pane shows for one file and revision; a different key is not shown. */
@@ -97,6 +100,12 @@ export interface ModelProgress {
   readonly total: number | undefined
 }
 
+/** One glTF animation clip the pane can play. */
+export interface ModelAnimationInfo {
+  readonly name: string
+  readonly duration: number
+}
+
 /** What the component above the hook receives. */
 export interface ModelViewer {
   readonly view: ModelViewState
@@ -104,10 +113,29 @@ export interface ModelViewer {
   readonly absolutePath: string | undefined
   readonly mountRef: { current: HTMLDivElement | null }
   readonly settings: ViewerSettings
+  readonly animations: readonly ModelAnimationInfo[]
+  readonly animationIndex: number
+  readonly animationPlaying: boolean
+  readonly animationTime: number
   resetView(): void
   toggle(field: keyof ViewerSettings): void
   retry(): void
+  selectAnimation(index: number): void
+  toggleAnimation(): void
+  seekAnimation(time: number): void
 }
+
+/** Animation state plus the file identity it belongs to. */
+interface AnimationState {
+  readonly key: string
+  readonly clips: readonly ModelAnimationInfo[]
+  readonly index: number
+  readonly playing: boolean
+  readonly time: number
+}
+
+/** No clips yet, or one this run has not settled. */
+const EMPTY_ANIMATION: AnimationState = { key: '', clips: [], index: 0, playing: false, time: 0 }
 
 /** The `.obj`/COFF answer, tied to the URL it was read for. */
 interface Probe {
@@ -252,6 +280,7 @@ export function useModelViewer(
   const [settings, setSettings] = useState<ViewerSettings>(DEFAULT_SETTINGS)
   const settingsRef = useRef<ViewerSettings>(DEFAULT_SETTINGS)
   const viewerRef = useRef<ViewerHandle | null>(null)
+  const [animation, setAnimation] = useState<AnimationState>(EMPTY_ANIMATION)
 
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const extension = typeof absolutePath === 'string' ? extensionOf(absolutePath) : ''
@@ -263,6 +292,7 @@ export function useModelViewer(
     ? (probe !== null && probe.url === url ? probe.ok : null)
     : true
   const shownProgress = progress?.key === key ? progress : undefined
+  const shownAnimation = animation.key === key ? animation : EMPTY_ANIMATION
 
   // `.obj` also names a COFF object file; decide before parsing anything.
   useEffect(() => {
@@ -308,6 +338,7 @@ export function useModelViewer(
       fail(t('model.disabled'), false)
       return
     }
+    setAnimation({ key, clips: [], index: 0, playing: false, time: 0 })
 
     let alive = true
     let torndown = false
@@ -455,21 +486,71 @@ export function useModelViewer(
         })
       }
 
+      /** Animation clips and the mixer driving their skeletons. */
+      let mixer: any
+      let mixerRoot: any
+      let actions: any[] = []
+      let clips: ModelAnimationInfo[] = []
+      let currentClip = 0
+      let animationPlaying = false
+      let lastFrame = 0
+      let lastUiUpdate = 0
+
+      /**
+       * Publish the current animation state to the bar.
+       * @param time - override the clip time, for a seek or clip switch.
+       */
+      const publishAnimation = (time?: number): void => {
+        setAnimation({
+          key,
+          clips,
+          index: currentClip,
+          playing: animationPlaying,
+          time: time ?? actions[currentClip]?.time ?? 0,
+        })
+      }
+
       /**
        * Render one frame and stop when damping/auto-rotation has settled.
        *
        * The pane used to run a 60 fps loop forever, even with the pointer at
-       * rest; now a frame is only requested by a change.
+       * rest; now a frame is only requested by a change. An animation keeps the
+       * loop alive while it plays, and advances the mixer with a clamped delta
+       * so a backgrounded tab does not jump the clip.
+       * @param time - the animation-loop timestamp, when the browser supplies it.
        */
-      const frame = (): void => {
+      const frame = (time?: number): void => {
+        const now = typeof time === 'number' ? time : performance.now()
+        const delta = lastFrame === 0 ? 0 : Math.min((now - lastFrame) / 1000, 0.1)
+        lastFrame = now
+        if (animationPlaying && mixer !== undefined) {
+          try {
+            mixer.update(delta)
+          } catch (error) {
+            // A malformed clip should freeze the animation, not the render loop.
+            console.warn('[dsh-any-preview] animation update failed', error)
+            animationPlaying = false
+            publishAnimation()
+          }
+          if (now - lastUiUpdate > 100) {
+            lastUiUpdate = now
+            const action = actions[currentClip]
+            if (action !== undefined) {
+              setAnimation((previous) => previous.key === key
+                ? { ...previous, clips, index: currentClip, playing: animationPlaying, time: action.time }
+                : previous)
+            }
+          }
+        }
         const changed = controls.update()
         renderer.render(scene, camera)
         // Auto-rotate's first step is below OrbitControls' change epsilon, so
         // `changed` can be false on the frame that starts it. Keep the loop
-        // alive while rotation is requested; stop only when it is off and the
-        // camera has settled.
-        if (!changed && !controls.autoRotate) {
+        // alive while rotation or an animation is requested; stop only when
+        // both are off and the camera has settled.
+        if (!changed && !controls.autoRotate && !animationPlaying) {
           running = false
+          lastFrame = 0
           renderer.setAnimationLoop(null)
         }
       }
@@ -538,6 +619,32 @@ export function useModelViewer(
           framed = true
           fit()
         },
+        selectAnimation: (index: number): void => {
+          if (mixer === undefined || actions[index] === undefined || index === currentClip) return
+          actions[currentClip]?.stop()
+          currentClip = index
+          actions[currentClip].reset().play()
+          mixer.update(0)
+          lastUiUpdate = 0
+          publishAnimation(0)
+          invalidate()
+        },
+        toggleAnimation: (): void => {
+          if (mixer === undefined || actions.length === 0) return
+          if ((clips[currentClip]?.duration ?? 0) <= 0) return
+          animationPlaying = !animationPlaying
+          publishAnimation()
+          invalidate()
+        },
+        seekAnimation: (time: number): void => {
+          if (mixer === undefined || actions[currentClip] === undefined) return
+          const duration = clips[currentClip]?.duration ?? 0
+          const clamped = Math.min(Math.max(0, Number.isFinite(time) ? time : 0), duration)
+          actions[currentClip].time = clamped
+          mixer.update(0)
+          publishAnimation(clamped)
+          invalidate()
+        },
       }
 
       /**
@@ -601,6 +708,12 @@ export function useModelViewer(
         setWireframe(false)
         wireMaterial?.dispose?.()
         wireMaterial = undefined
+        animationPlaying = false
+        mixer?.stopAllAction?.()
+        if (mixer !== undefined && mixerRoot !== undefined) mixer.uncacheRoot?.(mixerRoot)
+        mixer = undefined
+        mixerRoot = undefined
+        actions = []
         model?.userData?.releaseBlobs?.()
         if (model !== undefined) disposeObject(model)
         if (grid !== undefined) disposeObject(grid)
@@ -687,13 +800,51 @@ export function useModelViewer(
           })
         }
 
-        // Centre the object and frame its bounding sphere, not its diagonal.
+        // Centre the object with a pivot rather than moving its root: a clip
+        // may animate that root's position, which would otherwise overwrite the
+        // centring offset.
         const box = new THREE.Box3().setFromObject(object)
         const sphere = box.getBoundingSphere(new THREE.Sphere())
-        object.position.sub(sphere.center)
+        const pivot = new THREE.Group()
+        pivot.position.copy(sphere.center).multiplyScalar(-1)
+        pivot.add(object)
         radius = Number.isFinite(sphere.radius) && sphere.radius > 0 ? sphere.radius : 0.5
-        model = object
-        scene.add(object)
+        model = pivot
+        scene.add(pivot)
+        if (typeof object.userData.releaseBlobs === 'function') {
+          pivot.userData.releaseBlobs = object.userData.releaseBlobs
+        }
+        // A skinned mesh's bounding volume is computed at bind pose; an
+        // animation can move it outside that box, so culling would pop it away.
+        object.traverse((child: any) => {
+          if (child.isSkinnedMesh === true) child.frustumCulled = false
+        })
+        const animated = Array.isArray(object.userData.animations) ? object.userData.animations : []
+        clips = animated.map((clip: any) => ({
+          name: typeof clip?.name === 'string' ? clip.name : '',
+          duration: Number.isFinite(clip?.duration) ? clip.duration : 0,
+        }))
+        if (clips.length > 0) {
+          try {
+            mixerRoot = object
+            mixer = new THREE.AnimationMixer(object)
+            actions = animated.map((clip: any) => mixer.clipAction(clip))
+            currentClip = 0
+            animationPlaying = (clips[0]?.duration ?? 0) > 0
+            actions[0].reset().play()
+            mixer.update(0)
+          } catch (error) {
+            // A malformed clip should not hide the model; fall back to a still
+            // preview and keep the original error in the console.
+            console.warn('[dsh-any-preview] animation setup failed', error)
+            mixer = undefined
+            mixerRoot = undefined
+            actions = []
+            clips = []
+            animationPlaying = false
+          }
+        }
+        setAnimation({ key, clips, index: currentClip, playing: animationPlaying, time: 0 })
         const extents = box.getSize(new THREE.Vector3())
 
         if (Number.isFinite(box.min.y)) {
@@ -743,6 +894,7 @@ export function useModelViewer(
     setProbe(null)
     setProgress(undefined)
     setView({ ...IDLE, key })
+    setAnimation({ key, clips: [], index: 0, playing: false, time: 0 })
     setAttempt((count) => count + 1)
   }, [key])
 
@@ -757,14 +909,33 @@ export function useModelViewer(
     viewerRef.current?.resetView()
   }, [])
 
+  const selectAnimation = useCallback((index: number): void => {
+    viewerRef.current?.selectAnimation(index)
+  }, [])
+
+  const toggleAnimation = useCallback((): void => {
+    viewerRef.current?.toggleAnimation()
+  }, [])
+
+  const seekAnimation = useCallback((time: number): void => {
+    viewerRef.current?.seekAnimation(time)
+  }, [])
+
   return {
     view: shown,
     progress: shownProgress,
     absolutePath,
     mountRef,
     settings,
+    animations: shownAnimation.clips,
+    animationIndex: shownAnimation.index,
+    animationPlaying: shownAnimation.playing,
+    animationTime: shownAnimation.time,
     resetView,
     toggle,
     retry,
+    selectAnimation,
+    toggleAnimation,
+    seekAnimation,
   }
 }

@@ -11,6 +11,7 @@ import { formatBytes } from '../../kernel/format.ts'
 import { PANE_ROOT } from '../../kernel/layout.ts'
 import { ModelOverlay } from './ModelOverlay.tsx'
 import { ModelToolbar } from './ModelToolbar.tsx'
+import { ModelAnimationBar } from './ModelAnimationBar.tsx'
 import { useModelViewer } from './useModelViewer.ts'
 import type { PreviewBodyProps } from '../../kernel/types.ts'
 
@@ -40,9 +41,11 @@ function measure(value: number): string {
 
 export function ModelBody({ content, resourceAddress, useResource }: PreviewBodyProps) {
   useLocale()
-  const { view, progress, absolutePath, mountRef, settings, resetView, toggle, retry } = useModelViewer(
-    content, resourceAddress, useResource,
-  )
+  const {
+    view, progress, absolutePath, mountRef, settings, resetView, toggle, retry,
+    animations, animationIndex, animationPlaying, animationTime,
+    selectAnimation, toggleAnimation, seekAnimation,
+  } = useModelViewer(content, resourceAddress, useResource)
   const ready = view.status === 'ready'
   const loadingText = view.phase === 'decoding'
     ? t('model.decoding')
@@ -80,6 +83,17 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         />
       </div>
       {view.note !== '' && <div style={noteStyle}>{view.note}</div>}
+      {ready && animations.length > 0 && (
+        <ModelAnimationBar
+          clips={animations}
+          index={animationIndex}
+          playing={animationPlaying}
+          time={animationTime}
+          onSelect={selectAnimation}
+          onToggle={toggleAnimation}
+          onSeek={seekAnimation}
+        />
+      )}
       <div
         style={viewportStyle}
         title={t('model.hint')}

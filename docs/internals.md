@@ -259,6 +259,10 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **面朝向**：OBJ 与 STL 默认 `DoubleSide`。OBJ 没有 side 约定，不同导出器的顺/逆时针
   不一致；工作区自带的 `samples/cube.obj` 就是全部朝内绕序，单面渲染会把近侧面当背面
   剔除、显示成一个"空房间"。glTF 仍按其 `doubleSided` 标记渲染，不替作者改 culling。
+- **动画/骨骼**：glTF 的 `gltf.animations` 挂在根节点的 `userData.animations` 上；
+  `AnimationMixer` 默认播放首个 clip，动画条提供播放/暂停、clip 选择与时间轴。
+  `SkinnedMesh` 关闭视锥剔除，避免骨骼把网格移出绑定姿态包围盒后被裁掉；销毁时
+  `Skeleton.dispose()` 释放骨骼纹理。OBJ/STL 没有动画。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；OBJ/MTL 保持原生 Phong（不吃
   `scene.environment`），另有一盏低强度下方补光（`DirectionalLight` 0.4，位置
@@ -267,12 +271,13 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   （15px、1px 线宽、`--dsw-alias-interactive-bg-hover` 悬停/按下态）；线框用无光照的
   `MeshBasicMaterial({ wireframe: true, toneMapped: false })` 替换网格材质，
   线条颜色按主题取对比色（原先是让受光材质自己画线，浅色模型在浅色背景上几乎看不见）。
-  渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转停下后即停掉
-  `setAnimationLoop`，启动时只画一帧背景。
+  渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转/动画都停下后即停掉
+  `setAnimationLoop`，启动时只画一帧背景；动画播放时循环保持运行并按 delta 推进
+  `AnimationMixer`。
 
 实现分层：`index.tsx` 只做四个扩展名的注册；`ModelBody.tsx` 负责文件名、统计与布局；
-`ModelToolbar.tsx` / `ModelOverlay.tsx` / `model-icons.tsx` 是纯展示；
-`useModelViewer.ts` 独占 WebGL 生命周期、解码编排、主题跟随与清理。
+`ModelToolbar.tsx` / `ModelAnimationBar.tsx` / `ModelOverlay.tsx` / `model-icons.tsx` 是纯展示；
+`useModelViewer.ts` 独占 WebGL 生命周期、解码编排、动画/主题跟随与清理。
 
 ### 解码器与外部资源
 
@@ -290,12 +295,14 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - 外部资源不进入宿主的 `addResource` 依赖跟踪：改 `.mtl`/贴图不会自动刷新，重开文件即可。
 
 测试：`test/model-frame.test.mjs`（取景与网格算术）、`test/model-decode.test.mjs`
-（glb/obj/stl 解码、MTL、外部 buffer 走签名路由、三角形/顶点/材质统计、解码器装配、释放、
-流式读取）、`test/model-resources.test.mjs`（沙箱、扩展识别）、
-`test/model-extras-loader.test.mjs`（解码 chunk 的共享与重试），夹具在 `samples/`。
+（glb/obj/stl 解码、MTL、外部 buffer 走签名路由、三角形/顶点/材质统计、解码器装配、
+动画 clip 挂载与 `AnimationMixer` 推进、释放、流式读取）、`test/model-resources.test.mjs`
+（沙箱、扩展识别）、`test/model-extras-loader.test.mjs`（解码 chunk 的共享与重试），
+夹具在 `samples/`。
 
 已知限制：KTX2 的转码器跑在 `blob:` Worker 里（当前页面无 CSP，桌面 `dsh-app://` 下需实测）；
-动画/骨骼仍不播放；`preview_inspect` 还不认识 3D。
+动画只支持 glTF clip，默认循环播放，不提供单次播放/倍速/根运动特判；`preview_inspect`
+还不认识 3D。
 
 ## 构建
 

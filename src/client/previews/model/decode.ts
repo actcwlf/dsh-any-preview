@@ -226,6 +226,12 @@ async function parseGltf(
     configureDecoders(loader, options, disposables)
     const path = directory === undefined ? '' : resourceBase(directory)
     const gltf = await loader.parseAsync(bytes, path)
+    // glTF animations belong to the scene, but the parser returns them next to
+    // it. Keep them on the root so the viewer can build a mixer without
+    // changing the parse result type used by every other format.
+    if (Array.isArray(gltf.animations) && gltf.animations.length > 0) {
+      gltf.scene.userData.animations = gltf.animations
+    }
     return gltf.scene
   } finally {
     prefetch.dispose()
@@ -495,6 +501,9 @@ export function countTriangles(root: Object3D): number {
 export function disposeObject(root: Object3D): void {
   visit(root, (child) => {
     if (typeof child.geometry?.dispose === 'function') child.geometry.dispose()
+    // A skinned mesh owns a bone texture through its skeleton; disposing only
+    // the geometry leaves that GPU texture behind on every animation reload.
+    if (child.isSkinnedMesh === true) child.skeleton?.dispose?.()
     const material = child.material
     const materials = Array.isArray(material) ? material : material === undefined ? [] : [material]
     for (const one of materials) {

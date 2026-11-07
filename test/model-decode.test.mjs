@@ -105,6 +105,97 @@ test('a glb decodes into a scene with its triangles counted', async () => {
   assert.equal(countTriangles(scene), 1)
 })
 
+test('glTF animation clips stay on the root for the viewer', async () => {
+  const clip = { name: 'spin', duration: 2.5 }
+  class AnimatedLoader {
+    async parseAsync() {
+      return { scene: { userData: {} }, animations: [clip] }
+    }
+  }
+  const object = await parseModel(
+    { ...bundle, GLTFLoader: AnimatedLoader },
+    'gltf',
+    encoder.encode('{"asset":{"version":"2.0"}}').buffer,
+  )
+  assert.deepEqual(object.userData.animations, [clip])
+})
+
+test('a glTF without animations leaves the root unmarked', async () => {
+  class StillLoader {
+    async parseAsync() {
+      return { scene: { userData: {} }, animations: [] }
+    }
+  }
+  const object = await parseModel(
+    { ...bundle, GLTFLoader: StillLoader },
+    'gltf',
+    encoder.encode('{"asset":{"version":"2.0"}}').buffer,
+  )
+  assert.equal(object.userData.animations, undefined)
+})
+
+test('a real glTF animation drives its node through an AnimationMixer', async () => {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])
+  const times = new Float32Array([0, 1])
+  const translations = new Float32Array([0, 0, 0, 2, 0, 0])
+  const bytes = new Uint8Array(68)
+  const view = new DataView(bytes.buffer)
+  positions.forEach((value, index) => view.setFloat32(index * 4, value, true))
+  times.forEach((value, index) => view.setFloat32(36 + index * 4, value, true))
+  translations.forEach((value, index) => view.setFloat32(44 + index * 4, value, true))
+  const document = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ name: 'Animated', mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    buffers: [{
+      uri: `data:application/octet-stream;base64,${Buffer.from(bytes).toString('base64')}`,
+      byteLength: bytes.byteLength,
+    }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 36, target: 34962 },
+      { buffer: 0, byteOffset: 36, byteLength: 8 },
+      { buffer: 0, byteOffset: 44, byteLength: 24 },
+    ],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 3, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 0] },
+      { bufferView: 1, componentType: 5126, count: 2, type: 'SCALAR', min: [0], max: [1] },
+      { bufferView: 2, componentType: 5126, count: 2, type: 'VEC3', min: [0, 0, 0], max: [2, 0, 0] },
+    ],
+    animations: [{
+      name: 'Move',
+      channels: [{ sampler: 0, target: { node: 0, path: 'translation' } }],
+      samplers: [{ input: 1, output: 2, interpolation: 'LINEAR' }],
+    }],
+  }
+  const originalProgress = globalThis.ProgressEvent
+  globalThis.ProgressEvent ??= class {
+    constructor(type, init = {}) {
+      this.type = type
+      this.lengthComputable = init.lengthComputable ?? false
+      this.loaded = init.loaded ?? 0
+      this.total = init.total ?? 0
+    }
+  }
+  let object
+  try {
+    object = await parseModel(bundle, 'gltf', encoder.encode(JSON.stringify(document)).buffer)
+  } finally {
+    globalThis.ProgressEvent = originalProgress
+  }
+  const clip = object.userData.animations?.[0]
+  assert.equal(clip?.name, 'Move')
+  assert.equal(clip?.duration, 1)
+  const mixer = new THREE.AnimationMixer(object)
+  mixer.clipAction(clip).play()
+  mixer.update(0.5)
+  const node = object.getObjectByName('Animated')
+  assert.ok(Math.abs(node.position.x - 1) < 1e-4)
+  mixer.stopAllAction()
+  mixer.uncacheRoot(object)
+})
+
 test('declared image bytes over the texture budget are refused before decoding', async () => {
   const document = JSON.stringify({
     asset: { version: '2.0' },
@@ -246,6 +337,18 @@ test('teardown releases every node, not just meshes', () => {
   assert.equal(geometries, 1)
   assert.equal(materials, 1)
   assert.equal(textures, 1)
+})
+
+test('teardown disposes a skinned mesh skeleton', () => {
+  let skeletons = 0
+  const node = {
+    isSkinnedMesh: true,
+    geometry: { dispose() {} },
+    material: null,
+    skeleton: { dispose: () => { skeletons += 1 } },
+  }
+  disposeObject({ traverse: (visit) => visit(node) })
+  assert.equal(skeletons, 1)
 })
 
 test('teardown tolerates a malformed node and a missing object', () => {
