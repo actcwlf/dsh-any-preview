@@ -46,7 +46,7 @@ function renderBlock(block: Block, index: number): ReactNode {
       const size = [22, 19, 17, 15, 14, 13][Math.min(block.level, 6) - 1] ?? 13
       return (
         <div key={key} style={{
-          fontSize: size, fontWeight: 600, margin: '14px 0 6px',
+          fontSize: size, fontWeight: 700, margin: '14px 0 6px',
           color: 'var(--dsw-alias-label-primary)', lineHeight: 1.35,
         }}>
           {renderInline(block.text, key)}
@@ -220,30 +220,30 @@ export function parseMarkdownBlocks(text: string): Block[] {
   return blocks
 }
 
-const paragraphStyle = { margin: '6px 0', lineHeight: 1.7, color: 'var(--dsw-alias-label-primary)' } as const
+const paragraphStyle = { margin: '6px 0', lineHeight: 1.6, color: 'var(--dsw-alias-label-primary)' } as const
 const tableStyle = { borderCollapse: 'collapse' as const, fontSize: 12, lineHeight: '18px', width: '100%' } as const
 const thStyle = {
-  padding: '4px 10px', textAlign: 'left' as const, fontWeight: 600,
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
+  padding: '10px 16px', textAlign: 'left' as const, fontWeight: 600,
+  color: 'var(--dsw-alias-label-primary)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l3)',
 } as const
 const tdStyle = {
-  padding: '4px 10px', color: 'var(--dsw-alias-label-primary)',
-  border: '0.5px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const,
+  padding: '10px 16px', color: 'var(--dsw-alias-label-primary)',
+  borderBottom: '0.5px solid var(--dsw-alias-border-l1)', verticalAlign: 'top' as const,
 } as const
-const imageStyle = { display: 'block' as const, maxWidth: '100%', margin: '8px 0', borderRadius: 4 } as const
+const imageStyle = { display: 'block' as const, maxWidth: '100%', margin: '8px 0', borderRadius: 'var(--dsw-radius-sm)' } as const
 const codeStyle = {
-  margin: '8px 0', padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55,
+  margin: '8px 0', padding: '10px 12px', borderRadius: 'var(--dsw-radius-sm)', overflowX: 'auto' as const,
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 11, lineHeight: '18px',
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
-const listStyle = { margin: '6px 0', paddingLeft: 22, lineHeight: 1.7, color: 'var(--dsw-alias-label-primary)' } as const
+const listStyle = { margin: '6px 0', paddingLeft: 22, lineHeight: 1.6, color: 'var(--dsw-alias-label-primary)' } as const
 const quoteStyle = {
-  margin: '8px 0', padding: '2px 0 2px 10px', lineHeight: 1.7,
+  margin: '8px 0', padding: '2px 0 2px 10px', lineHeight: 1.6,
   borderLeft: '3px solid var(--dsw-alias-border-l2)', color: 'var(--dsw-alias-label-secondary)',
 } as const
 const inlineCodeStyle = {
-  padding: '0 3px', borderRadius: 3, fontSize: '0.92em',
+  padding: '0 3px', borderRadius: 'var(--dsw-radius-xs)', fontSize: '0.92em',
   background: 'var(--dsw-alias-bg-layer-2)',
 } as const
-const linkStyle = { color: 'var(--dsw-alias-brand-primary)' } as const
+const linkStyle = { color: 'var(--dsw-alias-link)' } as const

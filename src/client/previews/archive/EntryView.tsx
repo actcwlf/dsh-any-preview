@@ -252,10 +252,12 @@ const BACK = {
 } as const
 const NAME = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 } as const
 const BODY_WRAP = { position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' } as const
-const PANEL = { padding: 12, fontSize: 12 } as const
-const ROW = { display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' as const } as const
+const PANEL = { padding: 16, fontSize: 13, lineHeight: 1.6 } as const
+const ROW = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const } as const
 const PATH_INPUT = {
-  font: 'inherit', fontSize: 12, padding: '2px 8px', borderRadius: 6, flex: '1 1 auto', minWidth: 120,
+  boxSizing: 'border-box' as const,
+  height: 28, padding: '0 10px', borderRadius: 'var(--dsw-radius-sm)', flex: '1 1 auto', minWidth: 120,
+  font: 'inherit', fontSize: 13, lineHeight: '20px',
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
   border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
@@ -267,7 +269,7 @@ const NOTE = { marginTop: 8, color: 'var(--dsw-alias-label-secondary)' } as cons
 const FAIL = { marginTop: 8, color: 'var(--dsw-alias-state-error-primary)' } as const
 const PATH_TEXT = { marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', wordBreak: 'break-all' as const } as const
 const NOTE_INLINE = { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)' } as const
-const LOADING = { padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' } as const
+const LOADING = { padding: 16, fontSize: 13, lineHeight: 1.6, color: 'var(--dsw-alias-label-tertiary)' } as const
 const PRE = {
   margin: 0, padding: '8px 12px', fontSize: 12,
   fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', whiteSpace: 'pre-wrap' as const,

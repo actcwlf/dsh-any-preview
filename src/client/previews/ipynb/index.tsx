@@ -75,8 +75,8 @@ const cellLabel = {
 } as const
 
 const codeStyle = {
-  margin: 0, padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55,
+  margin: 0, padding: '10px 12px', borderRadius: 'var(--dsw-radius-sm)', overflowX: 'auto' as const,
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 11, lineHeight: '18px',
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 
