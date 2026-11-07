@@ -623,6 +623,10 @@ kernel/content-modules.ts        按扩展名挑"能只靠内容渲染"的预览
 `28px` 列头 = `98px`。列头使用 4% ink tint 和 caption 字重；文件行动作使用
 28px 固定行高和 hover，操作结果用底部 toast（成功 4s、失败 6s 自动消失），
 不再把提示文字塞进工具栏；7z unsupported 是持久状态，走 bottom status 而不是 toast。
+条目页不再套第二层 Archive chrome：模块 Body 由 `PreviewEmbedContext` 提供 back/label，
+`PreviewChrome` 在左侧渲染返回按钮并把条目名拼进标题；`.txt` / hex / 解压 /
+loading/error 用单层 Entry shell（`TEXT` 或 `ARCHIVE`），因此压缩包成员不会再出现
+两层 32px bar。
 
 ### 容器要提供的三件事
 

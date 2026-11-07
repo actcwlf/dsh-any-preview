@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Ambient declarations for packages this plugin only consumes at runtime.
  *
  * The type check exists to catch mistakes in *this* code — an undefined
@@ -27,6 +27,11 @@ declare module 'react' {
     preventDefault(): void
     stopPropagation(): void
   }
+  export interface Context<T> {
+    readonly Provider: ComponentType<{ readonly value: T, readonly children?: ReactNode }>
+  }
+  export function createContext<T>(defaultValue: T): Context<T>
+  export function useContext<T>(context: Context<T>): T
   export function useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void
   export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T
   export function useCallback<T>(callback: T, deps: readonly unknown[]): T

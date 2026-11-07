@@ -7,7 +7,9 @@
  */
 import { useEffect, useState } from 'react'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { BODY_ACTION, CHROME_CONTROL } from '../../kernel/ui.ts'
+import { PreviewEmbedContext } from '../../kernel/embed.tsx'
+import { PANE_ROOT } from '../../kernel/layout.ts'
+import { BODY_ACTION } from '../../kernel/ui.ts'
 import { contentModuleFor } from '../../kernel/content-modules.ts'
 import { errorText } from '../../kernel/errors.ts'
 import { formatBytes } from '../../kernel/format.ts'
@@ -201,19 +203,23 @@ export function EntryView(props: EntryViewProps) {
   )
 
   let body: ReactNode
+  let moduleBody: ReactNode | undefined
+  let kindLabel = 'ARCHIVE'
   if (loaded.status === 'loading') {
     body = <div style={LOADING}>{t('archive.extracting')}</div>
   } else if (loaded.status === 'error') {
     body = existing !== undefined ? extractedNote : panel
   } else if (module !== undefined && module.load === 'bytes-complete') {
-    body = <module.Body content={{ kind: 'bytes', data: loaded.bytes }} resourceAddress="" wrap={false} />
+    moduleBody = <module.Body content={{ kind: 'bytes', data: loaded.bytes }} resourceAddress="" wrap={false} />
   } else if (module !== undefined && looksTextual(loaded.bytes)) {
     const text = new TextDecoder('utf-8', { fatal: false }).decode(loaded.bytes.subarray(0, MAX_TEXT_BYTES))
-    body = <module.Body content={{ kind: 'text', text, eof: loaded.bytes.length <= MAX_TEXT_BYTES }} resourceAddress="" wrap={false} />
+    moduleBody = <module.Body content={{ kind: 'text', text, eof: loaded.bytes.length <= MAX_TEXT_BYTES }} resourceAddress="" wrap={false} />
   } else if (looksTextual(loaded.bytes)) {
+    kindLabel = 'TEXT'
     const text = new TextDecoder('utf-8', { fatal: false }).decode(loaded.bytes.subarray(0, MAX_TEXT_BYTES))
     body = <pre style={PRE}>{text}</pre>
   } else if (hexView) {
+    kindLabel = 'TEXT'
     // Hex is a choice, not the landing state: a binary member is usually opened to
     // extract it, and the panel is where that happens.
     body = (
@@ -229,28 +235,27 @@ export function EntryView(props: EntryViewProps) {
     body = panel
   }
 
+  const embed = { onBack, label: entry.name }
+  if (moduleBody !== undefined) {
+    return (
+      <PreviewEmbedContext.Provider value={embed}>
+        <div style={PANE_ROOT}>{moduleBody}</div>
+      </PreviewEmbedContext.Provider>
+    )
+  }
+
   return (
-    <PreviewChrome
-      kind="ARCHIVE"
-      title={(
-        <span style={BAR_LEFT}>
-          <button type="button" onClick={onBack} style={BACK} className="dsh-preview-control">{t('common.back')}</button>
-          <span style={NAME}>{entry.name}</span>
-        </span>
-      )}
-      toolbar={<span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>}
-    >
-      <div style={BODY_WRAP}>{body}</div>
-    </PreviewChrome>
+    <PreviewEmbedContext.Provider value={embed}>
+      <PreviewChrome
+        kind={kindLabel}
+        toolbar={<span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>}
+      >
+        <div style={BODY_WRAP}>{body}</div>
+      </PreviewChrome>
+    </PreviewEmbedContext.Provider>
   )
 }
 
-const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, flex: '0 1 auto' } as const
-const BACK = {
-  ...CHROME_CONTROL,
-  flex: '0 0 auto',
-} as const
-const NAME = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 } as const
 const BODY_WRAP = { position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' } as const
 const PANEL = { padding: 16, fontSize: 13, lineHeight: 1.6 } as const
 const ROW = { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' as const } as const

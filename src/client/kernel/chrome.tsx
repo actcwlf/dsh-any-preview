@@ -13,8 +13,11 @@ import type { ReactNode } from 'react'
 import { useElementWidth } from './useWidth.ts'
 import { PANE_ROOT } from './layout.ts'
 import { PreviewTitle } from './PreviewTitle.tsx'
+import { usePreviewEmbed } from './embed.tsx'
+import { t } from '../i18n.ts'
 import {
   CHROME_BAR,
+  CHROME_CONTROL,
   CHROME_STATUS,
   CHROME_TITLE,
   CHROME_TOOLBAR,
@@ -47,14 +50,16 @@ const COMPACT_WIDTH = 420
 
 export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
+  const embed = usePreviewEmbed()
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
   // shows the file name. A title-only preview keeps its label: dropping it would
-  // leave an empty 32px bar.
-  const showTitle = title !== undefined
+  // leave an empty 32px bar. A leading back button remains in compact mode.
+  const hasTitle = title !== undefined || (embed?.label !== undefined && embed.label !== '')
+  const showTitle = hasTitle
     && (toolbar !== undefined || width === 0 || width >= COMPACT_WIDTH)
   const compact = width > 0 && width < COMPACT_WIDTH
-  const hasBar = showTitle || toolbar !== undefined
+  const hasBar = showTitle || toolbar !== undefined || embed !== null
   return (
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
     // does not: the owner's .body can itself be the scroller, and then the whole
@@ -74,9 +79,32 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
       <style>{PREVIEW_CONTROL_CSS}</style>
       {hasBar && (
         <div style={CHROME_BAR} data-preview-chrome="bar">
+          {embed !== null && (
+            <button
+              type="button"
+              className="dsh-preview-control"
+              style={BACK_STYLE}
+              onClick={embed.onBack}
+              title={t('common.back')}
+              aria-label={t('common.back')}
+              data-preview-back="true"
+            >
+              <BackIcon />
+            </button>
+          )}
           {showTitle && (
             <span style={CHROME_TITLE}>
-              <PreviewTitle kind={kind}>{title}</PreviewTitle>
+              <PreviewTitle kind={kind}>
+                {embed?.label !== undefined && embed.label !== ''
+                  ? (
+                    <>
+                      {embed.label}
+                      {title !== undefined && <span style={EMBED_SEPARATOR}> · </span>}
+                      {title}
+                    </>
+                  )
+                  : title}
+              </PreviewTitle>
             </span>
           )}
           {toolbar !== undefined && (
@@ -104,5 +132,31 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
         </div>
       )}
     </div>
+  )
+}
+
+const BACK_STYLE = {
+  ...CHROME_CONTROL,
+  width: 28,
+  minWidth: 28,
+  padding: 0,
+  flex: '0 0 auto',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+} as const
+
+const EMBED_SEPARATOR = {
+  color: 'var(--dsw-alias-label-tertiary)',
+} as const
+
+function BackIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M9.5 4 5.5 8l4 4"
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      />
+    </svg>
   )
 }
