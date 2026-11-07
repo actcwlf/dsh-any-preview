@@ -110,7 +110,6 @@ export const zh = {
 
   'common.loading': '正在读取…',
   'common.truncated': '已截断',
-  'common.download': '下载',
   'common.httpError': '读取失败（HTTP {status}）',
   'csv.title': 'CSV 表格',
   'csv.empty': '空文件',
@@ -161,7 +160,6 @@ export const zh = {
   'media.tsTooLarge': 'TS 文件过大，无法在侧栏内重封装，请下载后播放。',
   'media.tsNotPlayable': '这个 TS 文件里没有可播放的 H.264/AAC 轨道。',
   'media.tsCodecUnsupported': '当前环境不支持该 TS 流的编码组合。',
-  'media.downloadNamed': '下载 {name}',
   'media.buffering': '当前环境未提供文件长度（桌面版转发会移除该响应头），正在载入完整文件以启用拖动…',
   'media.cannotSeek': '当前环境无法拖动进度条：文件{size}超过本地缓冲上限 {limit} MB，可下载后用本机播放器打开。',
   'media.video': '视频',
@@ -346,7 +344,6 @@ export const en: Record<MessageKey, string> = {
 
   'common.loading': 'Reading…',
   'common.truncated': 'truncated',
-  'common.download': 'Download',
   'common.httpError': 'Read failed (HTTP {status})',
   'csv.title': 'CSV table',
   'csv.empty': 'Empty file',
@@ -397,7 +394,6 @@ export const en: Record<MessageKey, string> = {
   'media.tsTooLarge': 'TS 文件过大，无法在侧栏内重封装，请下载后播放。',
   'media.tsNotPlayable': '这个 TS 文件里没有可播放的 H.264/AAC 轨道。',
   'media.tsCodecUnsupported': '当前环境不支持该 TS 流的编码组合。',
-  'media.downloadNamed': 'Download {name}',
   'media.buffering': 'The file length was withheld by this environment (the desktop proxy strips that header); loading the whole file so seeking works…',
   'media.cannotSeek': 'Seeking is unavailable here: the file{size} exceeds the {limit} MB local buffer limit; download it and open it in a local player.',
   'media.video': 'Video',

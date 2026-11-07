@@ -90,10 +90,8 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const fellBack = useRef(false)
 
   const remote = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
-  const download = typeof absolutePath === 'string' ? fileUrl(absolutePath, true) : undefined
   const name = typeof absolutePath === 'string' ? basenameOf(absolutePath) : ''
   const bytes = formatBytes(size ?? meta?.size)
-  const metaLine = bytes === '' ? name : `${name} · ${bytes}`
 
   // Desktop only: the page is served from dsh-app://, whose proxy withholds
   // Content-Length and makes the element report no seekable range. A browser
@@ -225,16 +223,22 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   const label = kind === 'audio' ? t('media.audio') : t('media.video')
   const kindLabel = kind === 'audio' ? 'AUDIO' : 'VIDEO'
   const title = name === '' ? label : name
+  const chromeTitle = (
+    <span style={styles.chromeTitle}>
+      {title}
+      {info !== '' && <span style={styles.chromeMeta}> · {info}</span>}
+    </span>
+  )
   // Transport streams carry H.264/AAC inside a container the browser cannot
   // demux; remux them to fMP4 instead of asking the element to play them.
   const suffix = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
   if ((suffix === 'ts' || suffix === 'm2ts') && activeSrc !== undefined) {
-    return <PreviewChrome kind={kindLabel} title={title}><TsPlayer src={activeSrc} /></PreviewChrome>
+    return <PreviewChrome kind={kindLabel} title={chromeTitle}><TsPlayer src={activeSrc} /></PreviewChrome>
   }
 
   if (remote === undefined) {
     return (
-      <PreviewChrome kind={kindLabel} title={title}>
+      <PreviewChrome kind={kindLabel} title={chromeTitle}>
         <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
       </PreviewChrome>
     )
@@ -247,14 +251,11 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     // decode them. Anything else means the stream itself was not obtainable.
     const message = errCode === 4 ? t('media.unsupported') : t('media.streamFailed')
     return (
-      <PreviewChrome kind={kindLabel} title={title}>
+      <PreviewChrome kind={kindLabel} title={chromeTitle}>
         <div style={styles.frame}>
           <Status text={message} />
           {MEDIA_DEBUG && (
             <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
-          )}
-          {download !== undefined && (
-            <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
           )}
         </div>
       </PreviewChrome>
@@ -287,13 +288,12 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       )
 
   return (
-    <PreviewChrome kind={kindLabel} title={title}>
+    <PreviewChrome kind={kindLabel} title={chromeTitle}>
       <div style={styles.frame} data-any-preview-media={kind}>
         <div style={styles.stage}>
           {kind === 'audio'
             ? (
                 <div style={styles.audioCard}>
-                  <div style={styles.audioName}>{metaLine}</div>
                   {player}
                 </div>
               )
@@ -306,12 +306,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
               : t('media.cannotSeek', { size: bytes === '' ? '' : `（${bytes}）`, limit: String(MAX_BUFFER_BYTES / 1024 / 1024) })}
           </p>
         )}
-        <div style={styles.footer}>
-          {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
-          {info !== '' && <span style={styles.name}>{info}</span>}
-          {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
-          {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
-        </div>
+        {MEDIA_DEBUG && diag !== '' && <p style={styles.notice}>{diag}</p>}
       </div>
     </PreviewChrome>
   )
@@ -328,6 +323,14 @@ function Status({ text }: { readonly text: string }) {
 }
 
 const styles = {
+  chromeTitle: {
+    display: 'inline-flex', alignItems: 'baseline', minWidth: 0, overflow: 'hidden',
+  },
+  chromeMeta: {
+    color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, lineHeight: '18px',
+    fontWeight: 400, whiteSpace: 'nowrap' as const,
+    overflow: 'hidden', textOverflow: 'ellipsis',
+  },
   frame: {
     boxSizing: 'border-box',
     display: 'flex',
@@ -364,7 +367,6 @@ const styles = {
     boxSizing: 'border-box',
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
     width: '100%',
     maxWidth: 520,
     padding: 16,
@@ -372,22 +374,6 @@ const styles = {
     background: 'var(--dsw-alias-bg-layer-2)',
   },
   audio: { width: '100%', outline: 'none' },
-  audioName: {
-    fontWeight: 600,
-    overflowWrap: 'anywhere',
-    color: 'var(--dsw-alias-label-primary)',
-  },
-  footer: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '8px 14px',
-    alignItems: 'center',
-    justifyContent: 'center',
-    maxWidth: '100%',
-    fontSize: 12,
-  },
-  name: { overflowWrap: 'anywhere', color: 'var(--dsw-alias-label-primary)' },
-  link: { color: 'var(--dsw-alias-label-secondary)', textDecoration: 'underline' },
   notice: {
     margin: 0,
     maxWidth: '40em',

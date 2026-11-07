@@ -162,7 +162,8 @@ test('media bodies stream from the range route', { skip: !available }, async () 
   assert.match(videoHtml, /controls/)
   assert.match(videoHtml, /http:\/\/127\.0\.0\.1:1234\/api\/any-preview\/media\?path=%2Fmedia%2Fclip\.mp4/)
   assert.match(videoHtml, /clip\.mp4/)
-  assert.match(videoHtml, /download=1/)
+  assert.doesNotMatch(videoHtml, /download=1/)
+  assert.doesNotMatch(videoHtml, /下载/u)
 
   const audioSeat = seats.find(entry => entry.entry.key === 'dsh-any-preview/audio')
   const audioHtml = renderToStaticMarkup(React.createElement(audioSeat.component, {
