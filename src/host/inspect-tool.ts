@@ -18,6 +18,7 @@ import { collectSchema, parseSqliteHeader } from '../client/previews/sqlite/pars
 import { detectDelimiter } from '../client/previews/csv/detect.ts'
 import { createRowParser } from '../client/kernel/text-pipeline.ts'
 import { countNewlines } from '../client/kernel/lines.ts'
+import { formatBytes } from '../client/kernel/format.ts'
 import { LIMITS } from '../shared/limits.ts'
 import { densitySpread, rowLengthRange, rowsAt } from '../shared/inspect/density.ts'
 import type { DensityProbe } from '../shared/inspect/density.ts'
@@ -61,6 +62,7 @@ const OUTPUT_SCHEMA = {
   additionalProperties: false,
   properties: {
     kind: { type: 'string' },
+    capability: { type: 'string', enum: ['inspected', 'preview-only', 'unknown'] },
     summary: { type: 'string' },
     facts: { type: 'array', items: { type: 'string' } },
     schema: { type: 'array', items: { type: 'string' } },
@@ -70,9 +72,14 @@ const OUTPUT_SCHEMA = {
   },
 } as const
 
+/** Whether the tool parsed structure, knows only that a preview exists, or cannot identify it. */
+export type InspectCapability = 'inspected' | 'preview-only' | 'unknown'
+
 /** One inspection result. */
 interface InspectResult {
   kind: string
+  /** Filled by the tool wrapper; pure summarisers only produce inspected results. */
+  capability?: InspectCapability
   summary: string
   facts: string[]
   schema: string[]
@@ -95,6 +102,198 @@ interface SandboxPolicyLike {
 interface InspectContext extends RouteContext {
   fs: HostFileSystem
   inject?(deps: readonly string[], callback: (scope: never) => void): unknown
+}
+
+/** Formats the sidebar can render without a structural inspector. */
+const PREVIEW_FAMILIES: Readonly<Record<string, string>> = {
+  png: 'image', jpg: 'image', jpeg: 'image', gif: 'image', webp: 'image',
+  svg: 'image', bmp: 'image', ico: 'image', avif: 'image', tif: 'image', tiff: 'image',
+  pdf: 'pdf',
+  doc: 'office', docx: 'office', ppt: 'office', pptx: 'office', xls: 'office', xlsx: 'office',
+  html: 'html', htm: 'html',
+  md: 'markdown', markdown: 'markdown',
+  txt: 'code', text: 'code', ts: 'code', tsx: 'code', js: 'code', jsx: 'code',
+  json: 'code', jsonc: 'code', yaml: 'code', yml: 'code', py: 'code', go: 'code',
+  rs: 'code', java: 'code', c: 'code', h: 'code', cpp: 'code', cs: 'code',
+  sh: 'code', bash: 'code', sql: 'code', css: 'code', scss: 'code', less: 'code',
+  xml: 'code', toml: 'code', ini: 'code', cfg: 'code', conf: 'code', env: 'code',
+  tex: 'code', bib: 'code', sty: 'code', cls: 'code',
+  tar: 'tar', tgz: 'tar',
+  diff: 'diff', patch: 'diff',
+  log: 'log',
+  eml: 'eml',
+  ttf: 'font', otf: 'font', woff: 'font', woff2: 'font',
+  mp4: 'video', m4v: 'video', webm: 'video', ogv: 'video', mov: 'video',
+  mkv: 'video', avi: 'video', mpg: 'video', mpeg: 'video', '3gp': 'video',
+  '3g2': 'video', m2ts: 'video',
+  mp3: 'audio', m4a: 'audio', m4b: 'audio', aac: 'audio', wav: 'audio',
+  flac: 'audio', ogg: 'audio', oga: 'audio', opus: 'audio', weba: 'audio',
+  aiff: 'audio', aif: 'audio', wma: 'audio', mid: 'audio', midi: 'audio',
+  glb: 'model', gltf: 'model', obj: 'model', stl: 'model',
+}
+
+/** Human label and renderer for each preview-only family. */
+const PREVIEW_INFO: Readonly<Record<string, { label: string, renderer: string, next?: string }>> = {
+  image: { label: 'Image', renderer: 'image' },
+  pdf: { label: 'PDF document', renderer: 'pdf' },
+  office: { label: 'Office document', renderer: 'office' },
+  html: { label: 'HTML document', renderer: 'html' },
+  markdown: { label: 'Markdown document', renderer: 'markdown' },
+  code: {
+    label: 'Text/code file',
+    renderer: 'code',
+    next: 'Use read or grep for content; open the sidebar preview for highlighting.',
+  },
+  tar: { label: 'TAR archive', renderer: 'archive' },
+  diff: { label: 'Diff', renderer: 'diff' },
+  log: { label: 'Log', renderer: 'log' },
+  eml: { label: 'Email', renderer: 'eml' },
+  font: { label: 'Font', renderer: 'font' },
+  video: { label: 'Video', renderer: 'video' },
+  audio: { label: 'Audio', renderer: 'audio' },
+  model: { label: '3D model', renderer: '3d' },
+}
+
+/**
+ * Preview family for a filename, including the compound `.tar.gz` suffix.
+ * @param name - file name or path.
+ * @returns family key, or undefined when no known renderer claims it.
+ */
+export function previewFamily(name: string): string | undefined {
+  const lower = name.replaceAll('\\', '/').toLowerCase()
+  if (lower.endsWith('.tar.gz')) return 'tar'
+  const dot = lower.lastIndexOf('.')
+  if (dot < 0) return undefined
+  return PREVIEW_FAMILIES[lower.slice(dot + 1)]
+}
+
+/** ASCII slice, for magic checks. */
+function ascii(bytes: Uint8Array, start: number, end: number): string {
+  let text = ''
+  for (let at = start; at < end && at < bytes.length; at += 1) text += String.fromCharCode(bytes[at] ?? 0)
+  return text
+}
+
+/** Whether a short head looks like text rather than binary. */
+function looksText(bytes: Uint8Array): boolean {
+  if (bytes.length === 0) return false
+  let controls = 0
+  for (const byte of bytes.subarray(0, 512)) {
+    if (byte === 9 || byte === 10 || byte === 13) continue
+    if (byte === 0) return false
+    if (byte < 0x20 || byte === 0x7f) controls += 1
+  }
+  return controls / Math.min(bytes.length, 512) < 0.05
+}
+
+/**
+ * Detect a format from its first bytes.
+ *
+ * This is intentionally a small magic table: it covers the formats whose
+ * container signature is cheap and unambiguous, plus a text fallback for
+ * renamed source files. It does not replace the extension-based inspectors.
+ * @param bytes - first kilobyte or less.
+ * @returns a format key, or undefined when nothing matches.
+ */
+export function sniffFormat(bytes: Uint8Array): string | undefined {
+  if (bytes.length >= 4 && (u32(bytes, 0) === 0x04034b50 || u32(bytes, 0) === 0x06054b50)) return 'zip'
+  if (bytes.length >= 6
+    && bytes[0] === 0x37 && bytes[1] === 0x7a && bytes[2] === 0xbc
+    && bytes[3] === 0xaf && bytes[4] === 0x27 && bytes[5] === 0x1c) return '7z'
+  if (ascii(bytes, 0, 16) === 'SQLite format 3\u0000') return 'sqlite'
+  if (ascii(bytes, 0, 4) === 'GGUF') return 'gguf'
+  if (ascii(bytes, 0, 5) === '%PDF-') return 'pdf'
+  if (bytes.length >= 8
+    && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpeg'
+  if (ascii(bytes, 0, 6) === 'GIF87a' || ascii(bytes, 0, 6) === 'GIF89a') return 'gif'
+  if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') return 'webp'
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) return 'gzip'
+  if (bytes.length >= 262 && ascii(bytes, 257, 262) === 'ustar') return 'tar'
+  if (ascii(bytes, 0, 4) === 'glTF') return 'glb'
+  if (ascii(bytes, 4, 8) === 'ftyp') return 'video'
+  if (ascii(bytes, 0, 4) === 'OggS') return 'audio'
+  if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WAVE') return 'audio'
+  return looksText(bytes) ? 'text' : undefined
+}
+
+/** Map a magic-detected format to a preview-only family. */
+function magicPreviewFamily(kind: string): string | undefined {
+  switch (kind) {
+    case 'pdf': return 'pdf'
+    case 'png': case 'jpeg': case 'gif': case 'webp': return 'image'
+    case 'tar': return 'tar'
+    case 'video': return 'video'
+    case 'audio': return 'audio'
+    case 'glb': return 'model'
+    case 'text': return 'code'
+    default: return undefined
+  }
+}
+
+/** Human-readable size with the exact count. */
+function sizeFact(size: number): string {
+  return `${formatBytes(size)} (${size.toLocaleString('en-US')} bytes)`
+}
+
+/**
+ * A successful result for a file the sidebar can preview but this tool cannot
+ * structurally inspect. This is deliberately not an exception: the file is
+ * usable, and the user needs the preview route rather than an error.
+ * @param family - preview family key.
+ * @param size - file size in bytes.
+ * @param detected - format detected by magic, when it differs from the extension.
+ * @returns the capability envelope.
+ */
+export function previewOnlyResult(family: string, size: number, format = family, detected?: string): InspectResult {
+  const info = PREVIEW_INFO[family] ?? { label: family, renderer: family }
+  const facts = [
+    `format: ${format}`,
+    `size: ${sizeFact(size)}`,
+    ...(detected === undefined ? [] : [`detected: ${detected}`]),
+    `preview: ${info.renderer}`,
+  ]
+  return {
+    kind: family,
+    capability: 'preview-only',
+    summary: `${info.label} · ${formatBytes(size)}`,
+    facts,
+    schema: [],
+    notes: [`No structural inspector for ${info.label.toLowerCase()}; the sidebar preview is the intended view.`],
+    next: [info.next ?? 'Open the file in the sidebar preview.'],
+    truncated: false,
+  }
+}
+
+/**
+ * A capability envelope for a file no inspector or preview family recognised.
+ * @param size - file size in bytes.
+ * @param suffix - extension without the dot, or an empty string.
+ * @param detected - magic detection, when one ran.
+ * @returns the unknown envelope.
+ */
+export function unknownResult(size: number, suffix: string, detected?: string): InspectResult {
+  const label = suffix === '' ? 'no extension' : `.${suffix}`
+  const facts = [
+    `extension: ${label}`,
+    `size: ${sizeFact(size)}`,
+    ...(detected === undefined ? [] : [`detected: ${detected}`]),
+  ]
+  return {
+    kind: 'unknown',
+    capability: 'unknown',
+    summary: `Unknown file · ${formatBytes(size)}`,
+    facts,
+    schema: [],
+    notes: ['No inspector or preview family matched this file.'],
+    next: ['Use read or grep for text, or open the file in the sidebar if a preview is available.'],
+    truncated: false,
+  }
+}
+
+/** Mark a pure summariser's result as structurally inspected. */
+function inspected(result: InspectResult): InspectResult {
+  return { ...result, capability: 'inspected' }
 }
 
 /** Describe a GGUF header. */
@@ -714,14 +913,15 @@ export function registerInspectTool(ctx: InspectContext): () => void {
         name: 'preview_inspect',
         description: 'Describe the structure of a file instead of reading its bytes: one summary line, '
           + 'a few facts, a schema (columns or tensors), warnings, and concrete next steps. '
-          + 'Supports GGUF model headers and delimited text (CSV/TSV).',
+          + 'Supports CSV/TSV, JSONL, ZIP/EPUB, 7z, SQLite, SafeTensors, GGUF, notebooks and reST. '
+          + 'For other previewable files it returns a preview-only capability envelope instead of an error.',
         parameters: PARAMETERS,
         output: {
           schema: OUTPUT_SCHEMA,
           render: (_args: unknown, value: InspectResult): unknown[] => [{
             type: 'text',
             text: [
-              value.summary,
+              `${value.capability === undefined || value.capability === 'inspected' ? '' : `[${value.capability}] `}${value.summary}`,
               ...value.facts.map(line => `  ${line}`),
               ...value.schema.map(line => `  ${line}`),
               ...value.notes.map(line => `! ${line}`),
@@ -774,7 +974,7 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             const tail = tailLength === 0
               ? new Uint8Array()
               : new Uint8Array(await ctx.fs.readByteRange(target, { offset: size - tailLength, length: tailLength }, signal))
-            return inspectCsv({ head, size, samples, tail })
+            return inspected(inspectCsv({ head, size, samples, tail }))
           }
 
           const read: Reader = async (offset, length) =>
@@ -782,40 +982,63 @@ export function registerInspectTool(ctx: InspectContext): () => void {
 
           if (suffix === 'jsonl' || suffix === 'ndjson') {
             const length = Math.min(size, TEXT_BYTES)
-            return inspectJsonl(new Uint8Array(await read(0, length)), size > TEXT_BYTES)
+            return inspected(inspectJsonl(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
           }
 
-          if (suffix === 'zip') return inspectZip(size, read)
+          if (suffix === 'zip') return inspected(await inspectZip(size, read))
 
           if (suffix === 'sqlite' || suffix === 'sqlite3' || suffix === 'db' || suffix === 'db3') {
-            return inspectSqlite(read)
+            return inspected(await inspectSqlite(read))
           }
 
-          if (suffix === '7z') return inspectSevenZip(read)
+          if (suffix === '7z') return inspected(await inspectSevenZip(read))
 
-          if (suffix === 'safetensors') return inspectSafetensors(size, read)
+          if (suffix === 'safetensors') return inspected(await inspectSafetensors(size, read))
 
           if (suffix === 'ipynb') {
             const length = Math.min(size, HEAD_BYTES)
-            return inspectNotebook(new Uint8Array(await read(0, length)))
+            return inspected(inspectNotebook(new Uint8Array(await read(0, length))))
           }
 
           if (suffix === 'rst') {
             const length = Math.min(size, TEXT_BYTES)
-            return inspectRst(new Uint8Array(await read(0, length)), size > TEXT_BYTES)
+            return inspected(inspectRst(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
           }
 
-          if (suffix === 'epub') return inspectEpub(size, read)
+          if (suffix === 'epub') return inspected(await inspectEpub(size, read))
 
           if (suffix === 'gguf') {
             const length = Math.min(size, HEAD_BYTES)
             const head = await ctx.fs.readByteRange(target, { offset: 0, length }, signal)
             const bytes = new Uint8Array(head)
             if (!looksLikeGguf(bytes)) throw new Error('not a GGUF file (magic mismatch)')
-            return inspectGguf(bytes)
+            return inspected(inspectGguf(bytes))
           }
 
-          throw new Error(`unsupported format: ${suffix === '' ? '(no extension)' : suffix}`)
+          // Extension preview families are a successful, preview-only answer. The
+          // file is usable through the sidebar; only structural inspection is absent.
+          const family = previewFamily(path)
+          if (family !== undefined) {
+            const format = path.replaceAll('\\', '/').toLowerCase().endsWith('.tar.gz') ? 'tar.gz' : suffix
+            return previewOnlyResult(family, size, format)
+          }
+
+          // Unknown or renamed file: a small magic probe can still recover a real
+          // inspector, or at least name the preview family.
+          const head = size === 0
+            ? new Uint8Array()
+            : new Uint8Array(await read(0, Math.min(size, 1024)))
+          const detected = sniffFormat(head)
+          if (detected === 'zip') return inspected(await inspectZip(size, read))
+          if (detected === '7z') return inspected(await inspectSevenZip(read))
+          if (detected === 'sqlite') return inspected(await inspectSqlite(read))
+          if (detected === 'gguf') {
+            const bytes = new Uint8Array(await read(0, Math.min(size, HEAD_BYTES)))
+            return inspected(inspectGguf(bytes))
+          }
+          const magicFamily = detected === undefined ? undefined : magicPreviewFamily(detected)
+          if (magicFamily !== undefined) return previewOnlyResult(magicFamily, size, detected, detected)
+          return unknownResult(size, suffix, detected)
         },
       })
     }, 'any-preview: preview_inspect tool')

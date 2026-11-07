@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
 test('the delimiter is the one that appears most on the first line', () => {
@@ -23,6 +23,40 @@ test('column types are inferred coarsely from the first values', () => {
 })
 
 const encode = text => new TextEncoder().encode(text)
+
+test('magic sniffing recovers containers and text without an extension', () => {
+  assert.equal(sniffFormat(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'png')
+  assert.equal(sniffFormat(encode('%PDF-1.7\n')), 'pdf')
+  assert.equal(sniffFormat(new Uint8Array([0x50, 0x4b, 0x03, 0x04])), 'zip')
+  assert.equal(sniffFormat(new Uint8Array([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c])), '7z')
+  assert.equal(sniffFormat(encode('hello, world\n')), 'text')
+  assert.equal(sniffFormat(new Uint8Array()), undefined)
+})
+
+test('preview families include compound tar.gz', () => {
+  assert.equal(previewFamily('archive.tar.gz'), 'tar')
+  assert.equal(previewFamily('notes.md'), 'markdown')
+  assert.equal(previewFamily('clip.mp4'), 'video')
+  assert.equal(previewFamily('unknown.bin'), undefined)
+})
+
+test('a preview-only result is a successful capability envelope', () => {
+  const result = previewOnlyResult('image', 2048, 'png')
+  assert.equal(result.kind, 'image')
+  assert.equal(result.capability, 'preview-only')
+  assert.match(result.summary, /Image/u)
+  assert.ok(result.facts.some(fact => fact === 'preview: image'))
+  assert.equal(result.schema.length, 0)
+  assert.match(result.next[0] ?? '', /sidebar preview/u)
+})
+
+test('an unknown result says it has no inspector', () => {
+  const result = unknownResult(10, 'bin')
+  assert.equal(result.kind, 'unknown')
+  assert.equal(result.capability, 'unknown')
+  assert.match(result.summary, /Unknown file/u)
+  assert.ok(result.facts.some(fact => fact === 'extension: .bin'))
+})
 
 /** Build the probe the tool hands `inspectCsv`: head, size, windows and tail. */
 function csvProbe(text, overrides = {}) {
@@ -237,4 +271,57 @@ test('an encrypted 7z archive says so', async () => {
   const result = await inspectSevenZip(sevenZipReader('sample-encrypted.7z'))
   assert.ok(result.facts.some(fact => fact === 'encrypted: yes'))
   assert.ok(result.notes.some(note => note.includes('encrypted')))
+})
+
+/** Register the real tool over one in-memory file and return its execute. */
+function toolFor(bytes) {
+  let registered
+  const tools = {
+    register(definition) {
+      registered = definition
+      return () => {}
+    },
+  }
+  const ctx = {
+    fs: {
+      processPathFromHostPath: path => path,
+      resolve: async path => path,
+      stat: async () => ({ size: bytes.length }),
+      readByteRange: async (_target, { offset, length }) => bytes.slice(offset, offset + length),
+    },
+    inject: (deps, callback) => {
+      if (deps.includes('tools')) callback({ tools, effect: (run) => run() })
+    },
+  }
+  const dispose = registerInspectTool(ctx)
+  assert.ok(registered, 'the tool registered')
+  return {
+    execute: (args, exec) => registered.execute(args, exec),
+    dispose,
+  }
+}
+
+test('the registered tool answers markdown with preview-only, not an error', async () => {
+  const tool = toolFor(encode('# title\n'))
+  const result = await tool.execute({ path: '/w/note.md' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'markdown')
+  assert.equal(result.capability, 'preview-only')
+})
+
+test('the registered tool uses magic when the extension is unknown', async () => {
+  const tool = toolFor(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  const result = await tool.execute({ path: '/w/blob.bin' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'image')
+  assert.equal(result.capability, 'preview-only')
+  assert.ok(result.facts.some(fact => fact === 'detected: png'))
+})
+
+test('the registered tool reports an unknown binary without throwing', async () => {
+  const tool = toolFor(new Uint8Array([0x00, 0x01, 0x02, 0x03]))
+  const result = await tool.execute({ path: '/w/blob.bin' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'unknown')
+  assert.equal(result.capability, 'unknown')
 })

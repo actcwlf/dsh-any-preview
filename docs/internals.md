@@ -502,11 +502,21 @@ ctx.inject(['tools'], (toolsCtx) => {
 "没注册"与"不可见"。
 ## `preview_inspect`：把解析能力交给模型
 
-工具名 `preview_inspect({ path })`，返回 `{ kind, summary, truncated }`——**给形状，不给内容**。
+工具名 `preview_inspect({ path })`，返回共享 envelope：
+
+```text
+{ kind, capability, summary, facts, schema, notes, next, truncated }
+```
+
+`capability` 是 `inspected` / `preview-only` / `unknown`。**给形状，不给内容**；
 `read` 负责按行给内容，二者互补；不要再用工具重复 `read` 的能力。
 
-当前支持 `.gguf`（版本 / KV / 张量表）与 `.csv/.tsv/.tab`（方言 / 列 / 行数估算）。
-只读窗口：二进制 4 MB、文本 1 MB；输出有界（各 ≤ 20 项）。非支持格式直接报错。
+已结构化支持：CSV/TSV/TAB、JSONL/NDJSON、ZIP、EPUB、7z、SQLite、SafeTensors、
+GGUF、Notebook、reST。其余可预览格式（Office / PDF / 图片 / Markdown / TAR /
+字体 / 媒体 / 3D / diff / log / eml）返回 `preview-only`，而不是报错；完全无法
+识别的文件返回 `unknown`。未知扩展名会先读最多 1 KB 做 magic 探测，命中 ZIP /
+7z / SQLite / GGUF 时仍走真实 inspector。只读窗口：二进制 4 MB、文本 1 MB；输出
+有界（各 ≤ 20 项）。
 
 ### 大 CSV 报什么
 
