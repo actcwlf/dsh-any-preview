@@ -17,7 +17,8 @@ import { readWindow } from '../../kernel/csv-window.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
 import { openRowFile } from '../../kernel/row-file.ts'
 import type { RowFile } from '../../kernel/row-file.ts'
-import { scanText } from '../../kernel/search-scan.ts'
+import { scanCsvText } from './search.ts'
+import type { SearchOccurrence } from '../../kernel/search.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
@@ -103,8 +104,8 @@ export interface CsvSource {
     readonly signal: AbortSignal
     readonly from: number
     readonly lineLimit: number
-    readonly onSlice: (progress: number, matches: number, lines: readonly number[]) => void
-  }) => Promise<{ readonly matches: number, readonly lines: readonly number[] }>) | undefined
+    readonly onSlice: (progress: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
+  }) => Promise<{ readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }>) | undefined
 }
 
 /**
@@ -276,11 +277,11 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     readonly signal: AbortSignal
     readonly from: number
     readonly lineLimit: number
-    readonly onSlice: (progress: number, matches: number, lines: readonly number[]) => void
+    readonly onSlice: (progress: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
   }) => {
     const file = fileRef.current
     if (fileMode && file !== null) return file.scan(pattern, options)
-    return scanText(text, pattern, options)
+    return scanCsvText(text, pattern, options, delimiterRef.current)
   }, [fileMode, text])
 
   // A window cannot hide rows — it never holds the whole file — so a windowed table

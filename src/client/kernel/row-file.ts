@@ -14,7 +14,8 @@
  */
 import { countRows, skipLines } from './lines.ts'
 import { textUrl } from './file-url.ts'
-import { createLineCounter } from './search-scan.ts'
+import { forEachMatch } from './search.ts'
+import type { MatchRange, SearchOccurrence } from './search.ts'
 import { rowsAt, rowsPerByte } from '../../shared/inspect/density.ts'
 import type { DensityProbe } from '../../shared/inspect/density.ts'
 
@@ -64,10 +65,10 @@ export interface RowFileOptions {
 
 /** What a whole-file scan found. */
 export interface FileScan {
-  /** Matches in the whole file. */
+  /** Total occurrences in the whole file. */
   readonly matches: number
-  /** Zero-based line of each collected match, in order (line 0 is the header). */
-  readonly lines: readonly number[]
+  /** First occurrences for navigation, in file order. */
+  readonly occurrences: readonly SearchOccurrence[]
 }
 
 /** A file-backed row source: byte windows in, rows out. */
@@ -107,7 +108,7 @@ export interface RowFile {
     /** File row to start at; the scan wraps around to cover everything before it. */
     readonly from?: number
     readonly lineLimit?: number
-    readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
+    readonly onSlice?: (fraction: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
   }): Promise<FileScan>
   /** Forget everything read so far. */
   dispose(): void
@@ -296,19 +297,20 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       readonly signal: AbortSignal
       readonly from?: number
       readonly lineLimit?: number
-      readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
+      readonly onSlice?: (fraction: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
     }): Promise<FileScan> {
-      const counter = createLineCounter(options.lineLimit)
+      const limit = options.lineLimit ?? Number.POSITIVE_INFINITY
       const requested = Math.max(0, options.from ?? 0)
       // Only an anchor starts a walk: a guessed byte offset would misnumber every hit
       // after it, which is worse than starting at the top.
       const anchor = requested > 0 ? anchorBefore(requested) : undefined
       const start = anchor === undefined ? { byte: 0, line: 0 } : { byte: anchor.byte, line: anchor.row }
+      const occurrences: SearchOccurrence[] = []
       let matches = 0
       let scanned = 0
 
       /**
-       * Walk `[from, stop)`, reporting every hit.
+       * Walk `[from, stop)`, parsing rows and counting cell occurrences.
        * @param from - byte offset to start at (a row boundary).
        * @param line - file row of that offset.
        * @param stop - byte offset to stop before.
@@ -321,19 +323,25 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
           if (slice.text.length === 0 || slice.end <= slice.start) return
           const previous = scanAnchors[scanAnchors.length - 1]
           if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: line, byte: slice.start })
-          counter.nextSlice(line)
-          pattern.lastIndex = 0
-          for (;;) {
-            const found = pattern.exec(slice.text)
-            if (found === null) break
-            matches += 1
-            counter.record(slice.text, found.index)
-            if (found[0].length === 0) pattern.lastIndex += 1
+          const parsed = parse(slice.text)
+          for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
+            const fileRow = line + rowOffset
+            if (fileRow !== 0) {
+              const bodyRow = fileRow - 1
+              const cells = parsed.rows[rowOffset] ?? []
+              for (let cell = 0; cell < cells.length; cell += 1) {
+                matches += forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
+                  if (occurrences.length < limit) {
+                    occurrences.push({ row: bodyRow, cell, start: range.start, end: range.end })
+                  }
+                })
+              }
+            }
           }
-          line += countRows(slice.text, slice.eof)
+          line += parsed.rows.length
           scanCounted = Math.max(scanCounted, line)
           scanned += slice.end - slice.start
-          options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, counter.lines)
+          options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, occurrences.slice())
           if (slice.eof) return
           offset = slice.end
           // Yield so a search over a huge file never blocks input for long.
@@ -344,7 +352,7 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       await walk(start.byte, start.line, size)
       // Finish the file when the walk began in the middle of it.
       if (start.byte > 0 && options.signal.aborted !== true) await walk(0, 0, start.byte)
-      return { matches, lines: counter.lines }
+      return { matches, occurrences }
     },
     dispose(): void {
       disposed = true

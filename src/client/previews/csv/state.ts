@@ -6,6 +6,7 @@
  * logic that used to be spread over five `setState` calls in two effects.
  */
 import { isHeaderRow, toBodyRow } from '../../kernel/row-numbering.ts'
+import type { SearchOccurrence } from '../../kernel/search.ts'
 
 /** Where the file-backed source stands. `failed` means the text path keeps the table. */
 export type FileStatus = 'idle' | 'opening' | 'ready' | 'failed'
@@ -53,8 +54,8 @@ export function fileState(state: FileState, event: FileEvent): FileState {
   }
 }
 
-/** No match rows yet; a stable identity so a scan effect does not churn. */
-export const NO_ROWS: readonly number[] = []
+/** No scan occurrences yet; a stable identity so a scan effect does not churn. */
+export const NO_OCCURRENCES: readonly SearchOccurrence[] = []
 
 /** What a whole-file scan has found so far. */
 export interface ScanState {
@@ -62,10 +63,10 @@ export interface ScanState {
   readonly query: string
   /** 0..1 of the file looked at. */
   readonly progress: number
-  /** Matches seen so far, which may be more than {@link ScanState.rows}. */
+  /** Total occurrences seen so far, which may be more than {@link ScanState.occurrences}. */
   readonly matches: number
-  /** Body rows of the first matches, in the order the scan met them. */
-  readonly rows: readonly number[]
+  /** First occurrences for navigation, in file order. */
+  readonly occurrences: readonly SearchOccurrence[]
   /** True when the scan reached the last slice or was stopped. */
   readonly done: boolean
   /** True when the reader stopped it. */
@@ -76,8 +77,8 @@ export interface ScanState {
 export type ScanEvent =
   | { readonly type: 'clear' }
   | { readonly type: 'start', readonly query: string }
-  | { readonly type: 'slice', readonly progress: number, readonly matches: number, readonly lines: readonly number[] }
-  | { readonly type: 'done', readonly matches: number, readonly lines: readonly number[] }
+  | { readonly type: 'slice', readonly progress: number, readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }
+  | { readonly type: 'done', readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }
   | { readonly type: 'stop' }
 
 /**
@@ -101,13 +102,13 @@ export function scanState(state: ScanState | undefined, event: ScanEvent): ScanS
     case 'clear':
       return undefined
     case 'start':
-      return { query: event.query, progress: 0, matches: 0, rows: NO_ROWS, done: false, aborted: false }
+      return { query: event.query, progress: 0, matches: 0, occurrences: NO_OCCURRENCES, done: false, aborted: false }
     case 'slice':
       if (state === undefined) return state
-      return { ...state, progress: event.progress, matches: event.matches, rows: linesToRows(event.lines) }
+      return { ...state, progress: event.progress, matches: event.matches, occurrences: event.occurrences }
     case 'done':
       if (state === undefined) return state
-      return { ...state, progress: 1, matches: event.matches, rows: linesToRows(event.lines), done: true }
+      return { ...state, progress: 1, matches: event.matches, occurrences: event.occurrences, done: true }
     case 'stop':
       // Stopping keeps what it found: the rows stay reachable, only the run ends.
       if (state === undefined) return state

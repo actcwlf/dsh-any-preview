@@ -16,6 +16,14 @@ export interface MatchRange {
   readonly end: number
 }
 
+/** One occurrence inside a row/cell pair, used by the CSV table search. */
+export interface SearchOccurrence {
+  readonly row: number
+  readonly cell: number
+  readonly start: number
+  readonly end: number
+}
+
 /**
  * Escape a literal so it can be embedded in a RegExp.
  * @param value - literal text.
@@ -62,6 +70,35 @@ export function matchRanges(text: string, pattern: RegExp, limit = 200): MatchRa
     ranges.push({ start: match.index, end: match.index + match[0].length })
   }
   return ranges
+}
+
+/**
+ * Visit every non-overlapping match in one text.
+ * @param text - the cell text.
+ * @param pattern - compiled query.
+ * @param visit - called for each match; collecting a range is optional.
+ * @returns the number of matches, including those after the visitor's cap.
+ */
+export function forEachMatch(
+  text: string,
+  pattern: RegExp,
+  visit: (range: MatchRange) => void,
+): number {
+  const regex = pattern.global
+    ? pattern
+    : new RegExp(pattern.source, `${pattern.flags}g`)
+  regex.lastIndex = 0
+  let count = 0
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    if (match[0].length === 0) {
+      regex.lastIndex += 1
+      continue
+    }
+    count += 1
+    visit({ start: match.index, end: match.index + match[0].length })
+  }
+  return count
 }
 
 /**

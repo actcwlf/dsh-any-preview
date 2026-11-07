@@ -105,7 +105,7 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 | `previews/csv/source.ts` | 行从哪来：文本缓冲 + 字符索引 + 文件源 + 读一窗 + 扫描，合成一个 `CsvSource` |
 | `previews/csv/state.ts` | 两台状态机的纯 reducer：文件源的 idle→opening→ready/failed、扫描的 start→slice→done/stop |
 | `previews/csv/scroll.ts` | 视口与几何：滚动位置、总行数（含"拖 3 屏才换精确总数"）、比例几何、`reveal(行)` |
-| `previews/csv/scan.ts` | 全文搜索状态机：显式触发、从当前行起扫、逐片发布、可停止、并入箭头导航 |
+| `previews/csv/scan.ts` | 全文搜索状态机：显式触发、文件顺序逐片发布、可停止、并入 occurrence 导航 |
 | `previews/csv/table.tsx` | 只负责 DOM：滚动容器、钉住窗口、表头、行号、高亮 |
 | `previews/csv/parse.ts` | 切片 → 单元格：全流程唯一懂分隔符的地方 |
 | `kernel/row-numbering.ts` | 文件行 ↔ 表体行（`toFileRow` / `toBodyRow` / `isHeaderRow`），全流程只此一处 |
@@ -174,8 +174,9 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 4. **换总行数**：索引完成不代表滚动条立刻变——总量在"下一次超过约 3 屏的拖动"时才替换，
    免得滚动条在用户手底下变长。行号本身不等这一下：索引覆盖到的窗口立即变成精确值。
 5. **搜索**：文件源在时，全文扫描按切片读整个文件（`file.scan`），与文本路径的进度/终止
-   交互一致。扫描是**显式**的（回车或"全文查找"），**从读者所在行起扫**（就近找锚点，走到尾再
-   回绕到起点，总数仍是整份文件），并且**每片发布一次**结果（`onSlice`）：第一个命中立刻可跳，
+   交互一致。扫描是**显式**的（回车或"全文查找"），按**文件顺序**从表体第一行开始，
+   表头不参与匹配；并且**每片发布一次**结果（`onSlice`）：第一个 occurrence 立刻可跳，
+   同时累计完整出现次数。
    状态行先写"已找到 N 处"，扫完才定格成总数。扫描顺手在每片起点留锚点，所以跳到命中是精确的。
    "终止扫描"只中止请求，已找到的命中保留。
 6. **跳转到命中**：命中行 → 滚动位置用与滚动条同一套映射（比例模式下 `(行 - 视口行数/2) ×
@@ -194,20 +195,23 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **命中高亮**：匹配片段就地标黄，所有行都显示（默认不隐藏上下文）
 - **上一个/下一个**（↑ ↓）：循环跳转，并把目标行滚到视口中央；CSV 用固定行高定位，
   其余用 `data-row-index` + `scrollIntoView`
-- **计数**：已提交搜索的 `当前/总数`；CSV 大文件在输入阶段只显示 `Enter 搜索全文`，
-  不把已加载行的局部命中当作总数
+- **计数**：已提交搜索的 `当前/总数`；CSV 的计数单位是**单元格内出现次数**，导航也按
+  occurrence 移动；diff / log / JSONL 仍是一行一个结果。CSV 大文件在输入阶段只显示
+  `Enter 搜索全文`，不把已加载行的局部命中当作总数
 - **`Aa`** 区分大小写、**`.*`** 正则模式；正则写了一半不合法时按「无查询」处理，不报错
 - **「仅匹配」** 勾选后才过滤（等价于原来的行为），行号始终是原始行号
 - **全文扫描**：完整内容输入即全文；windowed CSV 由 Enter 提交，扫描中显示已找到数和
-  进度，可停止；扫描完成后显示全量匹配数，但可跳转匹配仍受 5,000 条上限约束，
-  状态栏会说明
+  进度，可停止；扫描完成后显示全量出现次数，但可跳转 occurrence 仍受 5,000 上限约束，
+  状态栏会说明。扫描按文件顺序进行，表头不参与匹配
 
-实现：`kernel/search.ts`（编译/区间/选择，纯函数可单测）、`kernel/useSearch.ts`
-（匹配 + 导航状态）、`kernel/marks.tsx`（高亮渲染）、`kernel/SearchBar.tsx`（共用控件）。
+实现：`kernel/search.ts`（编译/区间/occurrence 遍历，纯函数可单测）、
+`previews/csv/match.ts`（CSV 单元格 matcher）、`previews/csv/search.ts`（本地扫描与
+全文文本扫描）、`previews/csv/scan.ts`（同语义状态机）、`kernel/marks.tsx`（高亮渲染，
+支持单个 active occurrence）、`kernel/SearchBar.tsx`（共用控件）。
 
-本地搜索（按行/record）与全文扫描（原始文本、出现次数）目前仍不是同一套匹配语义；
-详细差异、候选方案和后续块索引前提记录在
-[`search-semantics.md`](search-semantics.md)。
+CSV 已统一为 A2：单元格出现次数计数 + occurrence 导航，详见
+[`search-semantics.md`](search-semantics.md)。diff / log / JSONL 仍使用旧的单行搜索，
+暂不复用这套 CSV 语义。
 
 ## 启动与懒加载
 
@@ -337,8 +341,8 @@ strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一
 切换，查询非空时显示 20px 清除按钮。
 搜索语义按 `fullSearch` 状态区分：完整内容输入即全文；windowed CSV 输入只做本地
 高亮、不显示总数，Enter 启动全文扫描；扫描中显示“已找到 N · 进度”，停止后保留
-部分结果但不算完成。扫描完成后计数显示**全量匹配数**；可跳转匹配的 5,000 条上限
-只由状态栏说明，不再用截断后的行数冒充总数。
+部分结果但不算完成。扫描完成后计数显示**全量出现次数**；可跳转 occurrence 的 5,000 条上限
+只由状态栏说明，不再用截断后的数量冒充总数。
 
 ### 解码器与外部资源
 

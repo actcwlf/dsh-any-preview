@@ -1,23 +1,21 @@
-﻿/**
- * The whole-file search: one explicit run at a time, started where the reader is, with
- * hits published as they are found and a stop that keeps what it already found.
+/**
+ * CSV whole-file search: one explicit run at a time, started where the reader is, with
+ * occurrences published as they are found and a stop that keeps what it already found.
  *
  * Typing only searches the rows already in memory (that is the caller's own search); this
- * hook owns the expensive run and the navigation that takes over once it has hits.
+ * hook owns the expensive run and the navigation that takes over once it has occurrences.
  */
 import { useEffect, useReducer, useRef, useState } from 'react'
-import { toFileRow } from '../../kernel/row-numbering.ts'
-import { NO_ROWS, scanState as scanReducer } from './state.ts'
+import type { SearchOccurrence } from '../../kernel/search.ts'
+import { NO_OCCURRENCES, scanState as scanReducer } from './state.ts'
 import type { ScanState } from './state.ts'
 
-/** Matches whose row is kept, so the reader can jump to them. */
-const SCAN_LINE_LIMIT = 5_000
+/** Occurrences kept for navigation; the total count stays whole. */
+const SCAN_OCCURRENCE_LIMIT = 5_000
 
-/** One request for a whole-file search: what to look for, and from which row. */
+/** One request for a whole-file search: what to look for. */
 export interface ScanRequest {
   readonly query: string
-  /** Body row the scan starts at; it wraps around to cover the rows before it. */
-  readonly from: number
 }
 
 /** Runs one scan; a file source or the delivered text, whichever the caller has. */
@@ -27,12 +25,13 @@ export type ScanRunner = (
     readonly signal: AbortSignal
     readonly from: number
     readonly lineLimit: number
-    readonly onSlice: (progress: number, matches: number, lines: readonly number[]) => void
+    readonly onSlice: (progress: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
   },
-) => Promise<{ readonly matches: number, readonly lines: readonly number[] }>
+) => Promise<{ readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }>
 
-/** What the arrows walk: the scanned rows, or the in-memory hits until there are any. */
+/** What the arrows walk: scanned occurrences, or in-memory occurrences until there are any. */
 export interface ScanNavigation {
+  readonly activeOccurrence: SearchOccurrence | undefined
   readonly activeRow: number | undefined
   readonly index: number
   readonly count: number
@@ -45,9 +44,9 @@ export interface WholeFileScan extends ScanNavigation {
   readonly state: ScanState | undefined
   /** Start a run from where the reader is (Enter, or the toolbar button). */
   readonly start: () => void
-  /** Stop the run; the hits already on screen stay usable. */
+  /** Stop the run; the occurrences already on screen stay usable. */
   readonly stop: () => void
-  /** Enter: start the scan, or walk the hits once there are any. */
+  /** Enter: start the scan, or walk the occurrences once there are any. */
   readonly commit: () => void
 }
 
@@ -58,23 +57,21 @@ export interface WholeFileScanOptions {
   readonly query: string
   readonly regex: boolean
   readonly caseSensitive: boolean
-  /** Body row to start at, read at request time so scrolling cannot restart a run. */
-  readonly origin: () => number
   /** Bumps when the text behind the scan changes; restarts a run. */
   readonly revision: number
   /** 'file' or 'text': a change of source restarts the run on the new one. */
   readonly sourceKey: string
-  /** Hits for the rows already in memory; used until the scan finds any. */
+  /** Occurrences for the rows already in memory, used until the scan finds any. */
   readonly fallback: ScanNavigation
 }
 
 /**
- * Own the whole-file search for one preview.
- * @param options - the runner, the query and how to fall back to in-memory hits.
+ * Own the whole-file search for one CSV.
+ * @param options - the runner, the query and how to fall back to in-memory occurrences.
  * @returns the scan state, its navigation, and the three triggers.
  */
 export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
-  const { scan, query, regex, caseSensitive, origin, revision, sourceKey, fallback } = options
+  const { scan, query, regex, caseSensitive, revision, sourceKey, fallback } = options
   const [request, setRequest] = useState<ScanRequest | undefined>(undefined)
   const [state, dispatchScan] = useReducer(scanReducer, undefined)
   const [index, setIndex] = useState(0)
@@ -104,24 +101,23 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     dispatchScan({ type: 'start', query: request.query })
     setIndex(0)
     /** Take one slice's worth of news without waiting for the rest. */
-    const report = (progress: number, matches: number, lines: readonly number[]): void => {
-      dispatchScan({ type: 'slice', progress, matches, lines })
+    const report = (progress: number, matches: number, occurrences: readonly SearchOccurrence[]): void => {
+      dispatchScan({ type: 'slice', progress, matches, occurrences })
     }
     void runner(pattern, {
       signal: controller.signal,
-      // Body row -> file row: the walk needs the header counted in.
-      from: toFileRow(request.from),
-      lineLimit: SCAN_LINE_LIMIT,
+      // File order: line 1 is body row 0; the header is skipped by the scanner.
+      from: 1,
+      lineLimit: SCAN_OCCURRENCE_LIMIT,
       onSlice: report,
     }).then((result) => {
       if (controller.signal.aborted) return
-      dispatchScan({ type: 'done', matches: result.matches, lines: result.lines })
+      dispatchScan({ type: 'done', matches: result.matches, occurrences: result.occurrences })
     }).catch(() => { /* stopped, or the file went away */ })
     return () => { controller.abort() }
   }, [request, regex, caseSensitive, revision, sourceKey])
 
-  // Editing the query drops hits that belong to the old one: they would highlight and
-  // jump to rows the reader is no longer looking for.
+  // Editing the query drops hits that belong to the old one.
   useEffect(() => {
     if (request === undefined) return
     if (request.query !== query.trim()) {
@@ -130,28 +126,29 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     }
   }, [query, request])
 
-  const rows = state === undefined ? NO_ROWS : state.rows
-  const navigating = rows.length > 0
-  const activeIndex = navigating ? Math.min(index, rows.length - 1) : fallback.index
-  const activeRow = navigating ? rows[activeIndex] : fallback.activeRow
+  const occurrences = state === undefined ? NO_OCCURRENCES : state.occurrences
+  const navigating = occurrences.length > 0
+  const activeIndex = navigating ? Math.min(index, occurrences.length - 1) : fallback.index
+  const activeOccurrence = navigating ? occurrences[activeIndex] : fallback.activeOccurrence
+  const activeRow = activeOccurrence?.row ?? fallback.activeRow
 
   const start = (): void => {
     const text = query.trim()
     if (text === '') return
     dispatchScan({ type: 'clear' })
     // A fresh request object, so asking again with the same query restarts the scan.
-    setRequest({ query: text, from: origin() })
+    setRequest({ query: text })
   }
   const stop = (): void => {
     abortRef.current?.abort()
     dispatchScan({ type: 'stop' })
   }
   const next = (): void => {
-    if (navigating) setIndex((activeIndex + 1) % rows.length)
+    if (navigating) setIndex((activeIndex + 1) % occurrences.length)
     else fallback.next()
   }
   const prev = (): void => {
-    if (navigating) setIndex((activeIndex - 1 + rows.length) % rows.length)
+    if (navigating) setIndex((activeIndex - 1 + occurrences.length) % occurrences.length)
     else fallback.prev()
   }
   const commit = (): void => {
@@ -161,9 +158,10 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
 
   return {
     state,
+    activeOccurrence,
     activeRow,
     index: activeIndex,
-    count: navigating ? rows.length : fallback.count,
+    count: navigating ? (state?.matches ?? occurrences.length) : fallback.count,
     next,
     prev,
     start,
@@ -171,5 +169,3 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     commit,
   }
 }
-
-

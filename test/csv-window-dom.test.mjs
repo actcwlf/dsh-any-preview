@@ -318,6 +318,36 @@ test('a small csv is not windowed and paints on the first render', { skip: !avai
   assert.ok(view.container.querySelector('input[type="checkbox"]'), 'only-matches is available')
 })
 
+test('csv search counts cell occurrences and marks one active occurrence', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const view = await render(component, 'id,note\n1,foo bar\n2,foo foo foo\n')
+  t.after(view.dispose)
+
+  const input = view.container.querySelector('input[type="search"]')
+  assert.ok(input, 'the search field is mounted')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'foo')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await tick(80)
+  const feedback = view.container.querySelector('[data-search-feedback="done"]')
+  assert.ok(feedback, 'the local search reports a complete table')
+  assert.match(feedback.textContent ?? '', /1\/4/u, 'four cell occurrences, not two rows')
+
+  const marks = [...view.container.querySelectorAll('mark')]
+  assert.equal(marks.length, 4, 'every occurrence is marked')
+  const emphasized = marks.filter(mark => /font-weight:\s*600/u.test(mark.getAttribute('style') ?? ''))
+  assert.equal(emphasized.length, 1, 'only the active occurrence is emphasized')
+
+  await act(async () => {
+    const only = view.container.querySelector('input[type="checkbox"]')
+    assert.ok(only, 'filtering is available on a complete table')
+    only.click()
+  })
+  assert.equal(view.painted().length, 2, 'filtering still selects matching rows')
+})
+
 test('a table past the scroll limit keeps 22px rows and a proportional scrollbar', { skip: !available }, async (t) => {
   const { component } = await mountCsv()
   const rows = 800_000

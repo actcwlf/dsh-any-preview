@@ -8,6 +8,7 @@ import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import { DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { toFileRow } from '../../kernel/row-numbering.ts'
+import type { SearchOccurrence } from '../../kernel/search.ts'
 import type { ProportionalGeometry, WindowedBody } from '../../kernel/window-state.ts'
 
 /** Everything the table renders from. */
@@ -27,6 +28,8 @@ export interface CsvTableProps {
   /** Scroll offset of the painted band inside the pinned block, when pinned. */
   readonly bandOffset: number | undefined
   readonly activeRow: number | undefined
+  /** The one occurrence the navigation points at, if any. */
+  readonly activeOccurrence: SearchOccurrence | undefined
   readonly pattern: RegExp | undefined
   /** True when the row numbers come from an estimate, so they carry a marker. */
   readonly estimated: boolean
@@ -41,7 +44,7 @@ export function CsvTable(props: CsvTableProps) {
   useLocale()
   const {
     bindScroller, onScroll, geometry, viewportHeight, header, columns, body, bandOffset,
-    activeRow, pattern, estimated, rowHeight,
+    activeRow, activeOccurrence, pattern, estimated, rowHeight,
   } = props
   const lineBox = { lineHeight: `${String(rowHeight - 2)}px` } as const
   const indexCell = { ...indexStyle, ...lineBox }
@@ -95,7 +98,13 @@ export function CsvTable(props: CsvTableProps) {
                     </td>
                     {row.cells.map((value, column) => (
                       <td key={column} style={bodyCell}>
-                        <Marked text={value} pattern={pattern} emphasis={active} />
+                        <Marked
+                          text={value}
+                          pattern={pattern}
+                          activeRange={activeOccurrence?.row === row.index && activeOccurrence.cell === column
+                            ? { start: activeOccurrence.start, end: activeOccurrence.end }
+                            : undefined}
+                        />
                       </td>
                     ))}
                   </tr>

@@ -1,26 +1,34 @@
 /** Render text with its query matches marked, optionally emphasising the active row. */
 import type { ReactNode } from 'react'
 import { matchRanges } from './search.ts'
+import type { MatchRange } from './search.ts'
 
 /**
  * Draw every match of `pattern` inside `text`.
  * @param props.text - the source text.
  * @param props.pattern - compiled query, or undefined for no query.
  * @param props.emphasis - the row the navigation points at, drawn louder.
+ * @param props.activeRange - the one occurrence the navigation points at.
  */
-export function Marked({ text, pattern, emphasis = false }: {
+export function Marked({ text, pattern, emphasis = false, activeRange }: {
   readonly text: string
   readonly pattern: RegExp | undefined
   readonly emphasis?: boolean
+  readonly activeRange?: MatchRange
 }) {
   if (pattern === undefined || text === '') return <>{text}</>
   const ranges = matchRanges(text, pattern)
   if (ranges.length === 0) return <>{text}</>
-  const style = emphasis ? EMPHASIS_MARK : MARK
   const parts: ReactNode[] = []
   let cursor = 0
   for (const [index, range] of ranges.entries()) {
     if (range.start > cursor) parts.push(text.slice(cursor, range.start))
+    const active = activeRange !== undefined
+      && range.start === activeRange.start
+      && range.end === activeRange.end
+    // An explicit activeRange lets a table emphasise one occurrence without
+    // emphasising every match on the active row.
+    const style = active || (activeRange === undefined && emphasis) ? EMPHASIS_MARK : MARK
     parts.push(<mark key={index} style={style}>{text.slice(range.start, range.end)}</mark>)
     cursor = range.end
   }

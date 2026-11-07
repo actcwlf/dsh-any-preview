@@ -1,11 +1,27 @@
 # Search semantics: local rows vs whole-file scan
 
-Status: **discussion recorded, not implemented**  
-Scope: CSV primarily; the same questions apply to diff / log / JSONL.
+Status: **CSV A2 implemented; other formats unchanged**
+Scope: CSV; diff / log / JSONL still use the older one-cell row search.
 
-## Why this note exists
+## Implemented CSV A2
 
-The preview currently has two search paths:
+```text
+cell matcher
+→ occurrence inside a cell
+→ occurrence count
+→ occurrence navigation
+→ header excluded
+→ full scan parses rows with the same matcher
+→ 5,000 navigable occurrences, complete count retained
+```
+
+The active occurrence is highlighted separately from the other matches in the same row.
+A phrase spanning two cells does not match. Raw CSV delimiters are not searchable from
+the table view.
+
+## Historical mismatch
+
+Before A2, the preview had two search paths:
 
 ```text
 local search  → parsed rows already in memory
@@ -16,7 +32,7 @@ They do not share the same match definition. The difference is larger than
 “partial coverage”: the unit, the searched text, the count and the highlight all
 differ.
 
-## Current mismatch
+## Previous mismatch (historical)
 
 | Dimension | Local search | Whole-file scan |
 |---|---|---|
@@ -105,25 +121,28 @@ Not recommended as the table view’s default.
 
 ## Suggested next design
 
-Adopt A for the table:
+The CSV table uses A2:
 
 ```text
 cell matcher
-→ row result
-→ matching-row count
+→ occurrence result
+→ occurrence count
+→ occurrence navigation
 → header excluded
 → file-order scan
 → full scan parses rows with the same matcher
+→ 5,000 navigable occurrences
 ```
 
-Then a block index can store one match-row count per block and re-run the same
-matcher inside the selected block. Do not build the block index on the current
+Then a block index can store occurrence and matching-row counts per block and re-run
+the same matcher inside the selected block. Do not build the block index on the older
 mixed semantics.
 
 ## Related implementation points
 
-- `kernel/search.ts` — compile / ranges / matching rows.
-- `kernel/useSearch.ts` — local row matching.
-- `previews/csv/table.tsx` — per-cell `Marked`.
-- `previews/csv/scan.ts` — whole-file scan + 5,000 navigable-row cap.
-- `kernel/row-file.ts` — byte slices, row windows and file scan.
+- `kernel/search.ts` — compile / ranges / occurrence walk.
+- `previews/csv/match.ts` — pure cell matcher and count.
+- `previews/csv/search.ts` — CSV local search hook and text scan.
+- `previews/csv/table.tsx` — per-cell `Marked` with the active occurrence.
+- `previews/csv/scan.ts` — whole-file occurrence scan + 5,000 cap.
+- `kernel/row-file.ts` — byte slices, row parsing and file scan.

@@ -12,7 +12,7 @@ import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { useSearch } from '../../kernel/useSearch.ts'
+import { useCsvSearch } from './search.ts'
 import { bandRows, fitColumns, stickyBand, windowedBodyRows } from '../../kernel/window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/window-state.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
@@ -66,11 +66,7 @@ export function CsvBody(props: PreviewBodyProps) {
   const [filter, setFilter] = useState(false)
   const { view, windowed } = source
 
-  const texts = useMemo(
-    () => (view === null ? [] : view.body.map(row => row.join(' '))),
-    [view],
-  )
-  const found = useSearch(texts, options)
+  const found = useCsvSearch(view?.body ?? [], options)
 
   const scroll = useRowScroll({
     scrollportRef: props.scrollportRef,
@@ -86,9 +82,10 @@ export function CsvBody(props: PreviewBodyProps) {
   // Hits for the rows in memory come first; the whole-file scan takes over once it has
   // any, so an arrow click is useful before the file has been walked.
   const fallback: ScanNavigation = {
+    activeOccurrence: found.activeOccurrence,
     activeRow: found.activeRow,
     index: found.index,
-    count: found.matches.length,
+    count: found.matches,
     next: found.next,
     prev: found.prev,
   }
@@ -97,7 +94,6 @@ export function CsvBody(props: PreviewBodyProps) {
     query: options.query,
     regex: options.regex,
     caseSensitive: options.caseSensitive,
-    origin: () => scroll.currentRow,
     revision: source.textLength,
     sourceKey: source.sourceKey,
     fallback,
@@ -144,8 +140,8 @@ export function CsvBody(props: PreviewBodyProps) {
   const visibleIndices = useMemo(() => {
     if (view === null || windowed) return []
     if (!filter || found.pattern === undefined) return view.body.map((_row, index) => index)
-    return found.matches
-  }, [view, filter, found.pattern, found.matches, windowed])
+    return found.rows
+  }, [view, filter, found.pattern, found.rows, windowed])
 
   // A window cannot hide rows — it never holds the whole file — so a windowed table
   // keeps the highlight and drops filtering rather than filtering only what it can see.
@@ -159,7 +155,7 @@ export function CsvBody(props: PreviewBodyProps) {
   useEffect(() => {
     if (!filter) return
     scrollTo(0)
-  }, [filter, found.matches, scrollTo])
+  }, [filter, found.rows, scrollTo])
 
   // Reveal the navigated row by its position in the visible set. A windowed table's
   // search indices are already body rows, so the same arithmetic finds them.
@@ -229,10 +225,15 @@ export function CsvBody(props: PreviewBodyProps) {
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
     : scanState?.done === true && scanState.aborted
     ? t('csv.scanStopped', { count: scanState.matches.toLocaleString('en-US') })
-    : scanState?.done === true && scanState.rows.length < scanState.matches
+    : scanState?.done === true && scanState.occurrences.length < scanState.matches
     ? t('csv.scanDoneCapped', {
       count: scanState.matches.toLocaleString('en-US'),
-      shown: scanState.rows.length.toLocaleString('en-US'),
+      shown: scanState.occurrences.length.toLocaleString('en-US'),
+    })
+    : found.matches > found.result.occurrences.length
+    ? t('csv.localCapped', {
+      count: found.matches.toLocaleString('en-US'),
+      shown: found.result.occurrences.length.toLocaleString('en-US'),
     })
     : source.fileMode && !source.fileComplete
     ? t('csv.indexProgress', { percent: Math.round(source.fileProgress * 100) })
@@ -281,6 +282,7 @@ export function CsvBody(props: PreviewBodyProps) {
         body={shown}
         bandOffset={band?.offset}
         activeRow={activeRow}
+        activeOccurrence={scan.activeOccurrence}
         pattern={found.pattern}
         estimated={estimated}
         rowHeight={ROW_HEIGHT}
