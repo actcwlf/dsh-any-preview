@@ -5,13 +5,16 @@ import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
 import type { SearchOptions } from './search.ts'
 
+/** How much of the file the current search can see. */
+export type FullSearchState = 'complete' | 'idle' | 'scanning' | 'done' | 'stopped'
+
 /** Props for one preview's search field. */
 export interface SearchBarProps {
   /** Current query and its modes. */
   readonly options: SearchOptions
   /** Replace the options (typing, toggles). */
   readonly onChange: (next: SearchOptions) => void
-  /** Number of matching rows. */
+  /** Number of matching rows; provisional while scanning. */
   readonly matches: number
   /** Position within the matches; -1 when none. */
   readonly index: number
@@ -40,6 +43,16 @@ export interface SearchBarProps {
   /** Trailing content, e.g. a follow-tail toggle. */
   readonly children?: ReactNode
   /**
+   * Search coverage. `complete` and `done` may show a result count; `idle` has
+   * only the loaded rows and asks for Enter; `scanning` shows partial hits;
+   * `stopped` keeps the partial hits but is not a full result.
+   */
+  readonly fullSearch?: FullSearchState
+  /** Progress while `fullSearch === 'scanning'`, 0..1. */
+  readonly scanProgress?: number
+  /** Stop a running whole-file scan. */
+  readonly onCancel?: () => void
+  /**
    * Trim the row to what fits a narrow sidebar: the field keeps the toggles but
    * drops the match counter and the filter label, which are what push a full row
    * to about 380px.
@@ -49,11 +62,17 @@ export interface SearchBarProps {
 
 export function SearchBar({
   options, onChange, matches, index, onPrev, onNext, onSubmit, filter, onFilter,
-  filterable = true, placeholder, children, compact = false,
+  filterable = true, placeholder, children, fullSearch = 'complete', scanProgress = 0, onCancel,
+  compact = false,
 }: SearchBarProps) {
   useLocale()
   const inputRef = useRef<HTMLInputElement | null>(null)
   const active = options.query.trim() !== ''
+  const scanning = fullSearch === 'scanning'
+  const stopped = fullSearch === 'stopped'
+  const committed = fullSearch === 'complete' || fullSearch === 'done'
+  const idle = fullSearch === 'idle'
+  const percent = Math.round(Math.max(0, Math.min(1, scanProgress)) * 100)
   const clear = (): void => {
     onChange({ ...options, query: '' })
     inputRef.current?.focus()
@@ -63,9 +82,10 @@ export function SearchBar({
   const onKeyDown = (event: any): void => {
     if (event.key === 'Enter') {
       event.preventDefault()
-      if (event.shiftKey) onPrev()
-      else if (onSubmit !== undefined) onSubmit()
-      else onNext()
+      if (event.shiftKey) {
+        if (committed && matches > 0) onPrev()
+      } else if (onSubmit !== undefined) onSubmit()
+      else if (committed && matches > 0) onNext()
       return
     }
     if (event.key === 'Escape') {
@@ -87,7 +107,7 @@ export function SearchBar({
             type="search"
             value={options.query}
             onChange={event => onChange({ ...options, query: event.target.value })}
-            placeholder={placeholder ?? t('search.placeholder')}
+            placeholder={placeholder ?? (idle ? t('search.loadedPlaceholder') : t('search.placeholder'))}
             aria-label={t('search.aria')}
             onKeyDown={onKeyDown}
             style={inputStyle}
@@ -123,18 +143,35 @@ export function SearchBar({
             </button>
           )}
         </div>
-        <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-        <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
-        {!compact && (
-          <>
-            {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
-            {filterable && (
-              <label style={labelStyle}>
-                <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
-                {t('search.onlyMatches')}
-              </label>
-            )}
-          </>
+        <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={!committed || matches === 0} style={navStyle}>↑</button>
+        <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={!committed || matches === 0} style={navStyle}>↓</button>
+        {!compact && active && (
+          <span
+            style={idle ? hintStyle : feedbackStyle}
+            aria-live="polite"
+            data-search-feedback={scanning ? 'scanning' : stopped ? 'stopped' : idle ? 'idle' : 'done'}
+          >
+            {scanning
+              ? `${t('search.found', { count: matches })} · ${percent}%`
+              : stopped
+                ? `${t('search.found', { count: matches })} · ${t('search.stopped')}`
+                : idle
+                  ? t('search.submitFull')
+                  : matches === 0
+                    ? t('search.noMatches')
+                    : `${index + 1}/${matches}`}
+          </span>
+        )}
+        {scanning && onCancel !== undefined && (
+          <button type="button" className="dsh-preview-control" style={stopStyle} onClick={onCancel} data-search-cancel="true">
+            {t('search.stop')}
+          </button>
+        )}
+        {!compact && committed && filterable && (
+          <label style={labelStyle}>
+            <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
+            {t('search.onlyMatches')}
+          </label>
         )}
         {children}
       </div>
@@ -208,9 +245,21 @@ const clearStyle = {
   border: 'none', cursor: 'pointer',
 } as const
 
-const countStyle = {
+const hintStyle = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
   color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, lineHeight: '18px',
-  whiteSpace: 'nowrap', minWidth: 48, textAlign: 'center',
+  whiteSpace: 'nowrap' as const,
+} as const
+
+const feedbackStyle = {
+  ...hintStyle,
+  fontVariantNumeric: 'tabular-nums',
+} as const
+
+const stopStyle = {
+  height: 22, padding: '0 6px', flex: '0 0 auto',
+  fontSize: 11, lineHeight: '16px', border: 'none',
+  borderRadius: 'var(--dsw-radius-xs)', cursor: 'pointer',
 } as const
 
 const labelStyle = {

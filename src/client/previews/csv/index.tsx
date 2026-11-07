@@ -7,6 +7,7 @@ import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useMemo, useState } from 'react'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
+import type { FullSearchState } from '../../kernel/SearchBar.tsx'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
@@ -23,11 +24,6 @@ import { useWholeFileScan } from './scan.ts'
 import type { ScanNavigation } from './scan.ts'
 import { CsvTable } from './table.tsx'
 import { OVERSCAN, ROW_HEIGHT, SCROLL_LIMIT_PX, SETTLE_MS, WINDOW_ROWS } from './layout.ts'
-
-const cancelStyle = {
-  font: 'inherit', fontSize: 11, padding: '0 6px', height: 22, borderRadius: 'var(--dsw-radius-xs)', cursor: 'pointer',
-  border: 'none',
-} as const
 
 /**
  * The body of a table that holds every parsed row in memory: the viewport slice and
@@ -120,6 +116,29 @@ export function CsvBody(props: PreviewBodyProps) {
     settleMs: SETTLE_MS,
   })
 
+  // A complete table searches every row as the reader types. A windowed table
+  // only knows the rows in memory until Enter starts the whole-file scan; until
+  // then its local hits are highlights, not a result count.
+  const complete = !windowed
+  const scanState = scan.state
+  const scanning = scanState !== undefined && !scanState.done
+  const stopped = scanState?.done === true && scanState.aborted
+  const scanned = scanState?.done === true && !scanState.aborted
+  const fullSearch: FullSearchState = complete
+    ? 'complete'
+    : scanning ? 'scanning' : scanned ? 'done' : stopped ? 'stopped' : 'idle'
+  // While a scan runs (or after the reader stopped it), the visible total is what
+  // the scan has found, not the fallback in-memory count.
+  const displayMatches = scanning || stopped ? (scanState?.matches ?? scan.count) : scan.count
+  const submit = (): void => {
+    if (complete || scanned) {
+      scan.next()
+      return
+    }
+    if (scanning) return
+    scan.start()
+  }
+
   // Rows to paint while the table is not windowed: a filtered subset or every row.
   const visibleIndices = useMemo(() => {
     if (view === null || windowed) return []
@@ -203,24 +222,17 @@ export function CsvBody(props: PreviewBodyProps) {
   const estimated = windowed && !win.exact
   const shown: WindowedBody = { rows: painted, topPad: body.topPad, bottomPad: body.bottomPad }
 
-  // Only a real condition is worth a label here: a line past the cap, the row budget of
-  // the non-windowed path, or the background walk that will make the row count exact.
-  // While a scan runs, the count is what it has found *so far*; it becomes the total only
-  // when the scan reaches the end.
-  const state = scan.state
-  const status = state !== undefined
-    ? (state.done
-        ? (state.aborted
-          ? t('csv.scanStopped', { count: state.matches.toLocaleString('en-US') })
-          : state.rows.length > 0 && state.rows.length < state.matches
-            ? t('csv.scanDoneCapped', {
-              count: state.matches.toLocaleString('en-US'),
-              shown: state.rows.length.toLocaleString('en-US'),
-            })
-            : t('csv.scanDone', { count: state.matches.toLocaleString('en-US') }))
-        : t('csv.scanProgress', { percent: Math.round(state.progress * 100), count: state.matches.toLocaleString('en-US') }))
-    : source.overlong || win.overlong
+  // Search progress lives in the search row; this line keeps only conditions the
+  // table itself needs to explain.
+  const status = source.overlong || win.overlong
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
+    : scanState?.done === true && scanState.aborted
+    ? t('csv.scanStopped', { count: scanState.matches.toLocaleString('en-US') })
+    : scanState?.done === true && scanState.rows.length < scanState.matches
+    ? t('csv.scanDoneCapped', {
+      count: scanState.matches.toLocaleString('en-US'),
+      shown: scanState.rows.length.toLocaleString('en-US'),
+    })
     : source.fileMode && !source.fileComplete
     ? t('csv.indexProgress', { percent: Math.round(source.fileProgress * 100) })
     : source.truncated && !windowed
@@ -241,22 +253,19 @@ export function CsvBody(props: PreviewBodyProps) {
           compact={compact}
           options={options}
           onChange={setOptions}
-          matches={scan.count}
+          matches={displayMatches}
           index={scan.index}
           total={dataRows}
           onPrev={scan.prev}
           onNext={scan.next}
-          onSubmit={scan.commit}
+          onSubmit={submit}
+          fullSearch={fullSearch}
+          scanProgress={scanState?.progress ?? 0}
+          onCancel={scan.stop}
           filter={filter}
           onFilter={setFilter}
           filterable={filterable}
-        >
-          {state !== undefined && !state.done
-            ? (<button type="button" onClick={scan.stop} style={cancelStyle} className="dsh-preview-control">{t('csv.cancelScan')}</button>)
-            : (!compact && windowed && options.query.trim() !== ''
-              ? (<button type="button" title={t('csv.scanFile')} onClick={scan.start} style={cancelStyle} className="dsh-preview-control">{t('csv.scanFile')}</button>)
-              : undefined)}
-        </SearchBar>
+        />
       )}
       status={status === '' ? undefined : status}
       tone={status === '' ? 'normal' : 'warning'}

@@ -470,10 +470,16 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   // Typing alone only searches the rows in memory; the file is not walked until Enter.
   await tick(300)
   assert.doesNotMatch(view.container.textContent ?? '', /全文扫描/u, 'no scan before Enter')
+  const idle = view.container.querySelector('[data-search-feedback="idle"]')
+  assert.ok(idle, 'the search row asks for a whole-file commit')
+  assert.match(idle.textContent ?? '', /Enter 搜索全文/u)
+  assert.doesNotMatch(idle.textContent ?? '', /\d+\/\d+/u, 'local hits are not presented as a total')
   await enter()
   // The scan walks the file; the row search cannot see this match at all.
   await tick(600)
-  assert.match(view.container.textContent ?? '', /共 1 处匹配/u)
+  const feedback = view.container.querySelector('[data-search-feedback="done"]')
+  assert.ok(feedback, 'the search row reports a completed scan')
+  assert.match(feedback.textContent ?? '', /1\/1/u)
   const next = nextButton()
   assert.equal(next?.disabled, false, 'the arrow is enabled by the scan result')
 
@@ -549,11 +555,11 @@ test('stopping a scan keeps the hits it had already found', { skip: !available }
     input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   })
   await tick(60)
-  const stop = [...view.container.querySelectorAll('button')].find(button => button.textContent === '终止扫描')
+  const stop = view.container.querySelector('[data-search-cancel="true"]')
   assert.ok(stop, 'the stop control appears while the scan runs')
   await act(async () => { stop.click() })
   await tick(400)
-  assert.match(view.container.textContent ?? '', /已停止扫描/u, 'the status says the scan was stopped')
+  assert.match(view.container.textContent ?? '', /已停止/u, 'the search row says the scan was stopped')
   assert.doesNotMatch(view.container.textContent ?? '', /全文扫描完成/u, 'and it is not reported as a finished scan')
   // The search still works for the rows in memory, so the field is not wedged.
   assert.equal(view.container.querySelector('input[type="search"]')?.value, 'user_70000')
