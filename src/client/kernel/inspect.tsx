@@ -85,7 +85,7 @@ const summaryStyle = {
 
 const chipStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto',
-  height: 20, padding: '0 8px', borderRadius: 999,
+  height: 20, padding: '0 8px', borderRadius: 'var(--dsw-radius-sm)',
   background: 'var(--dsw-alias-bg-layer-2)',
   fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
 } as const

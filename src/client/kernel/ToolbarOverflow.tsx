@@ -88,8 +88,9 @@ const panelStyle = {
   minWidth: 40, maxWidth: '80vw', maxHeight: 260,
   display: 'flex', flexDirection: 'column', gap: 2,
   padding: 4, overflowY: 'auto',
-  borderRadius: 'var(--dsw-radius-md, 8px)',
-  background: 'var(--dsw-alias-bg-base)',
+  borderRadius: 'var(--dsw-radius-md)',
+  background: 'var(--dsw-specific-menu, var(--dsw-alias-bg-base))',
   border: '0.5px solid var(--dsw-alias-border-l2)',
-  boxShadow: '0 8px 24px rgba(0, 0, 0, .18)',
+  boxShadow: 'var(--dsw-shadow-lv2)',
+  backdropFilter: 'var(--dsw-menu-backdrop-filter, none)',
 } as const

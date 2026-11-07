@@ -35,7 +35,7 @@ const rootStyle = {
 } as const
 
 const kindStyle = {
-  flex: '0 0 auto', padding: '0 5px', borderRadius: 4,
+  flex: '0 0 auto', padding: '0 5px', borderRadius: 'var(--dsw-radius-xs)',
   background: 'var(--dsw-alias-bg-layer-2)',
   color: 'var(--dsw-alias-label-secondary)',
   fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight, fontWeight: 600,

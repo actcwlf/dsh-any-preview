@@ -219,7 +219,7 @@ const menuWrapStyle = {
 
 const triggerStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
-  height: 24, padding: '0 8px', borderRadius: 999,
+  height: 24, padding: '0 8px', borderRadius: 'var(--dsw-radius-sm)',
   border: '0.5px solid var(--dsw-alias-border-l2)',
   background: 'transparent', color: 'var(--dsw-alias-label-secondary)',
   font: 'inherit', fontSize: 11, lineHeight: '16px', cursor: 'pointer',
@@ -239,10 +239,11 @@ const menuStyle = {
   position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 40,
   width: 240, maxWidth: '80vw', maxHeight: 260,
   display: 'flex', flexDirection: 'column', overflow: 'hidden',
-  padding: 4, borderRadius: 'var(--dsw-radius-md, 8px)',
-  background: 'var(--dsw-alias-bg-base)',
+  padding: 4, borderRadius: 'var(--dsw-radius-md)',
+  background: 'var(--dsw-specific-menu, var(--dsw-alias-bg-base))',
   border: '0.5px solid var(--dsw-alias-border-l2)',
-  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+  boxShadow: 'var(--dsw-shadow-lv2)',
+  backdropFilter: 'var(--dsw-menu-backdrop-filter, none)',
 } as const
 
 const menuListStyle = {
@@ -252,7 +253,7 @@ const menuListStyle = {
 
 const rowStyle = {
   display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
-  padding: '4px 6px', borderRadius: 4, cursor: 'pointer',
+  padding: '4px 6px', borderRadius: 'var(--dsw-radius-sm)', cursor: 'pointer',
   color: 'var(--dsw-alias-label-secondary)', fontSize: 11,
 } as const
 
