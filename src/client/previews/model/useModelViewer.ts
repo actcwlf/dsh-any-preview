@@ -23,6 +23,7 @@ import { loadThree } from '../../kernel/three-loader.ts'
 import { loadModelExtras } from '../../kernel/model-extras-loader.ts'
 import { assetBaseUrl } from '../../kernel/assets.ts'
 import { directoryOf, modelNeeds } from './resources.ts'
+import { selectDefaultClips } from './animation.ts'
 import { disposeObject, parseModel, readBody, summarize } from './decode.ts'
 import type { ModelExtras } from './decode.ts'
 import { frameForSphere, gridForBox } from './frame.ts'
@@ -71,7 +72,7 @@ const DEFAULT_SETTINGS: ViewerSettings = { grid: true, wireframe: false, autoRot
 export interface ViewerHandle {
   apply(settings: ViewerSettings): void
   resetView(): void
-  selectAnimation(index: number): void
+  toggleAnimationClip(index: number): void
   toggleAnimation(): void
   seekAnimation(time: number): void
 }
@@ -114,13 +115,14 @@ export interface ModelViewer {
   readonly mountRef: { current: HTMLDivElement | null }
   readonly settings: ViewerSettings
   readonly animations: readonly ModelAnimationInfo[]
-  readonly animationIndex: number
+  /** Clip indexes currently playing, primary first. */
+  readonly animationActive: readonly number[]
   readonly animationPlaying: boolean
   readonly animationTime: number
   resetView(): void
   toggle(field: keyof ViewerSettings): void
   retry(): void
-  selectAnimation(index: number): void
+  toggleAnimationClip(index: number): void
   toggleAnimation(): void
   seekAnimation(time: number): void
 }
@@ -129,13 +131,16 @@ export interface ModelViewer {
 interface AnimationState {
   readonly key: string
   readonly clips: readonly ModelAnimationInfo[]
-  readonly index: number
+  readonly active: readonly number[]
+  readonly primary: number
   readonly playing: boolean
   readonly time: number
 }
 
 /** No clips yet, or one this run has not settled. */
-const EMPTY_ANIMATION: AnimationState = { key: '', clips: [], index: 0, playing: false, time: 0 }
+const EMPTY_ANIMATION: AnimationState = {
+  key: '', clips: [], active: [], primary: 0, playing: false, time: 0,
+}
 
 /** The `.obj`/COFF answer, tied to the URL it was read for. */
 interface Probe {
@@ -338,7 +343,7 @@ export function useModelViewer(
       fail(t('model.disabled'), false)
       return
     }
-    setAnimation({ key, clips: [], index: 0, playing: false, time: 0 })
+    setAnimation({ key, clips: [], active: [], primary: 0, playing: false, time: 0 })
 
     let alive = true
     let torndown = false
@@ -491,22 +496,41 @@ export function useModelViewer(
       let mixerRoot: any
       let actions: any[] = []
       let clips: ModelAnimationInfo[] = []
-      let currentClip = 0
+      const active = new Set<number>()
+      let primary = 0
       let animationPlaying = false
       let lastFrame = 0
       let lastUiUpdate = 0
 
+      /** Longest duration among the clips currently playing. */
+      const activeDuration = (): number => {
+        let duration = 0
+        for (const index of active) {
+          duration = Math.max(duration, clips[index]?.duration ?? 0)
+        }
+        return duration
+      }
+
+      /** Keep `primary` pointing at a clip that is actually active. */
+      const ensurePrimary = (): void => {
+        if (active.has(primary)) return
+        const first = active.values().next().value
+        primary = first ?? 0
+      }
+
       /**
        * Publish the current animation state to the bar.
-       * @param time - override the clip time, for a seek or clip switch.
+       * @param time - override the primary clip time, for a seek or clip switch.
        */
       const publishAnimation = (time?: number): void => {
+        ensurePrimary()
         setAnimation({
           key,
           clips,
-          index: currentClip,
+          active: [...active],
+          primary,
           playing: animationPlaying,
-          time: time ?? actions[currentClip]?.time ?? 0,
+          time: time ?? actions[primary]?.time ?? 0,
         })
       }
 
@@ -534,10 +558,17 @@ export function useModelViewer(
           }
           if (now - lastUiUpdate > 100) {
             lastUiUpdate = now
-            const action = actions[currentClip]
+            const action = actions[primary]
             if (action !== undefined) {
               setAnimation((previous) => previous.key === key
-                ? { ...previous, clips, index: currentClip, playing: animationPlaying, time: action.time }
+                ? {
+                  ...previous,
+                  clips,
+                  active: [...active],
+                  primary,
+                  playing: animationPlaying,
+                  time: action.time,
+                }
                 : previous)
             }
           }
@@ -619,28 +650,43 @@ export function useModelViewer(
           framed = true
           fit()
         },
-        selectAnimation: (index: number): void => {
-          if (mixer === undefined || actions[index] === undefined || index === currentClip) return
-          actions[currentClip]?.stop()
-          currentClip = index
-          actions[currentClip].reset().play()
-          mixer.update(0)
+        toggleAnimationClip: (index: number): void => {
+          if (mixer === undefined || actions[index] === undefined) return
+          if (active.has(index)) {
+            active.delete(index)
+            actions[index].stop()
+          } else {
+            const resumeTime = active.size > 0 ? actions[primary]?.time ?? 0 : 0
+            active.add(index)
+            const action = actions[index]
+            action.reset().play()
+            action.time = Math.min(resumeTime, clips[index]?.duration ?? 0)
+          }
+          if (active.size === 0) {
+            animationPlaying = false
+          } else {
+            ensurePrimary()
+            if (animationPlaying && activeDuration() <= 0) animationPlaying = false
+          }
           lastUiUpdate = 0
-          publishAnimation(0)
+          mixer.update(0)
+          publishAnimation()
           invalidate()
         },
         toggleAnimation: (): void => {
-          if (mixer === undefined || actions.length === 0) return
-          if ((clips[currentClip]?.duration ?? 0) <= 0) return
+          if (mixer === undefined || active.size === 0 || activeDuration() <= 0) return
           animationPlaying = !animationPlaying
           publishAnimation()
           invalidate()
         },
         seekAnimation: (time: number): void => {
-          if (mixer === undefined || actions[currentClip] === undefined) return
-          const duration = clips[currentClip]?.duration ?? 0
+          if (mixer === undefined || active.size === 0) return
+          const duration = activeDuration()
           const clamped = Math.min(Math.max(0, Number.isFinite(time) ? time : 0), duration)
-          actions[currentClip].time = clamped
+          for (const index of active) {
+            const action = actions[index]
+            if (action !== undefined) action.time = Math.min(clamped, clips[index]?.duration ?? 0)
+          }
           mixer.update(0)
           publishAnimation(clamped)
           invalidate()
@@ -714,6 +760,8 @@ export function useModelViewer(
         mixer = undefined
         mixerRoot = undefined
         actions = []
+        active.clear()
+        primary = 0
         model?.userData?.releaseBlobs?.()
         if (model !== undefined) disposeObject(model)
         if (grid !== undefined) disposeObject(grid)
@@ -829,9 +877,14 @@ export function useModelViewer(
             mixerRoot = object
             mixer = new THREE.AnimationMixer(object)
             actions = animated.map((clip: any) => mixer.clipAction(clip))
-            currentClip = 0
-            animationPlaying = (clips[0]?.duration ?? 0) > 0
-            actions[0].reset().play()
+            const trackSets = animated.map((clip: any) => Array.isArray(clip?.tracks)
+              ? clip.tracks.map((track: any) => String(track?.name ?? ''))
+              : [])
+            const defaults = selectDefaultClips(trackSets)
+            for (const index of defaults) active.add(index)
+            primary = defaults[0] ?? 0
+            animationPlaying = defaults.some((index) => (clips[index]?.duration ?? 0) > 0)
+            for (const index of defaults) actions[index]?.reset().play()
             mixer.update(0)
           } catch (error) {
             // A malformed clip should not hide the model; fall back to a still
@@ -841,10 +894,19 @@ export function useModelViewer(
             mixerRoot = undefined
             actions = []
             clips = []
+            active.clear()
+            primary = 0
             animationPlaying = false
           }
         }
-        setAnimation({ key, clips, index: currentClip, playing: animationPlaying, time: 0 })
+        setAnimation({
+          key,
+          clips,
+          active: [...active],
+          primary,
+          playing: animationPlaying,
+          time: 0,
+        })
         const extents = box.getSize(new THREE.Vector3())
 
         if (Number.isFinite(box.min.y)) {
@@ -894,7 +956,7 @@ export function useModelViewer(
     setProbe(null)
     setProgress(undefined)
     setView({ ...IDLE, key })
-    setAnimation({ key, clips: [], index: 0, playing: false, time: 0 })
+    setAnimation({ key, clips: [], active: [], primary: 0, playing: false, time: 0 })
     setAttempt((count) => count + 1)
   }, [key])
 
@@ -909,8 +971,8 @@ export function useModelViewer(
     viewerRef.current?.resetView()
   }, [])
 
-  const selectAnimation = useCallback((index: number): void => {
-    viewerRef.current?.selectAnimation(index)
+  const toggleAnimationClip = useCallback((index: number): void => {
+    viewerRef.current?.toggleAnimationClip(index)
   }, [])
 
   const toggleAnimation = useCallback((): void => {
@@ -928,13 +990,13 @@ export function useModelViewer(
     mountRef,
     settings,
     animations: shownAnimation.clips,
-    animationIndex: shownAnimation.index,
+    animationActive: shownAnimation.active,
     animationPlaying: shownAnimation.playing,
     animationTime: shownAnimation.time,
     resetView,
     toggle,
     retry,
-    selectAnimation,
+    toggleAnimationClip,
     toggleAnimation,
     seekAnimation,
   }

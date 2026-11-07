@@ -1,9 +1,9 @@
 /**
- * Clip picker, transport button and scrubber for a glTF animation.
+ * Clip picker, transport button and scrubber for glTF animations.
  *
- * Rendered only when the model carries clips. The play button follows the
- * host's 28px tool-button language; the select and range stay compact so the
- * strip adds one thin row rather than competing with the viewport.
+ * A file can carry several clips: a bone clip and a separate shape-key (facial)
+ * clip are common. They target disjoint tracks and can play together, so the
+ * strip exposes every clip as a toggle rather than a single-choice select.
  */
 import { t } from '../../i18n.ts'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
@@ -12,10 +12,11 @@ import type { ModelAnimationInfo } from './useModelViewer.ts'
 /** What the animation strip needs from the viewer. */
 export interface ModelAnimationBarProps {
   readonly clips: readonly ModelAnimationInfo[]
-  readonly index: number
+  /** Clip indexes currently active; more than one can play at once. */
+  readonly active: readonly number[]
   readonly playing: boolean
   readonly time: number
-  onSelect(index: number): void
+  onToggleClip(index: number): void
   onToggle(): void
   onSeek(time: number): void
 }
@@ -32,20 +33,32 @@ export function formatClock(seconds: number): string {
   return `${String(Math.floor(whole / 60))}:${String(whole % 60).padStart(2, '0')}.${String(tenths)}`
 }
 
+/**
+ * Display name for a clip.
+ * @param clip - clip metadata.
+ * @param index - position, used for unnamed clips.
+ * @returns the name or a localized fallback.
+ */
+function clipLabel(clip: ModelAnimationInfo, index: number): string {
+  return clip.name.trim() === '' ? t('model.animationName', { n: index + 1 }) : clip.name
+}
+
 export function ModelAnimationBar({
   clips,
-  index,
+  active,
   playing,
   time,
-  onSelect,
+  onToggleClip,
   onToggle,
   onSeek,
 }: ModelAnimationBarProps) {
-  const clip = clips[index]
-  if (clip === undefined) return null
-  const duration = Number.isFinite(clip.duration) ? Math.max(0, clip.duration) : 0
+  if (clips.length === 0) return null
+  const duration = active.reduce(
+    (longest, index) => Math.max(longest, clips[index]?.duration ?? 0),
+    0,
+  )
   const position = Math.min(Math.max(0, time), duration)
-  const name = clip.name.trim() === '' ? t('model.animationName', { n: index + 1 }) : clip.name
+  const playable = active.length > 0 && duration > 0
 
   return (
     <div style={barStyle} data-model-animation="true">
@@ -54,31 +67,36 @@ export function ModelAnimationBar({
         type="button"
         className="dsh-model-tool"
         onClick={onToggle}
-        disabled={clips.length === 0 || duration <= 0}
+        disabled={!playable}
         aria-label={playing ? t('model.pause') : t('model.play')}
         title={playing ? t('model.pause') : t('model.play')}
         data-model-animation-toggle="true"
       >
         <ToolIcon kind={playing ? 'pause' : 'play'} />
       </button>
-      {clips.length > 1 ? (
-        <select
-          style={selectStyle}
-          value={String(index)}
-          onChange={(event) => onSelect(Number(event.currentTarget.value))}
-          aria-label={t('model.animation')}
-          title={t('model.animation')}
-        >
-          {clips.map((entry, positionIndex) => (
-            <option key={positionIndex} value={String(positionIndex)}>
-              {entry.name.trim() === ''
-                ? t('model.animationName', { n: positionIndex + 1 })
-                : entry.name}
-            </option>
-          ))}
-        </select>
+      {clips.length === 1 && clips[0] !== undefined ? (
+        <span style={nameStyle} title={clipLabel(clips[0], 0)}>
+          {clipLabel(clips[0], 0)}
+        </span>
       ) : (
-        <span style={nameStyle} title={name}>{name}</span>
+        <div style={clipsStyle} role="group" aria-label={t('model.animation')}>
+          {clips.map((clip, index) => {
+            const isActive = active.includes(index)
+            const label = clipLabel(clip, index)
+            return (
+              <button
+                key={index}
+                type="button"
+                style={isActive ? activeChipStyle : chipStyle}
+                onClick={() => onToggleClip(index)}
+                aria-pressed={isActive}
+                title={label}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
       )}
       <input
         type="range"
@@ -110,15 +128,25 @@ const nameStyle = {
   whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-secondary)',
 } as const
 
-const selectStyle = {
-  ...nameStyle,
-  maxWidth: '40%',
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-secondary)',
+const clipsStyle = {
+  display: 'flex', gap: 4, flex: '0 1 auto', minWidth: 0, maxWidth: '48%',
+  overflowX: 'auto', overflowY: 'hidden', padding: '1px 0',
+} as const
+
+const chipStyle = {
+  flex: 'none', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap', padding: '1px 7px', fontSize: 10, lineHeight: '16px',
+  color: 'var(--dsw-alias-label-tertiary)', background: 'transparent',
   border: '0.5px solid var(--dsw-alias-border-l2)',
-  borderRadius: 'var(--dsw-radius-sm)',
-  padding: '1px 4px',
-  font: 'inherit',
+  borderRadius: 999, cursor: 'pointer',
+  transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease',
+} as const
+
+const activeChipStyle = {
+  ...chipStyle,
+  color: 'var(--dsw-alias-label-primary)',
+  background: 'var(--dsw-alias-interactive-bg-hover)',
+  borderColor: 'var(--dsw-alias-brand-primary)',
 } as const
 
 const rangeStyle = {

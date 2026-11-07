@@ -260,7 +260,8 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   不一致；工作区自带的 `samples/cube.obj` 就是全部朝内绕序，单面渲染会把近侧面当背面
   剔除、显示成一个"空房间"。glTF 仍按其 `doubleSided` 标记渲染，不替作者改 culling。
 - **动画/骨骼**：glTF 的 `gltf.animations` 挂在根节点的 `userData.animations` 上；
-  `AnimationMixer` 默认播放首个 clip，动画条提供播放/暂停、clip 选择与时间轴。
+  `AnimationMixer` 默认同时播放轨道不冲突的 clip（常见为骨骼 clip + 形态键表情
+  clip），动画条用多选 chip 逐个开关，并同步播放/暂停/时间轴。
   `SkinnedMesh` 关闭视锥剔除，避免骨骼把网格移出绑定姿态包围盒后被裁掉；销毁时
   `Skeleton.dispose()` 释放骨骼纹理。OBJ/STL 没有动画。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
@@ -301,8 +302,9 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 夹具在 `samples/`。
 
 已知限制：KTX2 的转码器跑在 `blob:` Worker 里（当前页面无 CSP，桌面 `dsh-app://` 下需实测）；
-动画只支持 glTF clip，默认循环播放，不提供单次播放/倍速/根运动特判；`preview_inspect`
-还不认识 3D。
+动画只支持 glTF clip，默认循环播放，不提供单次播放/倍速/根运动特判；多个
+clip 同时播放时按轨道名去重，默认只叠加互不冲突的 clip，手动叠加冲突 clip 的
+覆盖顺序由 `AnimationMixer` 决定；`preview_inspect` 还不认识 3D。
 
 ## 构建
 

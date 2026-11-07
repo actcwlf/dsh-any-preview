@@ -43,8 +43,8 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   useLocale()
   const {
     view, progress, absolutePath, mountRef, settings, resetView, toggle, retry,
-    animations, animationIndex, animationPlaying, animationTime,
-    selectAnimation, toggleAnimation, seekAnimation,
+    animations, animationActive, animationPlaying, animationTime,
+    toggleAnimationClip, toggleAnimation, seekAnimation,
   } = useModelViewer(content, resourceAddress, useResource)
   const ready = view.status === 'ready'
   const loadingText = view.phase === 'decoding'
@@ -86,10 +86,10 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
       {ready && animations.length > 0 && (
         <ModelAnimationBar
           clips={animations}
-          index={animationIndex}
+          active={animationActive}
           playing={animationPlaying}
           time={animationTime}
-          onSelect={selectAnimation}
+          onToggleClip={toggleAnimationClip}
           onToggle={toggleAnimation}
           onSeek={seekAnimation}
         />
