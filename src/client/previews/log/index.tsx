@@ -1,21 +1,23 @@
+/** Streaming log viewer: severity colouring, search, tail follow and a file-backed window. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
-/** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { followAfterScroll, isAtBottom } from './follow.ts'
-import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
-import { useStreamedText } from '../../kernel/stream.ts'
+import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
+import { stickyBand } from '../../kernel/window-state.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { createLogConsumer, levelOf } from './parse.ts'
+import { levelOf } from './parse.ts'
 import type { LogLevel } from './parse.ts'
+import { useLogSource } from './source.ts'
+import { LOG_OVERSCAN, LOG_ROW_HEIGHT, useLogScroll } from './scroll.ts'
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
   error: 'var(--dsw-alias-state-error-primary)',
@@ -25,47 +27,89 @@ const LEVEL_COLOR: Record<LogLevel, string> = {
   none: 'var(--dsw-alias-label-primary)',
 }
 
-export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
+export function LogBody(props: PreviewBodyProps) {
   useLocale()
-  const log = useStreamedText(content, () => createLogConsumer())
+  const source = useLogSource(props)
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [follow, setFollow] = useState(true)
-  const scroller = useRef<HTMLDivElement | null>(null)
-  const lines = log?.lines ?? []
+  const scroll = useLogScroll({
+    scrollportRef: props.scrollportRef,
+    ready: source.windowed || source.totalRows > 0,
+    totalRows: source.totalRows,
+  })
+  const win = useWindowedRows({
+    read: source.read,
+    revision: source.revision,
+    source: source.sourceKey,
+    enabled: source.windowed,
+    scrollTop: scroll.scrollTop,
+    viewportHeight: scroll.viewportHeight,
+    totalRows: source.totalRows,
+    rowHeight: scroll.mappingPitch,
+    windowSize: 5_000,
+    settleMs: 200,
+  })
+  const windowLines = win.rows.map(row => row[0] ?? '')
+  const lines = source.windowed ? windowLines : source.lines
   const found = useSearch(lines, options)
-  const lineCount = lines.length
-  const complete = log?.complete ?? false
+  const baseRow = source.windowed ? win.startRow : 0
+  const activeRow = found.activeRow === undefined ? undefined : baseRow + found.activeRow
 
   const visible = useMemo(() => {
-    if (!filter || found.pattern === undefined) return lines.map((line, index) => ({ line, index }))
+    if (!filter || found.pattern === undefined) {
+      return lines.map((line, index) => ({ line, index }))
+    }
     return found.matches.map(index => ({ line: lines[index]!, index }))
   }, [lines, lines.length, filter, found.pattern, found.matches])
 
   useEffect(() => {
-    if (!follow || !complete || found.pattern !== undefined) return
-    const element = scroller.current
-    if (element !== null) element.scrollTop = element.scrollHeight
-  }, [follow, complete, lineCount, found.pattern])
+    if (!follow || found.pattern !== undefined) return
+    scroll.scrollToBottom()
+  }, [follow, source.windowed, source.totalRows, source.complete, found.pattern, scroll.scrollToBottom])
 
   useEffect(() => {
-    if (found.activeRow === undefined) return
-    scrollToRow(scroller.current, found.activeRow)
-  }, [found.activeRow])
+    if (activeRow === undefined) return
+    scroll.reveal(activeRow)
+  }, [activeRow, scroll.reveal])
 
-  if (log === null) {
+  if (!source.windowed && source.lines.length === 0) {
     return <PreviewState kind="LOG" title={t('log.title')} message={t('common.loading')} />
   }
 
-  const setScroller = (element: HTMLDivElement | null): void => {
-    scroller.current = element
-    scrollportRef?.(element)
-  }
+  const renderRow = (index: number, line: string) => (
+    <div
+      key={index}
+      data-row-index={index}
+      style={{
+        display: 'flex',
+        gap: 10,
+        height: LOG_ROW_HEIGHT,
+        padding: '0 12px',
+        whiteSpace: 'pre',
+        background: index === activeRow ? ACTIVE_ROW : undefined,
+      }}
+    >
+      <span style={gutterStyle}>{index + 1}</span>
+      <span style={{ color: LEVEL_COLOR[levelOf(line)] }}>
+        <Marked text={line === '' ? ' ' : line} pattern={found.pattern} emphasis={index === activeRow} />
+      </span>
+    </div>
+  )
+
+  const pinned = source.windowed && scroll.geometry !== undefined
+  const band = pinned
+    ? stickyBand(scroll.logical, source.totalRows, scroll.geometry.visibleRows, LOG_ROW_HEIGHT, LOG_OVERSCAN)
+    : undefined
+  const contentHeight = pinned ? scroll.contentHeight : source.windowed ? source.totalRows * LOG_ROW_HEIGHT : undefined
+  const status = source.windowed
+    ? source.complete ? undefined : t('log.indexing', { percent: String(Math.round(source.progress * 100)) })
+    : source.truncated ? t('common.truncated') : undefined
 
   return (
     <PreviewChrome
       kind="LOG"
-      title={t('log.summary', { count: log.lines.length.toLocaleString('en-US') })}
+      title={t('log.summary', { count: source.totalRows.toLocaleString('en-US') })}
       toolbar={compact => (
         <SearchBar
           compact={compact}
@@ -73,65 +117,88 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           onChange={setOptions}
           matches={found.matches.length}
           index={found.index}
-          total={log.lines.length}
+          total={source.totalRows}
           onPrev={found.prev}
           onNext={found.next}
           filter={filter}
           onFilter={setFilter}
-        >
-        </SearchBar>
-        )}
-        status={log.truncated ? t('common.truncated') : undefined}
-        tone={log.truncated ? 'warning' : 'normal'}
-      >
+          filterable={!source.windowed}
+          placeholder={source.windowed ? t('log.windowSearch') : undefined}
+        />
+      )}
+      status={status}
+      tone={status === undefined ? 'normal' : 'warning'}
+    >
       <div
-          ref={setScroller}
-          onScroll={() => {
-            const element = scroller.current
-            if (element === null) return
-            const next = followAfterScroll({
-              follow,
-              manualOff: false,
-              atBottom: isAtBottom(element.scrollTop, element.scrollHeight, element.clientHeight),
-            })
-            if (next !== follow) setFollow(next)
-          }}
-          style={{ flex: '1 1 auto', overflow: 'auto' }}
-        >
-        <div style={{ fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: '18px' }}>
-          {visible.map(({ line, index }) => (
+        ref={scroll.bindScroller}
+        data-log-scroller="true"
+        onScroll={event => {
+          const element = event.currentTarget
+          scroll.setScrollTop(element.scrollTop)
+          const next = followAfterScroll({
+            follow,
+            manualOff: false,
+            atBottom: isAtBottom(element.scrollTop, element.scrollHeight, element.clientHeight),
+          })
+          if (next !== follow) setFollow(next)
+        }}
+        style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
+      >
+        {source.windowed ? (
+          <div style={{ height: contentHeight, position: 'relative' }}>
             <div
-              key={index}
-              data-row-index={index}
-              style={{
-                display: 'flex',
-                gap: 10,
-                padding: '0 12px',
-                whiteSpace: 'pre',
-                background: index === found.activeRow ? ACTIVE_ROW : undefined,
-              }}
+              style={pinned
+                ? { ...pinnedBlock, height: scroll.viewportHeight }
+                : codeStyle}
             >
-              <span style={gutterStyle}>{index + 1}</span>
-              <span style={{ color: LEVEL_COLOR[levelOf(line)] }}>
-                <Marked text={line === '' ? ' ' : line} pattern={found.pattern} emphasis={index === found.activeRow} />
-              </span>
+              <div style={pinned && band !== undefined ? { transform: `translateY(${String(-band.offset)}px)` } : undefined}>
+                {pinned && band !== undefined ? (
+                  Array.from({ length: band.count }, (_value, offset) => {
+                    const index = band.first + offset
+                    const row = win.rows[index - win.startRow]
+                    return renderRow(index, row?.[0] ?? '')
+                  })
+                ) : (
+                  <>
+                    {win.startRow > 0 && <div style={{ height: win.startRow * LOG_ROW_HEIGHT }} />}
+                    {win.rows.map((row, offset) => renderRow(win.startRow + offset, row[0] ?? ''))}
+                    {source.totalRows - win.startRow - win.rows.length > 0 && (
+                      <div style={{ height: (source.totalRows - win.startRow - win.rows.length) * LOG_ROW_HEIGHT }} />
+                    )}
+                  </>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div style={codeStyle}>
+            {visible.map(({ line, index }) => renderRow(index, line))}
+          </div>
+        )}
       </div>
     </PreviewChrome>
   )
 }
 
-const labelStyle = {
-  display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-secondary)', fontSize: 12,
+const codeStyle = {
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+  fontSize: 12,
+  lineHeight: `${String(LOG_ROW_HEIGHT)}px`,
 } as const
 
 const gutterStyle = {
   flex: '0 0 auto', width: 48, textAlign: 'right' as const,
   color: 'var(--dsw-alias-label-tertiary)', userSelect: 'none' as const,
-}
+} as const
+
+const pinnedBlock = {
+  position: 'sticky' as const,
+  top: 0,
+  overflow: 'hidden',
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+  fontSize: 12,
+  lineHeight: `${String(LOG_ROW_HEIGHT)}px`,
+} as const
 
 /** What the client entry registers for this format. */
 export const logPreview: PreviewModule = {

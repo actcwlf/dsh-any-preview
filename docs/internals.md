@@ -156,6 +156,17 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 已知边界：行缓冲的「已截断」提示因此不再出现（截断必然切换到窗口化）；`csv.truncated`
 只作为非窗口路径的兜底文案保留。
 
+### Log 文件源
+
+`.log` 超过约 2 MB 且有绝对路径时改用 `openRowFile`：每行解析成一个 cell，复用与 CSV
+相同的字节锚点、后台行索引、窗口读和比例滚动。行高固定 18 px；超过浏览器 scroll-height
+上限后按比例映射（`logicalRow` / `stickyBand`），文件尾部仍可达。小文件继续走
+`useStreamedText`，保留 20,000 行上限和明确的 truncated 状态。
+
+大文件当前只搜索**当前窗口**（搜索框占位与状态会说明），尚未接入全文扫描；尾部跟随在
+文件源上调用 `scrollToBottom`，不再只滚到已加载前缀的底部。`log/rows.ts` 只负责把
+line-aligned slice 变成 one-cell rows。
+
 ### CSV 文件源（按位置跳转）
 
 owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThrough + 1)`，并把页拼成
