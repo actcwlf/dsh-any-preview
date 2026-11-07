@@ -3,8 +3,10 @@
  *
  * A file can carry several clips: a bone clip and a separate shape-key (facial)
  * clip are common. They target disjoint tracks and can play together, so the
- * strip exposes every clip as a toggle rather than a single-choice select.
+ * strip exposes a compact multi-select menu instead of a row of buttons; the
+ * menu scales to models with many clips.
  */
+import { useEffect, useRef, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
 import type { ModelAnimationInfo } from './useModelViewer.ts'
@@ -52,6 +54,34 @@ export function ModelAnimationBar({
   onToggle,
   onSeek,
 }: ModelAnimationBarProps) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const doc = triggerRef.current?.ownerDocument
+    if (doc === undefined || doc === null) return
+    const closeOnOutside = (event: PointerEvent): void => {
+      const target = event.target as Node | null
+      if (target === null) return
+      if (menuRef.current?.contains(target) === true) return
+      if (triggerRef.current?.contains(target) === true) return
+      setOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+    doc.addEventListener('pointerdown', closeOnOutside, true)
+    doc.addEventListener('keydown', closeOnEscape)
+    return () => {
+      doc.removeEventListener('pointerdown', closeOnOutside, true)
+      doc.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
   if (clips.length === 0) return null
   const duration = active.reduce(
     (longest, index) => Math.max(longest, clips[index]?.duration ?? 0),
@@ -59,10 +89,15 @@ export function ModelAnimationBar({
   )
   const position = Math.min(Math.max(0, time), duration)
   const playable = active.length > 0 && duration > 0
+  const activeNames = active.map((index) => {
+    const clip = clips[index]
+    return clip === undefined ? '' : clipLabel(clip, index)
+  }).filter((name) => name !== '')
 
   return (
     <div style={barStyle} data-model-animation="true">
       <style>{TOOL_CSS}</style>
+      <style>{MENU_CSS}</style>
       <button
         type="button"
         className="dsh-model-tool"
@@ -78,26 +113,7 @@ export function ModelAnimationBar({
         <span style={nameStyle} title={clipLabel(clips[0], 0)}>
           {clipLabel(clips[0], 0)}
         </span>
-      ) : (
-        <div style={clipsStyle} role="group" aria-label={t('model.animation')}>
-          {clips.map((clip, index) => {
-            const isActive = active.includes(index)
-            const label = clipLabel(clip, index)
-            return (
-              <button
-                key={index}
-                type="button"
-                style={isActive ? activeChipStyle : chipStyle}
-                onClick={() => onToggleClip(index)}
-                aria-pressed={isActive}
-                title={label}
-              >
-                {label}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      ) : null}
       <input
         type="range"
         style={rangeStyle}
@@ -112,9 +128,67 @@ export function ModelAnimationBar({
       <span style={timeStyle}>
         {formatClock(position)} / {formatClock(duration)}
       </span>
+      {clips.length > 1 && (
+        <span style={menuWrapStyle}>
+          <button
+            ref={triggerRef}
+            type="button"
+            className="dsh-model-clip-trigger"
+            style={triggerStyle}
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-label={t('model.animation')}
+            title={activeNames.length > 0 ? activeNames.join(' · ') : t('model.animation')}
+          >
+            <span>{t('model.animation')} {active.length}/{clips.length}</span>
+            <span aria-hidden="true" style={chevronStyle(open)}>▾</span>
+          </button>
+          {open && (
+            <div
+              ref={menuRef}
+              style={menuStyle}
+              role="group"
+              aria-label={t('model.animation')}
+            >
+              <div style={menuListStyle}>
+                {clips.map((clip, index) => {
+                  const isActive = active.includes(index)
+                  const label = clipLabel(clip, index)
+                  return (
+                    <label
+                      key={index}
+                      className="dsh-model-clip-row"
+                      style={rowStyle}
+                      title={label}
+                    >
+                      <input
+                        type="checkbox"
+                        style={checkboxStyle}
+                        checked={isActive}
+                        onChange={() => onToggleClip(index)}
+                      />
+                      <span style={rowLabelStyle}>{label}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </span>
+      )}
     </div>
   )
 }
+
+const MENU_CSS = `
+  .dsh-model-clip-trigger:focus-visible {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+    outline-offset: 1px;
+  }
+  .dsh-model-clip-row:hover {
+    background: var(--dsw-alias-interactive-bg-hover);
+  }
+`
 
 const barStyle = {
   display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto',
@@ -128,33 +202,64 @@ const nameStyle = {
   whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-secondary)',
 } as const
 
-const clipsStyle = {
-  display: 'flex', gap: 4, flex: '0 1 auto', minWidth: 0, maxWidth: '48%',
-  overflowX: 'auto', overflowY: 'hidden', padding: '1px 0',
-} as const
-
-const chipStyle = {
-  flex: 'none', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap', padding: '1px 7px', fontSize: 10, lineHeight: '16px',
-  color: 'var(--dsw-alias-label-tertiary)', background: 'transparent',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
-  borderRadius: 999, cursor: 'pointer',
-  transition: 'background-color 120ms ease, color 120ms ease, border-color 120ms ease',
-} as const
-
-const activeChipStyle = {
-  ...chipStyle,
-  color: 'var(--dsw-alias-label-primary)',
-  background: 'var(--dsw-alias-interactive-bg-hover)',
-  borderColor: 'var(--dsw-alias-brand-primary)',
-} as const
-
 const rangeStyle = {
-  flex: '1 1 auto', minWidth: 60, height: 14, margin: 0,
+  flex: '1 1 auto', minWidth: 48, height: 14, margin: 0,
   accentColor: 'var(--dsw-alias-brand-primary)',
 } as const
 
 const timeStyle = {
   fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap',
   color: 'var(--dsw-alias-label-tertiary)',
+} as const
+
+const menuWrapStyle = {
+  position: 'relative', display: 'inline-flex', flex: '0 0 auto',
+} as const
+
+const triggerStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
+  height: 20, padding: '0 6px', borderRadius: 999,
+  border: '0.5px solid var(--dsw-alias-border-l2)',
+  background: 'transparent', color: 'var(--dsw-alias-label-secondary)',
+  font: 'inherit', fontSize: 10, lineHeight: 1, cursor: 'pointer',
+  whiteSpace: 'nowrap',
+} as const
+
+/** Dropdown chevron; kept as a function so the transition stays inline. */
+function chevronStyle(open: boolean) {
+  return {
+    display: 'inline-block', fontSize: 9, lineHeight: 1,
+    transform: open ? 'rotate(180deg)' : 'none',
+    transition: 'transform 120ms ease',
+  } as const
+}
+
+const menuStyle = {
+  position: 'absolute', right: 0, top: 'calc(100% + 4px)', zIndex: 40,
+  width: 240, maxWidth: '80vw', maxHeight: 260,
+  display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  padding: 4, borderRadius: 'var(--dsw-radius-md, 8px)',
+  background: 'var(--dsw-alias-bg-base)',
+  border: '0.5px solid var(--dsw-alias-border-l2)',
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+} as const
+
+const menuListStyle = {
+  display: 'flex', flexDirection: 'column', gap: 1,
+  minHeight: 0, overflowY: 'auto',
+} as const
+
+const rowStyle = {
+  display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
+  padding: '4px 6px', borderRadius: 4, cursor: 'pointer',
+  color: 'var(--dsw-alias-label-secondary)', fontSize: 11,
+} as const
+
+const checkboxStyle = {
+  flex: 'none', width: 13, height: 13, margin: 0,
+  accentColor: 'var(--dsw-alias-brand-primary)',
+} as const
+
+const rowLabelStyle = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 } as const

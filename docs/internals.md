@@ -261,7 +261,8 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   剔除、显示成一个"空房间"。glTF 仍按其 `doubleSided` 标记渲染，不替作者改 culling。
 - **动画/骨骼**：glTF 的 `gltf.animations` 挂在根节点的 `userData.animations` 上；
   `AnimationMixer` 默认同时播放轨道不冲突的 clip（常见为骨骼 clip + 形态键表情
-  clip），动画条用多选 chip 逐个开关，并同步播放/暂停/时间轴。
+  clip），动画条右侧的多选菜单逐个开关，并同步播放/暂停/时间轴；菜单列表可滚动，
+  不随 clip 数量挤占播放条。
   `SkinnedMesh` 关闭视锥剔除，避免骨骼把网格移出绑定姿态包围盒后被裁掉；销毁时
   `Skeleton.dispose()` 释放骨骼纹理。OBJ/STL 没有动画。
 - **环境与工具**：`RoomEnvironment` + `PMREMGenerator` 生成环境贴图，
