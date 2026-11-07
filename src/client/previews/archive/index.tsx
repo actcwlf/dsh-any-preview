@@ -3,7 +3,8 @@
  * size is known, whole-file otherwise), tar and tar.gz through the whole file
  * (gzip inflate is native).
  *
- * Listing only — extracting an entry is a later step.
+ * Members open in the shared entry view; zip uses the server-side member reader,
+ * tar members are sliced from the inflated archive on the client.
  */
 import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useEffect, useState } from 'react'
@@ -23,11 +24,21 @@ import { jsonlPreview } from '../jsonl/index.tsx'
 import { logPreview } from '../log/index.tsx'
 import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
-import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
+import { listTarEntries, listZipEntries, readEntryBytesFromUrl, readTarEntryBytesFromUrl } from '../../kernel/zip.ts'
 import { ArchiveList } from './ArchiveList.tsx'
 import { useTransientNotice } from '../../kernel/useTransientNotice.ts'
 import { EntryView } from './EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from './paths.ts'
+
+/** Base64 for a tar member that the browser decoded, chunked to avoid a giant spread. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = ''
+  const chunk = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
+  }
+  return btoa(binary)
+}
 
 /** One request to the extraction route; `action` selects extract, check or clean. */
 async function postExtract<T>(body: Record<string, unknown>): Promise<T> {
@@ -58,6 +69,32 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const url = typeof absolutePath === 'string' ? fileUrl(absolutePath) : undefined
   const name = typeof absolutePath === 'string' ? absolutePath.replaceAll('\\', '/').split('/').pop() ?? '' : ''
   const lower = name.toLowerCase()
+  const zipped = lower.endsWith('.zip')
+
+  const readEntry = (entry: ArchiveEntry): Promise<Uint8Array> => {
+    if (url === undefined) return Promise.reject(new Error('archive has no readable url'))
+    return zipped
+      ? readEntryBytesFromUrl(url, entry)
+      : readTarEntryBytesFromUrl(url, entry, size)
+  }
+
+  const writeEntry = async (
+    entry: ArchiveEntry,
+    bytes: Uint8Array,
+    force: boolean,
+    target = dir,
+  ): Promise<string> => {
+    if (zipped) {
+      const result = await postExtract<{ path: string }>({
+        archive: absolutePath, entry: entry.name, targetDir: target, force,
+      })
+      return result.path
+    }
+    const result = await postExtract<{ path: string }>({
+      action: 'write', entry: entry.name, targetDir: target, data: toBase64(bytes), force,
+    })
+    return result.path
+  }
 
   useEffect(() => {
     if (defaultDir !== '') setDir(current => (current === '' ? defaultDir : current))
@@ -118,15 +155,11 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
     if (absolutePath === undefined || lastEntry === undefined) return
     const dir = defaultTargetDir(absolutePath)
     try {
-      const result = await postExtract<{ path: string }>({
-        archive: absolutePath,
-        entry: lastEntry.name,
-        targetDir: dir,
-        force: true,
-      })
+      const bytes = zipped ? new Uint8Array() : await readEntry(lastEntry)
+      const result = await writeEntry(lastEntry, bytes, true, dir)
       const address = extractedAddress(resourceAddress, lastEntry.name, dir, dir)
       const opened = address !== undefined && openResourceAddress(address)
-      showNotice(opened ? t('archive.reextracted', { name: lastEntry.name }) : t('archive.reextractedTo', { path: result.path }))
+      showNotice(opened ? t('archive.reextracted', { name: lastEntry.name }) : t('archive.reextractedTo', { path: result }))
     } catch (error) {
       showNotice(errorText(error, 'archive.reextractFailed'), 'critical')
     }
@@ -140,12 +173,8 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
       targetDir={dir}
       onTargetDir={setDir}
       defaultDir={defaultTargetDir(absolutePath ?? '')}
-      loadBytes={() => url === undefined
-        ? Promise.reject(new Error('archive has no readable url'))
-        : readEntryBytesFromUrl(url, selected)}
-      write={(_bytes, force) => postExtract<{ path: string }>({
-        archive: absolutePath, entry: selected.name, targetDir: dir, force,
-      }).then(result => result.path)}
+      loadBytes={() => readEntry(selected)}
+      write={(bytes, force) => writeEntry(selected, bytes, force)}
       check={() => postExtract<{ exists: boolean, path: string | null }>({
         action: 'check', entry: selected.name, targetDir: dir,
       }).then(result => (result.exists ? result.path ?? undefined : undefined))}

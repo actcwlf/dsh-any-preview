@@ -639,11 +639,15 @@ status 而不是 toast。
 
 ### 容器要提供的三件事
 
-| 能力 | zip | 7z |
-|---|---|---|
-| `loadBytes()` | 范围读 + `DecompressionStream` | wasm 解码 + 按 `folder.sizes` 切片 |
-| `write(bytes, force)` | Host 路由 `extract` | Host 路由 `write`（base64，浏览器已解码） |
-| `check()` / `addressOf()` | 路由 `check` + `extractedAddress` | 同左 |
+| 能力 | zip | tar / tar.gz | 7z |
+|---|---|---|---|
+| `loadBytes()` | 范围读 + `DecompressionStream` | 整包读取、gzip inflate 后按 `entry.offset` 切片 | wasm 解码 + 按 `folder.sizes` 切片 |
+| `write(bytes, force)` | Host 路由 `extract` | Host 路由 `write`（base64，浏览器已解码） | Host 路由 `write`（base64，浏览器已解码） |
+| `check()` / `addressOf()` | 路由 `check` + `extractedAddress` | 同左 | 同左 |
+
+tar 条目的 `offset` 指向 **解压后的数据**，不是 zip 的局部文件头；因此 tar 读取不能走
+`readEntryBytesFromUrl`，而必须在 inflate 后的 buffer 上切片。tar 的写盘和 7z 一样走
+浏览器解码后的 `write` 动作。
 
 列表额外需要 `onReextract` / `onClean` 两个回调——**不要**在组件内部假设解压由谁执行。
 

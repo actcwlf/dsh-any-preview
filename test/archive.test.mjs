@@ -5,6 +5,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { gunzipSync } from 'node:zlib'
 import { decodeText, findEocd, inflateRaw, localDataStart, parseTar, parseZipDirectory, zipDirectoryRange } from '../src/shared/zip/parse.ts'
 import { cleanExtractionDir, extractEntryTo, extractedPathOf, safeEntryName, writeEntryBytesTo } from '../src/host/extract-route.ts'
+import { readTarEntryBytesFromUrl } from '../src/client/kernel/zip.ts'
 import { defaultTargetDir, extractedAddress } from '../src/client/previews/archive/paths.ts'
 import { safeEntryPath } from '../src/shared/archive-paths.ts'
 
@@ -48,6 +49,21 @@ test('a tar header reports its size in octal', { skip: !available }, () => {
   const csv = entries.find(entry => entry.name.endsWith('data.csv'))
   assert.equal(csv?.size, 7)
   assert.equal(csv?.directory, false)
+})
+
+test('a tar.gz member is read from its inflated data offset', { skip: !available }, async () => {
+  const bytes = new Uint8Array(readFileSync(TGZ))
+  const entries = parseTar(new Uint8Array(gunzipSync(bytes)))
+  const csv = entries.find(entry => entry.name.endsWith('data.csv'))
+  assert.ok(csv, 'data.csv listed')
+  const original = globalThis.fetch
+  globalThis.fetch = async () => new Response(bytes)
+  try {
+    const data = await readTarEntryBytesFromUrl('http://127.0.0.1:4233/file.tar.gz', csv, bytes.length)
+    assert.equal(new TextDecoder().decode(data), 'a,b\n1,2')
+  } finally {
+    globalThis.fetch = original
+  }
 })
 
 test('a deflated member inflates back to its text', { skip: !available }, async () => {

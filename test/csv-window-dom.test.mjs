@@ -35,6 +35,10 @@ const hugeAvailable = available && existsSync(hugeCsv)
 const archiveZip = new URL('../../samples/bundle.zip', import.meta.url)
 const archiveAvailable = available && existsSync(archiveZip)
 
+/** The same members packed as tar.gz, for the tar-specific read path. */
+const archiveTar = new URL('../../samples/bundle.tar.gz', import.meta.url)
+const tarAvailable = available && existsSync(archiveTar)
+
 const React = available ? anchorRequire('react') : undefined
 /**
  * `react-dom` must be required *after* the DOM globals exist: it captures
@@ -164,10 +168,11 @@ function installArchiveHost(bytes) {
 
 /**
  * Mount the archive seat at a sidebar width that forces the toolbar overflow.
- * @param {Uint8Array} bytes - the zip fixture.
+ * @param {Uint8Array} bytes - the archive fixture.
+ * @param {string} [archivePath] - absolute path the owner reports.
  * @returns {Promise<object>} the mounted view.
  */
-async function mountArchive(bytes) {
+async function mountArchive(bytes, archivePath = 'F:/DSH/workspace/ext_preview/samples/bundle.zip') {
   const { window, component } = await mountPreview('dsh-any-preview/archive')
   Object.defineProperty(window.HTMLElement.prototype, 'clientWidth', {
     configurable: true,
@@ -177,15 +182,16 @@ async function mountArchive(bytes) {
   const root = createRoot(container)
   const useResource = () => ({
     value: {
-      absolutePath: 'F:/DSH/workspace/ext_preview/samples/bundle.zip',
+      absolutePath: archivePath,
       version: 'v1',
       size: bytes.length,
     },
   })
+  const address = `dsh-resource://file/session/s/${archivePath.replace(/^.*?samples\//u, 'samples/')}`
   await act(async () => {
     root.render(React.createElement(component, {
       content: { kind: 'renderer', loaded: () => {} },
-      resourceAddress: 'dsh-resource://file/session/s/samples/bundle.zip',
+      resourceAddress: address,
       wrap: false,
       useResource,
     }))
@@ -720,6 +726,34 @@ test('archive rows are keyboard reachable and open a single embedded chrome', { 
   assert.ok(back, 'the embedded entry has a back button')
   await act(async () => back.click())
   assert.ok(await waitFor(() => view.container.querySelector('[data-archive-row="file"]') !== null), 'back returns to the list')
+})
+
+test('a tar.gz member opens from the inflated data offset', { skip: !tarAvailable }, async (t) => {
+  const bytes = new Uint8Array(readFileSync(archiveTar))
+  const host = installArchiveHost(bytes)
+  const view = await mountArchive(bytes, 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz')
+  t.after(async () => {
+    await view.dispose()
+    host.restore()
+  })
+
+  const rows = [...view.container.querySelectorAll('[data-archive-row="file"]')]
+  const row = rows.find(candidate => (candidate.textContent ?? '').includes('data.csv'))
+  assert.ok(row, 'the tar.gz member is listed')
+
+  await act(async () => {
+    row.focus()
+    row.dispatchEvent(new view.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  assert.ok(await waitFor(() => view.container.querySelector('[data-preview-back]') !== null), 'the tar member opens')
+  const cells = () => [...view.container.querySelectorAll('th, td')].map(cell => cell.textContent ?? '')
+  assert.ok(
+    await waitFor(() => {
+      const values = cells()
+      return values.includes('a') && values.includes('b') && values.includes('1') && values.includes('2')
+    }),
+    'the member bytes, not the gzip header, are rendered',
+  )
 })
 
 test('the archive overflow menu portals to the document body and closes on Escape', { skip: !archiveAvailable }, async (t) => {

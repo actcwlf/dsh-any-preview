@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Client-side zip/tar IO: ranged reads over the shared file route, directory
  * listing, and per-entry expansion.
  *
@@ -129,6 +129,44 @@ export async function listTarEntries(url: string, size: number): Promise<Archive
   const bytes = await readAll(url)
   const gzipped = bytes[0] === 0x1f && bytes[1] === 0x8b
   return parseTar(gzipped ? await gunzip(bytes) : bytes)
+}
+
+/**
+ * Read one tar member from its container.
+ *
+ * A tar entry's `offset` points at the payload, not at a zip-style local header.
+ * Gzipped containers must be inflated before that offset is meaningful, so the
+ * whole archive is read and inflated; the caller's archive-size cap keeps this
+ * bounded.
+ * @param url - file URL.
+ * @param entry - member listed by {@link parseTar}.
+ * @param archiveSize - size from metadata, used before reading the whole file.
+ * @param maxBytes - expanded-member cap.
+ * @returns the member payload.
+ */
+export async function readTarEntryBytesFromUrl(
+  url: string,
+  entry: ArchiveEntry,
+  archiveSize = 0,
+  maxBytes = MAX_ENTRY_BYTES,
+): Promise<Uint8Array> {
+  if (entry.size > maxBytes) {
+    throw previewError('zip.entryTooLarge', { size: formatBytes(entry.size), limit: formatBytes(maxBytes) })
+  }
+  if (archiveSize > MAX_WHOLE_BYTES) {
+    throw previewError('zip.tooLarge', { size: formatBytes(archiveSize), limit: formatBytes(MAX_WHOLE_BYTES) })
+  }
+  const bytes = await readAll(url)
+  if (bytes.length > MAX_WHOLE_BYTES) {
+    throw previewError('zip.tooLarge', { size: formatBytes(bytes.length), limit: formatBytes(MAX_WHOLE_BYTES) })
+  }
+  const gzipped = bytes[0] === 0x1f && bytes[1] === 0x8b
+  const data = gzipped ? await gunzip(bytes) : bytes
+  const end = entry.offset + entry.size
+  if (entry.offset < 0 || end > data.length) {
+    throw new Error('tar entry is outside the archive')
+  }
+  return data.subarray(entry.offset, end)
 }
 
 /**
