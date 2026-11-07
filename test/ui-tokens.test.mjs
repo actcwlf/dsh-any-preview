@@ -16,4 +16,8 @@ test('chrome typography uses the shared 13/20 and 12/16 roles', () => {
   assert.equal(TEXT.chrome.lineHeight, '20px')
   assert.equal(TEXT.meta.fontSize, 12)
   assert.equal(TEXT.meta.lineHeight, '16px')
+  assert.equal(TEXT.table.fontSize, 12)
+  assert.equal(TEXT.table.lineHeight, '18px')
+  assert.equal(TEXT.caption.fontSize, 11)
+  assert.equal(TEXT.caption.lineHeight, '16px')
 })

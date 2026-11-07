@@ -8,6 +8,7 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { TEXT } from '../../kernel/ui.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { readRange } from '../../kernel/zip.ts'
@@ -128,7 +129,8 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
 }
 
 const sectionTitle = {
-  fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)',
+  fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
+  fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)',
   textTransform: 'uppercase' as const, letterSpacing: 0.4, marginBottom: 4,
 } as const
 

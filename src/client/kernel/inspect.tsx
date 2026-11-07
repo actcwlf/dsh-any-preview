@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Shared presentation for the metadata inspectors (SafeTensors, GGUF, SQLite).
  *
  * These formats are not rendered as content: the body reads a bounded header
@@ -7,6 +7,7 @@
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
+import { TEXT } from './ui.ts'
 
 /** One summary fact shown above the content. */
 export interface InspectField {
@@ -78,29 +79,41 @@ export function KeyValueTable({ entries }: { readonly entries: readonly (readonl
 }
 
 const summaryStyle = {
-  display: 'flex', flexWrap: 'wrap' as const, gap: 6, padding: '8px 12px',
+  boxSizing: 'border-box' as const,
+  display: 'flex', alignItems: 'center', flexWrap: 'nowrap' as const,
+  gap: 6, height: 32, padding: '0 16px',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
+  whiteSpace: 'nowrap' as const,
 } as const
 
 const chipStyle = {
-  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px',
-  borderRadius: 999, background: 'var(--dsw-alias-bg-layer-2)', fontSize: 11,
+  display: 'inline-flex', alignItems: 'center', gap: 5, flex: '0 0 auto',
+  height: 20, padding: '0 8px', borderRadius: 999,
+  background: 'var(--dsw-alias-bg-layer-2)',
+  fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
 } as const
 
 const chipLabelStyle = { color: 'var(--dsw-alias-label-tertiary)' } as const
 const chipValueStyle = { color: 'var(--dsw-alias-label-primary)', fontWeight: 600 } as const
 
-const tableStyle = { borderCollapse: 'collapse' as const, width: '100%', fontSize: 12 } as const
+const tableStyle = {
+  borderCollapse: 'collapse' as const, width: '100%',
+  fontSize: TEXT.table.fontSize, lineHeight: TEXT.table.lineHeight,
+} as const
 const thStyle = {
   position: 'sticky' as const, top: 0, padding: '4px 10px', fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)', whiteSpace: 'nowrap' as const,
+  lineHeight: TEXT.table.lineHeight,
 } as const
 const tdStyle = {
   padding: '3px 10px', color: 'var(--dsw-alias-label-primary)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l1)', whiteSpace: 'nowrap' as const,
+  lineHeight: TEXT.table.lineHeight,
 } as const
 
 const noteStyle = {
-  padding: '8px 12px', fontSize: 11, color: 'var(--dsw-alias-label-tertiary)',
+  padding: '8px 16px', fontSize: TEXT.caption.fontSize,
+  lineHeight: TEXT.caption.lineHeight, color: 'var(--dsw-alias-label-tertiary)',
 } as const

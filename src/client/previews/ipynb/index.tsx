@@ -1,6 +1,7 @@
 /** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { TEXT } from '../../kernel/ui.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
@@ -68,7 +69,8 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
 }
 
 const cellLabel = {
-  fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2,
+  fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
+  color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2,
   fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
 } as const
 

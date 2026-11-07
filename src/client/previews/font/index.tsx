@@ -1,6 +1,7 @@
 /** Font preview: load the file into a FontFace and draw a specimen. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { TEXT } from '../../kernel/ui.ts'
 import { errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -64,7 +65,7 @@ export function FontBody({ content }: PreviewBodyProps) {
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '12px 16px' }}>
         {SIZES.map(size => (
           <div key={size} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2 }}>
+            <div style={{ fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2 }}>
               {size}px
             </div>
             <div style={{ fontFamily: FAMILY, fontSize: size, lineHeight: 1.35, color: 'var(--dsw-alias-label-primary)' }}>
@@ -72,7 +73,7 @@ export function FontBody({ content }: PreviewBodyProps) {
             </div>
           </div>
         ))}
-        <div style={{ marginTop: 18, fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 6 }}>
+        <div style={{ marginTop: 18, fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 6 }}>
           {t('font.glyphs')}
         </div>
         <div style={{

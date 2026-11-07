@@ -30,6 +30,7 @@ export const CHROME = {
 export const TEXT = {
   chrome: { fontSize: 13, lineHeight: '20px' },
   meta: { fontSize: 12, lineHeight: '16px' },
+  table: { fontSize: 12, lineHeight: '18px' },
   code: { fontSize: 12, lineHeight: '18px' },
   caption: { fontSize: 11, lineHeight: '16px' },
 } as const

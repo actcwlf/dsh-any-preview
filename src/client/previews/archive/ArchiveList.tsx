@@ -89,6 +89,7 @@ const SMALL = {
 } as const
 const TABLE = {
   borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12,
+  lineHeight: '18px',
 } as const
 const HEADER = {
   position: 'sticky' as const, top: 0, padding: '5px 12px', textAlign: 'left' as const, fontWeight: 600,
@@ -96,6 +97,6 @@ const HEADER = {
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 const CELL = {
-  padding: '4px 12px', fontFamily: 'var(--dsw-font-family)', fontSize: 12,
+  padding: '4px 12px', fontFamily: 'var(--dsw-font-family)', fontSize: 12, lineHeight: '18px',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const

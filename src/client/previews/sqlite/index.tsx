@@ -4,6 +4,7 @@
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { TEXT } from '../../kernel/ui.ts'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -138,11 +139,13 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
 
 const objectTitle = {
   display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4,
-  fontSize: 12, fontWeight: 600, color: 'var(--dsw-alias-label-primary)',
+  fontSize: TEXT.meta.fontSize, lineHeight: TEXT.meta.lineHeight,
+  fontWeight: 600, color: 'var(--dsw-alias-label-primary)',
 } as const
 
 const typeBadge = {
-  fontSize: 10, padding: '0 5px', borderRadius: 4,
+  fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
+  padding: '0 5px', borderRadius: 4,
   color: 'var(--dsw-alias-label-secondary)', background: 'var(--dsw-alias-bg-layer-2)',
 } as const
 

@@ -592,3 +592,13 @@ test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !huge
   assert.match(tail[tail.length - 1].cells[2] ?? '', /^user_300000$/u, 'the file ends here')
 })
 
+test('the shared chrome keeps a fixed 38px bar', { skip: !available }, async (t) => {
+  const { component } = await mountCsv()
+  const view = await render(component, 'id,name\n1,alpha\n')
+  t.after(view.dispose)
+  const bar = view.container.querySelector('[data-preview-chrome="bar"]')
+  assert.ok(bar, 'the preview chrome bar is mounted')
+  assert.equal(bar.style.height, '38px')
+  assert.match(bar.textContent ?? '', /CSV/u)
+})
+

@@ -221,7 +221,7 @@ export function parseMarkdownBlocks(text: string): Block[] {
 }
 
 const paragraphStyle = { margin: '6px 0', lineHeight: 1.7, color: 'var(--dsw-alias-label-primary)' } as const
-const tableStyle = { borderCollapse: 'collapse' as const, fontSize: 12, width: '100%' } as const
+const tableStyle = { borderCollapse: 'collapse' as const, fontSize: 12, lineHeight: '18px', width: '100%' } as const
 const thStyle = {
   padding: '4px 10px', textAlign: 'left' as const, fontWeight: 600,
   color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',

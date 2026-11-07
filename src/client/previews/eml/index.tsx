@@ -33,7 +33,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   return (
     <PreviewChrome kind="EML" title={subject === '' ? t('eml.title') : subject}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 14px' }} ref={scrollportRef}>
-        <table style={{ borderCollapse: 'collapse', fontSize: 12, marginBottom: 14 }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 12, lineHeight: '18px', marginBottom: 14 }}>
           <tbody>
             {ordered.map((header, index) => (
               <tr key={`${header.name}-${String(index)}`}>

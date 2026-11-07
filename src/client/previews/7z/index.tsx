@@ -137,7 +137,10 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
 const TABLE = { width: '100%', borderCollapse: 'collapse' } as const
 const ROW = { borderBottom: '0.5px solid var(--dsw-alias-border-l2)' } as const
 const ROW_DIRECTORY = { ...ROW, color: 'var(--dsw-alias-label-tertiary)' } as const
-const CELL = { padding: '4px 12px', fontSize: 12, fontFamily: 'var(--dsw-font-family)' } as const
+const CELL = {
+  padding: '4px 12px', fontSize: 12, lineHeight: '18px',
+  fontFamily: 'var(--dsw-font-family)',
+} as const
 const LINK = {
   font: 'inherit', color: 'var(--dsw-alias-label-primary)', background: 'transparent',
   border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' as const,

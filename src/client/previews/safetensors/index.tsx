@@ -1,6 +1,7 @@
 /** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { TEXT } from '../../kernel/ui.ts'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -106,7 +107,8 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
 }
 
 const sectionTitle = {
-  fontSize: 11, fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)',
+  fontSize: TEXT.caption.fontSize, lineHeight: TEXT.caption.lineHeight,
+  fontWeight: 600, color: 'var(--dsw-alias-label-tertiary)',
   textTransform: 'uppercase' as const, letterSpacing: 0.4, marginBottom: 4,
 } as const
 

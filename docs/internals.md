@@ -303,9 +303,12 @@ UI 基线在 `kernel/ui.ts`：所有预览共用 38px `PreviewChrome`（与 DSH 
 传入，避免第二层 bar 和内容起点漂移。
 `PreviewChrome` 的左侧统一由 `PreviewTitle` 渲染：小号格式 badge（CSV/LOG/EPUB/3D…）
 加 13/20、500 字重的主标题；主标题可以是内容摘要、文件名或书名，但字号、字重和
-颜色不再由各预览自行决定。加载/错误状态用 `PreviewState` 保留同一根 38px bar；
+颜色不再由各预览自行决定。格式 badge 保留 ASCII 缩写，作为文件类型标识不翻译；
+本地化文案集中放在主标题/状态里。加载/错误状态用 `PreviewState` 保留同一根 38px bar；
 窄宽度下 Model/Archive/EPUB 用 `ToolbarOverflow`（⋯ 菜单）收纳次要控件，不再靠
 裁切；文本控件统一使用 `dsh-preview-control` 的 hover / focus-visible / disabled 状态。
+元数据检查器的 `Summary` 是固定 32px 的单行 strip（超出横向滚动），不再因 chip
+换行改变内容起点。
 
 ### 解码器与外部资源
 
