@@ -51,14 +51,19 @@ const COMPACT_WIDTH = 420
 export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   const embed = usePreviewEmbed()
+  const compact = width > 0 && width < COMPACT_WIDTH
+  const embedLabel = embed?.label !== undefined && embed.label !== '' ? embed.label : undefined
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
-  // shows the file name. A title-only preview keeps its label: dropping it would
-  // leave an empty 32px bar. A leading back button remains in compact mode.
-  const hasTitle = title !== undefined || (embed?.label !== undefined && embed.label !== '')
+  // shows the file name. An embedded entry keeps its member name even in compact
+  // mode: it is the only visible identity inside an archive.
+  const hasTitle = title !== undefined || embedLabel !== undefined
   const showTitle = hasTitle
-    && (toolbar !== undefined || width === 0 || width >= COMPACT_WIDTH)
-  const compact = width > 0 && width < COMPACT_WIDTH
+    && (embedLabel !== undefined || toolbar === undefined || width === 0 || width >= COMPACT_WIDTH)
+  const meta = embedLabel !== undefined && !compact ? title : undefined
+  const backLabel = embedLabel === undefined
+    ? t('common.back')
+    : `${t('common.back')} ${embedLabel}`
   const hasBar = showTitle || toolbar !== undefined || embed !== null
   return (
     // PANE_ROOT pins the shell to the owner's content box. A percentage height
@@ -85,8 +90,8 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
               className="dsh-preview-control"
               style={BACK_STYLE}
               onClick={embed.onBack}
-              title={t('common.back')}
-              aria-label={t('common.back')}
+              title={backLabel}
+              aria-label={backLabel}
               data-preview-back="true"
             >
               <BackIcon />
@@ -94,16 +99,8 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
           )}
           {showTitle && (
             <span style={CHROME_TITLE}>
-              <PreviewTitle kind={kind}>
-                {embed?.label !== undefined && embed.label !== ''
-                  ? (
-                    <>
-                      {embed.label}
-                      {title !== undefined && <span style={EMBED_SEPARATOR}> · </span>}
-                      {title}
-                    </>
-                  )
-                  : title}
+              <PreviewTitle kind={kind} meta={meta}>
+                {embedLabel ?? title}
               </PreviewTitle>
             </span>
           )}
@@ -146,9 +143,6 @@ const BACK_STYLE = {
   justifyContent: 'center',
 } as const
 
-const EMBED_SEPARATOR = {
-  color: 'var(--dsw-alias-label-tertiary)',
-} as const
 
 function BackIcon() {
   return (

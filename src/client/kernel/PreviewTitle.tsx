@@ -18,13 +18,18 @@ export interface PreviewTitleProps {
   readonly kind?: string
   /** File name or one-line content summary. */
   readonly children: ReactNode
+  /** Secondary summary shown after the primary label, e.g. a format summary. */
+  readonly meta?: ReactNode
 }
 
-export function PreviewTitle({ kind, children }: PreviewTitleProps) {
+export function PreviewTitle({ kind, children, meta }: PreviewTitleProps) {
   return (
     <span style={rootStyle}>
       {kind !== undefined && kind !== '' && <span style={kindStyle}>{kind}</span>}
-      <span style={primaryStyle}>{children}</span>
+      <span style={labelStyle}>
+        <span style={primaryStyle}>{children}</span>
+        {meta !== undefined && <span style={metaStyle}> · {meta}</span>}
+      </span>
     </span>
   )
 }
@@ -42,9 +47,21 @@ const kindStyle = {
   letterSpacing: '0.04em', textTransform: 'uppercase' as const,
 } as const
 
+const labelStyle = {
+  display: 'inline-flex', alignItems: 'baseline',
+  minWidth: 0, flex: '0 1 auto',
+} as const
+
 const primaryStyle = {
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap' as const,
+  whiteSpace: 'nowrap' as const, flex: '1 1 auto',
   fontSize: TEXT.chrome.fontSize, lineHeight: TEXT.chrome.lineHeight, fontWeight: 500,
   color: 'var(--dsw-alias-label-primary)',
+} as const
+
+const metaStyle = {
+  minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap' as const, flex: '0 1 auto',
+  fontSize: TEXT.meta.fontSize, lineHeight: TEXT.meta.lineHeight, fontWeight: 400,
+  color: 'var(--dsw-alias-label-tertiary)',
 } as const

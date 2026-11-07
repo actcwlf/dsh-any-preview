@@ -624,8 +624,9 @@ kernel/content-modules.ts        按扩展名挑"能只靠内容渲染"的预览
 28px 固定行高和 hover，操作结果用底部 toast（成功 4s、失败 6s 自动消失），
 不再把提示文字塞进工具栏；7z unsupported 是持久状态，走 bottom status 而不是 toast。
 条目页不再套第二层 Archive chrome：模块 Body 由 `PreviewEmbedContext` 提供 back/label，
-`PreviewChrome` 在左侧渲染返回按钮并把条目名拼进标题；`.txt` / hex / 解压 /
-loading/error 用单层 Entry shell（`TEXT` 或 `ARCHIVE`），因此压缩包成员不会再出现
+`PreviewChrome` 在左侧渲染返回按钮，并把条目名作为 13/500 primary、模块摘要作为
+12/400 tertiary meta；compact 下隐藏 meta，但条目名和返回按钮保留。`.txt` / hex /
+解压 / loading/error 用单层 Entry shell（`TEXT` 或 `ARCHIVE`），因此压缩包成员不会再出现
 两层 32px bar。
 
 ### 容器要提供的三件事
