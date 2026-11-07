@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, inspectImage, inspectPdf, inspectFont, inspectModel, inspectMedia, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, inspectImage, inspectPdf, inspectFont, inspectModel, inspectMedia, inspectOffice, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
 test('the delimiter is the one that appears most on the first line', () => {
@@ -185,6 +185,43 @@ function readerFor(name) {
   }
 }
 
+/** A tiny stored ZIP for the OOXML test; CRC values are not needed by the reader. */
+function storedZip(files) {
+  const locals = []
+  const central = []
+  let offset = 0
+  for (const [name, text] of Object.entries(files)) {
+    const nameBytes = Buffer.from(name)
+    const data = Buffer.from(text)
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)
+    local.writeUInt32LE(data.length, 18)
+    local.writeUInt32LE(data.length, 22)
+    local.writeUInt16LE(nameBytes.length, 26)
+    locals.push(local, nameBytes, data)
+
+    const entry = Buffer.alloc(46)
+    entry.writeUInt32LE(0x02014b50, 0)
+    entry.writeUInt16LE(20, 4)
+    entry.writeUInt16LE(20, 6)
+    entry.writeUInt32LE(data.length, 20)
+    entry.writeUInt32LE(data.length, 24)
+    entry.writeUInt16LE(nameBytes.length, 28)
+    entry.writeUInt32LE(offset, 42)
+    central.push(entry, nameBytes)
+    offset += local.length + nameBytes.length + data.length
+  }
+  const directorySize = central.reduce((sum, part) => sum + part.length, 0)
+  const eocd = Buffer.alloc(22)
+  eocd.writeUInt32LE(0x06054b50, 0)
+  eocd.writeUInt16LE(Object.keys(files).length, 8)
+  eocd.writeUInt16LE(Object.keys(files).length, 10)
+  eocd.writeUInt32LE(directorySize, 12)
+  eocd.writeUInt32LE(offset, 16)
+  return Buffer.concat([...locals, ...central, eocd])
+}
+
 test('a JSONL result reports objects, fields and invalid lines', () => {
   const text = '{"a":1,"b":"x"}\n{"a":2}\nnot json\n'
   const result = inspectJsonl(new TextEncoder().encode(text), false)
@@ -201,6 +238,20 @@ test('a zip result reports counts and the largest members', async () => {
   assert.match(result.summary, /ZIP/u)
   assert.ok(result.facts.some(fact => fact.startsWith('files:')))
   assert.ok(result.schema.length > 0)
+})
+
+test('an OOXML package reports its document kind', async () => {
+  const zip = storedZip({
+    '[Content_Types].xml': '<Types/>',
+    'word/document.xml': '<w:document/>',
+    'word/styles.xml': '<w:styles/>',
+  })
+  const bytes = new Uint8Array(zip)
+  const result = await inspectOffice(bytes.length, async (offset, length) => bytes.slice(offset, offset + length))
+  assert.equal(result.kind, 'docx')
+  assert.match(result.summary, /Word document/u)
+  assert.ok(result.facts.includes('main part: word/document.xml'))
+  assert.ok(result.schema.includes('word/styles.xml'))
 })
 
 test('a tar.gz result lists members after inflate', async () => {
@@ -432,4 +483,15 @@ test('the registered tool selects the tar inspector for tar.gz', async () => {
   tool.dispose()
   assert.equal(result.kind, 'tar')
   assert.equal(result.capability, 'inspected')
+})
+
+test('the registered tool inspects a 7z member without extracting it', async () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'sample-noheader.7z')))
+  const tool = toolFor(bytes)
+  const result = await tool.execute({ path: '/w/sample.7z!/alpha.txt' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'code')
+  assert.equal(result.capability, 'preview-only')
+  assert.ok(result.facts.some(fact => fact === 'archive: sample.7z'))
+  assert.ok(result.facts.some(fact => fact === 'entry: alpha.txt'))
 })

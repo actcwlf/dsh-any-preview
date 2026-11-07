@@ -29,6 +29,8 @@ import { parseRst } from '../shared/inspect/rst.ts'
 import { isEncodedHeader, parseEncodedHeader, parseHeader, readLayout } from '../shared/sevenzip/structure.ts'
 import { decodeFolder } from '../shared/sevenzip/decode.ts'
 import type { Decoder } from '../shared/sevenzip/decode.ts'
+import { canDecode } from '../shared/sevenzip/decode.ts'
+import type { SevenZipArchive } from '../shared/sevenzip/structure.ts'
 import { outlineOf } from '../shared/inspect/document.ts'
 import { findEocd, parseTar, parseZipDirectory, u16, u32, zipEntryBytes } from '../shared/zip/parse.ts'
 
@@ -55,7 +57,7 @@ const PARAMETERS = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Absolute file path, or archive path with !/member for zip/tar.' },
+    path: { type: 'string', description: 'Absolute file path, or archive path with !/member for zip/tar/7z.' },
   },
 } as const
 
@@ -343,7 +345,7 @@ export function inspectImage(bytes: Uint8Array, size: number): InspectResult {
     ],
     schema: [],
     notes: [],
-    next: ['在面板中打开图片预览查看像素'],
+    next: ['在面板中打开图片预览查看像素；颜色/ICC 等细节用短脚本或图像库读取'],
     truncated: false,
   }
 }
@@ -364,7 +366,7 @@ export function inspectPdf(bytes: Uint8Array, size: number): InspectResult {
     facts: [`version: ${version}`, `size: ${sizeFact(size)}`],
     schema: [],
     notes: [],
-    next: ['在面板中打开 PDF 预览查看页面'],
+    next: ['在面板中打开 PDF 预览；页文本用 PDF 库或 read 获取'],
     truncated: false,
   }
 }
@@ -408,7 +410,7 @@ export function inspectFont(bytes: Uint8Array, size: number): InspectResult {
     ],
     schema: tables.slice(0, MAX_ITEMS),
     notes: [],
-    next: ['在面板中打开字体预览查看字样'],
+    next: ['在面板中打开字体预览；字形细节用 fontTools 等库读取'],
     truncated: false,
   }
 }
@@ -460,7 +462,7 @@ export function inspectModel(bytes: Uint8Array, size: number): InspectResult {
     ],
     schema: nodes.slice(0, MAX_ITEMS).map(node => node.name ?? '(unnamed)'),
     notes: [],
-    next: ['在面板中打开 3D 预览查看模型'],
+    next: ['在面板中打开 3D 预览；几何/包围盒用模型库读取'],
     truncated: false,
   }
 }
@@ -498,7 +500,7 @@ export function inspectMedia(bytes: Uint8Array, size: number): InspectResult {
     facts: [`container: ${format}`, ...facts, `size: ${sizeFact(size)}`],
     schema: [],
     notes: ['Codec and duration probing are not part of preview_inspect.'],
-    next: ['在面板中打开媒体预览播放'],
+    next: ['在面板中打开媒体预览；codec/时长用 ffprobe 等工具读取'],
     truncated: false,
   }
 }
@@ -1197,11 +1199,12 @@ async function inspectArchiveEntry(
     throw new Error(`archive: ${formatBytes(size)} exceeds the ${formatBytes(LIMITS.archiveWhole)} cap`)
   }
   const lower = archivePath.replaceAll('\\', '/').toLowerCase()
-  const raw = await read(0, size)
   let bytes: Uint8Array
   if (lower.endsWith('.zip')) {
+    const raw = await read(0, size)
     bytes = await zipEntryBytes(raw, entryName, inflateRawSync)
   } else if (lower.endsWith('.tar') || lower.endsWith('.tgz') || lower.endsWith('.tar.gz')) {
+    const raw = await read(0, size)
     const gzipped = raw[0] === 0x1f && raw[1] === 0x8b
     const data = gzipped
       ? new Uint8Array(gunzipSync(raw, { maxOutputLength: LIMITS.archiveWhole }))
@@ -1213,9 +1216,10 @@ async function inspectArchiveEntry(
     if (entry === undefined) throw new Error(`archive: no ${entryName}`)
     if (entry.directory) throw new Error(`archive: ${entryName} is a directory`)
     bytes = data.subarray(entry.offset, entry.offset + entry.size)
+  } else if (lower.endsWith('.7z')) {
+    bytes = await inspectSevenZipMember(size, read, entryName)
   } else {
-    throw new Error('archive: only zip and tar members are supported')
-  }
+    throw new Error('archive: only zip, tar and 7z members are supported')  }
   if (bytes.length > LIMITS.archiveEntry) {
     throw new Error(`archive: member ${formatBytes(bytes.length)} exceeds the ${formatBytes(LIMITS.archiveEntry)} cap`)
   }
@@ -1383,8 +1387,8 @@ async function sevenZipDecoder(): Promise<Decoder> {
   return cachedDecoder
 }
 
-/** Describe a 7z archive: entries, sizes, and whether it can be opened. */
-async function inspectSevenZip(read: Reader): Promise<InspectResult> {
+/** Read and parse a 7z archive header, decoding an encoded header when needed. */
+async function readSevenZipArchive(read: Reader): Promise<SevenZipArchive> {
   const layout = readLayout(await read(0, 32))
   if (layout === undefined) throw new Error('not a 7z archive (signature mismatch)')
 
@@ -1402,7 +1406,39 @@ async function inspectSevenZip(read: Reader): Promise<InspectResult> {
 
   const archive = parseHeader(header)
   if (archive === undefined) throw new Error('7z: header could not be parsed')
+  return archive
+}
 
+/** Decode one member from a 7z archive; solid folders decode as a whole. */
+async function inspectSevenZipMember(size: number, read: Reader, entryName: string): Promise<Uint8Array> {
+  if (size > LIMITS.archiveWhole) {
+    throw new Error(`7z: ${formatBytes(size)} exceeds the ${formatBytes(LIMITS.archiveWhole)} cap`)
+  }
+  const archive = await readSevenZipArchive(read)
+  if (archive.encrypted) throw new Error('7z: encrypted archive cannot be decoded')
+  const wanted = entryName.replaceAll('\\', '/').replace(/^\.\//u, '')
+  const entry = archive.entries.find(candidate => (
+    candidate.name.replaceAll('\\', '/').replace(/^\.\//u, '') === wanted
+  ))
+  if (entry === undefined) throw new Error(`7z: no ${entryName}`)
+  if (entry.directory) throw new Error(`7z: ${entryName} is a directory`)
+  const folder = archive.folders[entry.folder]
+  const fallback = archive.packStreams[0]
+  if (folder === undefined || fallback === undefined) throw new Error('7z: entry has no stream')
+  if (!canDecode(folder)) throw new Error('7z: unsupported coder chain (AES or filters)')
+  const packs = await Promise.all(folder.packs.map(index => {
+    const stream = archive.packStreams[index] ?? fallback
+    return read(32 + stream.offset, stream.size)
+  }))
+  const output = decodeFolder(await sevenZipDecoder(), folder, packs)
+  let offset = 0
+  for (let index = 0; index < entry.stream; index += 1) offset += folder.sizes[index] ?? 0
+  return output.slice(offset, offset + entry.size)
+}
+
+/** Describe a 7z archive: entries, sizes, and whether it can be opened. */
+async function inspectSevenZip(read: Reader): Promise<InspectResult> {
+  const archive = await readSevenZipArchive(read)
   const files = archive.entries.filter(entry => !entry.directory)
   const total = files.reduce((sum, entry) => sum + entry.size, 0)
   const largest = [...files].sort((a, b) => b.size - a.size).slice(0, MAX_ITEMS)

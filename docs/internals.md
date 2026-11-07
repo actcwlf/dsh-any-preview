@@ -517,9 +517,29 @@ ctx.inject(['tools'], (toolsCtx) => {
 （HTML / Markdown / 代码 / 旧版 Office / OBJ / STL / log）返回 `preview-only`，
 而不是报错；完全无法识别的文件返回 `unknown`。未知扩展名会先读最多 1 KB 做
 magic 探测，命中 ZIP / TAR / 7z / SQLite / GGUF / 图片 / PDF / GLB / 媒体时仍走
-对应 inspector。`path` 可用 `archive.zip!/member` 或 `archive.tar.gz!/member`
-语法直接检查 ZIP/TAR 成员，不必先解压。只读窗口：二进制 4 MB、文本 1 MB；输出
-有界（各 ≤ 20 项）。
+对应 inspector。`path` 可用 `archive.zip!/member`、`archive.tar.gz!/member` 或
+`archive.7z!/member` 语法直接检查归档成员，不必先解压。只读窗口：二进制 4 MB、
+文本 1 MB；输出有界（各 ≤ 20 项）。
+
+### 范围边界（冻结）
+
+`preview_inspect` 是 triage，不是通用文件分析器。新增格式前先问：
+
+```text
+agent 用 10 行代码 + 标准库能否可靠完成？
+```
+
+如果能，就不应再扩进 tool。只有满足以下之一才值得新增：
+
+- 二进制头/偏移表/压缩头，临时写解析器容易错；
+- 文件很大，必须采样而不是全读；
+- 需要统一的安全边界和大小上限；
+- 需要从压缩包内直接读取成员；
+- 常见库不一定安装。
+
+因此后续不再扩 Markdown / HTML / log / 普通代码 outline；这些用 `read`、`grep`
+或短脚本完成。资源集中在 GGUF / SafeTensors / 7z / Office OOXML / 大文件采样 /
+archive member；图片、PDF、字体、glTF、媒体只保留现有浅层元数据，不再加深。
 
 ### 大 CSV 报什么
 
