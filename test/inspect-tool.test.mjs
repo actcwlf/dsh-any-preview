@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 
 test('the delimiter is the one that appears most on the first line', () => {
@@ -203,6 +203,35 @@ test('a zip result reports counts and the largest members', async () => {
   assert.ok(result.schema.length > 0)
 })
 
+test('a tar.gz result lists members after inflate', async () => {
+  const { size, read } = readerFor('bundle.tar.gz')
+  const result = await inspectTar(size, read)
+  assert.equal(result.kind, 'tar')
+  assert.match(result.summary, /TAR\.GZ/u)
+  assert.ok(result.facts.some(fact => fact === 'files: 2'))
+  assert.ok(result.schema.some(line => line.includes('data.csv')))
+})
+
+test('an email result reports headers and attachment names', () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'mail.eml')))
+  const result = inspectEml(bytes)
+  assert.equal(result.kind, 'eml')
+  assert.match(result.summary, /Email/u)
+  assert.ok(result.facts.some(fact => fact.startsWith('from: Ada Lovelace')))
+  assert.ok(result.facts.includes('attachments: 1'))
+  assert.ok(result.schema.includes('report.pdf'))
+})
+
+test('a diff result reports files, hunks and line counts', () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'sample.patch')))
+  const result = inspectDiff(bytes)
+  assert.equal(result.kind, 'diff')
+  assert.equal(result.facts.find(fact => fact.startsWith('files:')), 'files: 2')
+  assert.equal(result.facts.find(fact => fact.startsWith('hunks:')), 'hunks: 2')
+  assert.ok(result.schema.includes('src/greet.ts'))
+  assert.ok(result.schema.includes('README.md'))
+})
+
 test('a SQLite result reports schema objects', async () => {
   const { read } = readerFor('sample.db')
   const result = await inspectSqlite(read)
@@ -324,4 +353,34 @@ test('the registered tool reports an unknown binary without throwing', async () 
   tool.dispose()
   assert.equal(result.kind, 'unknown')
   assert.equal(result.capability, 'unknown')
+})
+
+test('the registered tool inspects a zip member without extracting it', async () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'bundle.zip')))
+  const tool = toolFor(bytes)
+  const result = await tool.execute({ path: '/w/bundle.zip!/data.csv' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'csv')
+  assert.equal(result.capability, 'inspected')
+  assert.ok(result.facts.some(fact => fact === 'entry: data.csv'))
+  assert.match(result.summary, /in bundle\.zip/u)
+})
+
+test('the registered tool inspects a tar.gz member without extracting it', async () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'bundle.tar.gz')))
+  const tool = toolFor(bytes)
+  const result = await tool.execute({ path: '/w/bundle.tar.gz!/data.csv' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'csv')
+  assert.equal(result.capability, 'inspected')
+  assert.ok(result.facts.some(fact => fact === 'entry: data.csv'))
+})
+
+test('the registered tool selects the tar inspector for tar.gz', async () => {
+  const bytes = new Uint8Array(readFileSync(join(samples, 'bundle.tar.gz')))
+  const tool = toolFor(bytes)
+  const result = await tool.execute({ path: '/w/bundle.tar.gz' }, {})
+  tool.dispose()
+  assert.equal(result.kind, 'tar')
+  assert.equal(result.capability, 'inspected')
 })

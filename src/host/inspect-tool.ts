@@ -9,7 +9,8 @@
  * Scope: workspace files, read through the same fs service the previews use. The
  * read itself is not fenced to the workspace — see docs/security-notes.md.
  */
-import { extname, isAbsolute, join } from 'node:path'
+import { basename, extname, isAbsolute, join } from 'node:path'
+import { gunzipSync, inflateRawSync } from 'node:zlib'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
 import { parseNotebook } from '../client/previews/ipynb/parse.ts'
@@ -19,6 +20,8 @@ import { detectDelimiter } from '../client/previews/csv/detect.ts'
 import { createRowParser } from '../client/kernel/text-pipeline.ts'
 import { countNewlines } from '../client/kernel/lines.ts'
 import { formatBytes } from '../client/kernel/format.ts'
+import { parseEml } from '../client/previews/eml/parse.ts'
+import { classifyDiffLine } from '../client/previews/diff/parse.ts'
 import { LIMITS } from '../shared/limits.ts'
 import { densitySpread, rowLengthRange, rowsAt } from '../shared/inspect/density.ts'
 import type { DensityProbe } from '../shared/inspect/density.ts'
@@ -27,7 +30,7 @@ import { isEncodedHeader, parseEncodedHeader, parseHeader, readLayout } from '..
 import { decodeFolder } from '../shared/sevenzip/decode.ts'
 import type { Decoder } from '../shared/sevenzip/decode.ts'
 import { outlineOf } from '../shared/inspect/document.ts'
-import { findEocd, parseZipDirectory, u16, u32 } from '../shared/zip/parse.ts'
+import { findEocd, parseTar, parseZipDirectory, u16, u32, zipEntryBytes } from '../shared/zip/parse.ts'
 
 /** Header window for binary formats. */
 const HEAD_BYTES = 4 * 1024 * 1024
@@ -52,7 +55,7 @@ const PARAMETERS = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Absolute path of the file to inspect.' },
+    path: { type: 'string', description: 'Absolute file path, or archive path with !/member for zip/tar.' },
   },
 } as const
 
@@ -685,6 +688,266 @@ async function inspectZip(size: number, read: Reader): Promise<InspectResult> {
   }
 }
 
+/**
+ * Describe a tar / tar.gz archive from its whole payload.
+ *
+ * Tar has no random-access directory, so this is the one inspector that reads
+ * the container whole; the archive cap keeps it bounded.
+ * @param size - archive size in bytes.
+ * @param read - reader over the file.
+ * @returns the archive summary.
+ */
+export async function inspectTar(size: number, read: Reader): Promise<InspectResult> {
+  if (size === 0) throw new Error('tar: file is empty')
+  if (size > LIMITS.archiveWhole) {
+    throw new Error(`tar: ${formatBytes(size)} exceeds the ${formatBytes(LIMITS.archiveWhole)} cap`)
+  }
+  const raw = await read(0, size)
+  const gzipped = raw[0] === 0x1f && raw[1] === 0x8b
+  const bytes = gzipped
+    ? new Uint8Array(gunzipSync(raw, { maxOutputLength: LIMITS.archiveWhole }))
+    : raw
+  const entries = parseTar(bytes)
+  if (entries.length === 0) throw new Error('tar: no members found')
+  const files = entries.filter(entry => !entry.directory)
+  const total = files.reduce((sum, entry) => sum + entry.size, 0)
+  const largest = [...files].sort((a, b) => b.size - a.size).slice(0, MAX_ITEMS)
+  const notes: string[] = []
+  if (entries.length > MAX_ITEMS) notes.push(`${String(entries.length)} entries, first ${String(MAX_ITEMS)} listed`)
+  if (gzipped) notes.push('gzip compressed; the listed offsets are in the inflated tar')
+  return {
+    kind: 'tar',
+    summary: `${gzipped ? 'TAR.GZ' : 'TAR'} · ${String(files.length)} files · ${(total / 1024).toFixed(1)} KB uncompressed`,
+    facts: [
+      `entries: ${String(entries.length)}`,
+      `files: ${String(files.length)}`,
+      `directories: ${String(entries.length - files.length)}`,
+      `uncompressed total: ${(total / 1024).toFixed(1)} KB`,
+    ],
+    schema: largest.map(entry => `${entry.name}: ${(entry.size / 1024).toFixed(0)} KB`),
+    notes,
+    next: ['在面板中打开压缩包可直接浏览条目'],
+    truncated: entries.length > MAX_ITEMS,
+  }
+}
+
+/**
+ * Describe an OOXML package (docx/xlsx/pptx) from its ZIP central directory.
+ * @param size - package size in bytes.
+ * @param read - reader over the file.
+ * @returns the Office summary.
+ */
+export async function inspectOffice(size: number, read: Reader): Promise<InspectResult> {
+  const tailLength = Math.min(size, 66_000)
+  const tail = await read(size - tailLength, tailLength)
+  const eocd = findEocd(tail)
+  if (eocd < 0) throw new Error('office: no end-of-central-directory record')
+  const directorySize = u32(tail, eocd + 12)
+  const directoryOffset = u32(tail, eocd + 16)
+  const entries = parseZipDirectory(await read(directoryOffset, directorySize))
+  if (entries.length === 0) throw new Error('office: empty package')
+  const names = entries.map(entry => entry.name)
+  const main = names.find(name => name === 'word/document.xml')
+    ?? names.find(name => name === 'xl/workbook.xml')
+    ?? names.find(name => name === 'ppt/presentation.xml')
+  if (main === undefined) throw new Error('office: no known document part')
+  const kind = main.startsWith('word/') ? 'docx' : main.startsWith('xl/') ? 'xlsx' : 'pptx'
+  const label = kind === 'docx' ? 'Word document' : kind === 'xlsx' ? 'Excel workbook' : 'PowerPoint presentation'
+  const files = entries.filter(entry => !entry.directory)
+  const total = files.reduce((sum, entry) => sum + entry.size, 0)
+  const keyParts = names.filter(name => (
+    name === '[Content_Types].xml'
+    || name === main
+    || name === 'word/styles.xml'
+    || name === 'xl/sharedStrings.xml'
+    || name.startsWith('ppt/slides/slide')
+  )).slice(0, MAX_ITEMS)
+  return {
+    kind,
+    summary: `${label} · ${String(files.length)} parts · ${(total / 1024).toFixed(1)} KB uncompressed`,
+    facts: [
+      'container: zip',
+      `main part: ${main}`,
+      `entries: ${String(entries.length)}`,
+      `uncompressed total: ${(total / 1024).toFixed(1)} KB`,
+    ],
+    schema: keyParts,
+    notes: [],
+    next: ['在面板中打开 Office 预览查看内容'],
+    truncated: entries.length > MAX_ITEMS,
+  }
+}
+
+/**
+ * Describe an email from its header block and attachment names.
+ * @param bytes - message head.
+ * @param truncatedRead - whether only the head was read.
+ * @returns the email summary.
+ */
+export function inspectEml(bytes: Uint8Array, truncatedRead = false): InspectResult {
+  const doc = parseEml(new TextDecoder('utf-8', { fatal: false }).decode(bytes))
+  const value = (name: string): string => (
+    doc.headers.find(header => header.name.toLowerCase() === name)?.value.trim() ?? ''
+  )
+  const subject = value('subject')
+  const from = value('from')
+  const to = value('to')
+  const date = value('date')
+  const attachments = doc.attachments.slice(0, MAX_ITEMS)
+  const facts = [
+    `from: ${from === '' ? '(missing)' : from}`,
+    `to: ${to === '' ? '(missing)' : to}`,
+    `date: ${date === '' ? '(missing)' : date}`,
+    `content-type: ${doc.contentType === '' ? '(missing)' : doc.contentType}`,
+    `attachments: ${String(doc.attachments.length)}`,
+  ]
+  return {
+    kind: 'eml',
+    summary: `Email${subject === '' ? '' : ` · ${subject}`} · ${String(doc.attachments.length)} attachments`,
+    facts,
+    schema: attachments,
+    notes: truncatedRead ? ['only the first 1 MB was read'] : [],
+    next: ['在面板中打开邮件预览查看正文'],
+    truncated: truncatedRead || doc.attachments.length > MAX_ITEMS,
+  }
+}
+
+/**
+ * Describe a unified diff without dumping its lines.
+ * @param bytes - diff head.
+ * @param truncatedRead - whether only the head was read.
+ * @returns the diff summary.
+ */
+export function inspectDiff(bytes: Uint8Array, truncatedRead = false): InspectResult {
+  const lines = new TextDecoder('utf-8', { fatal: false }).decode(bytes).split(/\r?\n/u)
+  const files = new Set<string>()
+  let hunks = 0
+  let added = 0
+  let removed = 0
+  for (const line of lines) {
+    const kind = classifyDiffLine(line)
+    if (kind === 'hunk') hunks += 1
+    if (kind === 'add') added += 1
+    if (kind === 'del') removed += 1
+    if (line.startsWith('+++ ')) {
+      const name = line.slice(4).replace(/^b\//u, '')
+      if (name !== '/dev/null') files.add(name)
+    }
+  }
+  const names = [...files]
+  return {
+    kind: 'diff',
+    summary: `${String(names.length)} files · ${String(hunks)} hunks · +${String(added)}/−${String(removed)}`,
+    facts: [
+      `files: ${String(names.length)}`,
+      `hunks: ${String(hunks)}`,
+      `added: ${String(added)}`,
+      `removed: ${String(removed)}`,
+      `lines: ${String(lines.length)}`,
+    ],
+    schema: names.slice(0, MAX_ITEMS),
+    notes: truncatedRead ? ['only the first 1 MB was read'] : [],
+    next: ['在面板中打开 diff 预览查看逐行内容'],
+    truncated: truncatedRead || names.length > MAX_ITEMS,
+  }
+}
+
+/**
+ * Inspect one already-extracted member by its name and bytes.
+ *
+ * This is the same routing as a normal file, but over an in-memory reader; it
+ * lets archive-member inspection reuse every parser instead of materialising a
+ * temporary file.
+ * @param name - member name, used for the extension.
+ * @param bytes - member payload.
+ * @param read - reader over the payload.
+ * @returns the member's inspection result.
+ */
+async function inspectEntryBytes(name: string, bytes: Uint8Array, read: Reader): Promise<InspectResult> {
+  const size = bytes.length
+  const lower = name.replaceAll('\\', '/').toLowerCase()
+  const suffix = extname(lower).slice(1)
+  if (lower.endsWith('.tar.gz')) return inspected(await inspectTar(size, read))
+  if (suffix === 'tar' || suffix === 'tgz') return inspected(await inspectTar(size, read))
+  if (suffix === 'csv' || suffix === 'tsv' || suffix === 'tab') {
+    return inspected(inspectCsv({ head: bytes, size, samples: [], tail: bytes.slice(-TAIL_BYTES) }))
+  }
+  if (suffix === 'jsonl' || suffix === 'ndjson') return inspected(inspectJsonl(bytes, false))
+  if (suffix === 'zip') return inspected(await inspectZip(size, read))
+  if (suffix === 'sqlite' || suffix === 'sqlite3' || suffix === 'db' || suffix === 'db3') {
+    return inspected(await inspectSqlite(read))
+  }
+  if (suffix === '7z') return inspected(await inspectSevenZip(read))
+  if (suffix === 'safetensors') return inspected(await inspectSafetensors(size, read))
+  if (suffix === 'ipynb') return inspected(inspectNotebook(bytes))
+  if (suffix === 'rst') return inspected(inspectRst(bytes, false))
+  if (suffix === 'epub') return inspected(await inspectEpub(size, read))
+  if (suffix === 'docx' || suffix === 'xlsx' || suffix === 'pptx') {
+    return inspected(await inspectOffice(size, read))
+  }
+  if (suffix === 'doc' || suffix === 'xls' || suffix === 'ppt') {
+    return previewOnlyResult('office', size, suffix)
+  }
+  if (suffix === 'eml') return inspected(inspectEml(bytes))
+  if (suffix === 'diff' || suffix === 'patch') return inspected(inspectDiff(bytes))
+  if (suffix === 'gguf') {
+    if (!looksLikeGguf(bytes)) throw new Error('not a GGUF file (magic mismatch)')
+    return inspected(inspectGguf(bytes))
+  }
+  if (looksText(bytes)) return previewOnlyResult('code', size, suffix)
+  return unknownResult(size, suffix)
+}
+
+/**
+ * Inspect `archive!/entry` without extracting to disk.
+ * @param archivePath - archive path as typed.
+ * @param entryName - member name after `!/`.
+ * @param size - archive size.
+ * @param read - reader over the archive.
+ * @returns the member result with archive context facts.
+ */
+async function inspectArchiveEntry(
+  archivePath: string,
+  entryName: string,
+  size: number,
+  read: Reader,
+): Promise<InspectResult> {
+  if (size > LIMITS.archiveWhole) {
+    throw new Error(`archive: ${formatBytes(size)} exceeds the ${formatBytes(LIMITS.archiveWhole)} cap`)
+  }
+  const lower = archivePath.replaceAll('\\', '/').toLowerCase()
+  const raw = await read(0, size)
+  let bytes: Uint8Array
+  if (lower.endsWith('.zip')) {
+    bytes = await zipEntryBytes(raw, entryName, inflateRawSync)
+  } else if (lower.endsWith('.tar') || lower.endsWith('.tgz') || lower.endsWith('.tar.gz')) {
+    const gzipped = raw[0] === 0x1f && raw[1] === 0x8b
+    const data = gzipped
+      ? new Uint8Array(gunzipSync(raw, { maxOutputLength: LIMITS.archiveWhole }))
+      : raw
+    const wanted = entryName.replaceAll('\\', '/').replace(/^\.\//u, '')
+    const entry = parseTar(data).find(candidate => (
+      candidate.name.replaceAll('\\', '/').replace(/^\.\//u, '') === wanted
+    ))
+    if (entry === undefined) throw new Error(`archive: no ${entryName}`)
+    if (entry.directory) throw new Error(`archive: ${entryName} is a directory`)
+    bytes = data.subarray(entry.offset, entry.offset + entry.size)
+  } else {
+    throw new Error('archive: only zip and tar members are supported')
+  }
+  if (bytes.length > LIMITS.archiveEntry) {
+    throw new Error(`archive: member ${formatBytes(bytes.length)} exceeds the ${formatBytes(LIMITS.archiveEntry)} cap`)
+  }
+  const entryRead: Reader = async (offset, length) => bytes.subarray(offset, offset + length)
+  const result = await inspectEntryBytes(entryName, bytes, entryRead)
+  return {
+    ...result,
+    summary: `${result.summary} · in ${basename(archivePath)}`,
+    facts: [`archive: ${basename(archivePath)}`, `entry: ${entryName}`, ...result.facts],
+    capability: result.capability ?? 'inspected',
+  }
+}
+
 /** Describe a SQLite database from its header and schema table. */
 async function inspectSqlite(read: Reader): Promise<InspectResult> {
   const header = parseSqliteHeader(await read(0, 100))
@@ -913,7 +1176,8 @@ export function registerInspectTool(ctx: InspectContext): () => void {
         name: 'preview_inspect',
         description: 'Describe the structure of a file instead of reading its bytes: one summary line, '
           + 'a few facts, a schema (columns or tensors), warnings, and concrete next steps. '
-          + 'Supports CSV/TSV, JSONL, ZIP/EPUB, 7z, SQLite, SafeTensors, GGUF, notebooks and reST. '
+          + 'Supports CSV/TSV, JSONL, ZIP/EPUB, TAR/TGZ, Office OOXML, EML, diff, 7z, '
+          + 'SQLite, SafeTensors, GGUF, notebooks and reST. '
           + 'For other previewable files it returns a preview-only capability envelope instead of an error.',
         parameters: PARAMETERS,
         output: {
@@ -932,13 +1196,18 @@ export function registerInspectTool(ctx: InspectContext): () => void {
         async execute(args: { path?: string } | undefined, exec?: { agent?: { session?: unknown } }) {
           const path = args?.path
           if (typeof path !== 'string' || path === '') throw new Error('path is required')
+          const marker = path.indexOf('!/')
+          const archivePath = marker < 0 ? path : path.slice(0, marker)
+          const entryName = marker < 0 ? undefined : path.slice(marker + 2)
+          if (archivePath === '') throw new Error('archive path is required')
+          if (entryName === '') throw new Error('entry name is required')
           const signal = AbortSignal.timeout(10_000)
 
           // Absolute paths go through the host-path mapping; a relative path is
           // resolved against the session workspace root the sandbox policy knows.
           let target: unknown
-          if (isAbsolute(path)) {
-            const mapped = ctx.fs.processPathFromHostPath(path)
+          if (isAbsolute(archivePath)) {
+            const mapped = ctx.fs.processPathFromHostPath(archivePath)
             if (mapped === undefined) throw new Error('path is outside the workspace')
             target = await ctx.fs.resolve(mapped, { signal })
           } else {
@@ -949,11 +1218,18 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             } catch {
               // No policy: fall back to the service default.
             }
-            target = await ctx.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })
+            target = await ctx.fs.resolve(archivePath, cwd === undefined ? { signal } : { cwd, signal })
           }
 
           const info = await ctx.fs.stat(target, signal)
           const size = info?.size ?? 0
+          const read: Reader = async (offset, length) =>
+            new Uint8Array(await ctx.fs.readByteRange(target, { offset, length }, signal))
+
+          if (entryName !== undefined) {
+            return await inspectArchiveEntry(archivePath, entryName, size, read)
+          }
+
           const suffix = extname(path).slice(1).toLowerCase()
 
           if (suffix === 'csv' || suffix === 'tsv' || suffix === 'tab') {
@@ -977,8 +1253,28 @@ export function registerInspectTool(ctx: InspectContext): () => void {
             return inspected(inspectCsv({ head, size, samples, tail }))
           }
 
-          const read: Reader = async (offset, length) =>
-            new Uint8Array(await ctx.fs.readByteRange(target, { offset, length }, signal))
+          const lowerName = path.replaceAll('\\', '/').toLowerCase()
+          if (suffix === 'tar' || suffix === 'tgz' || lowerName.endsWith('.tar.gz')) {
+            return inspected(await inspectTar(size, read))
+          }
+
+          if (suffix === 'docx' || suffix === 'xlsx' || suffix === 'pptx') {
+            return inspected(await inspectOffice(size, read))
+          }
+
+          if (suffix === 'doc' || suffix === 'xls' || suffix === 'ppt') {
+            return previewOnlyResult('office', size, suffix)
+          }
+
+          if (suffix === 'eml') {
+            const length = Math.min(size, TEXT_BYTES)
+            return inspected(inspectEml(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
+          }
+
+          if (suffix === 'diff' || suffix === 'patch') {
+            const length = Math.min(size, TEXT_BYTES)
+            return inspected(inspectDiff(new Uint8Array(await read(0, length)), size > TEXT_BYTES))
+          }
 
           if (suffix === 'jsonl' || suffix === 'ndjson') {
             const length = Math.min(size, TEXT_BYTES)
@@ -1032,6 +1328,7 @@ export function registerInspectTool(ctx: InspectContext): () => void {
           if (detected === 'zip') return inspected(await inspectZip(size, read))
           if (detected === '7z') return inspected(await inspectSevenZip(read))
           if (detected === 'sqlite') return inspected(await inspectSqlite(read))
+          if (detected === 'tar') return inspected(await inspectTar(size, read))
           if (detected === 'gguf') {
             const bytes = new Uint8Array(await read(0, Math.min(size, HEAD_BYTES)))
             return inspected(inspectGguf(bytes))
