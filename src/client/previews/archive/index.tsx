@@ -51,10 +51,19 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
   const [barNotice, setBarNotice] = useState<ArchiveNotice | undefined>(undefined)
   const noticeId = useRef(0)
+  const noticeTimer = useRef<number | undefined>(undefined)
   const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
     noticeId.current += 1
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
     setBarNotice({ id: noticeId.current, text, tone })
+    noticeTimer.current = window.setTimeout(() => {
+      setBarNotice(undefined)
+      noticeTimer.current = undefined
+    }, tone === 'critical' ? 6000 : 4000)
   }
+  useEffect(() => () => {
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
+  }, [])
   const [dir, setDir] = useState('')
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')

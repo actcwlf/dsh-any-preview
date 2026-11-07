@@ -38,10 +38,19 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const [lastEntry, setLastEntry] = useState<SevenZipEntry | undefined>(undefined)
   const [notice, setNotice] = useState<ArchiveNotice | undefined>(undefined)
   const noticeId = useRef(0)
+  const noticeTimer = useRef<number | undefined>(undefined)
   const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
     noticeId.current += 1
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
     setNotice({ id: noticeId.current, text, tone })
+    noticeTimer.current = window.setTimeout(() => {
+      setNotice(undefined)
+      noticeTimer.current = undefined
+    }, tone === 'critical' ? 6000 : 4000)
   }
+  useEffect(() => () => {
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
+  }, [])
 
   useEffect(() => {
     let alive = true

@@ -9,7 +9,6 @@ import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { CHROME_CONTROL, DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
-import { useEffect, useState } from 'react'
 import type { EntryLike } from './EntryView.tsx'
 
 /** One transient archive action result. `id` lets a repeated message restart the toast. */
@@ -36,16 +35,6 @@ export interface ArchiveListProps {
 
 export function ArchiveList(props: ArchiveListProps) {
   const { entries, summary, notice, status, statusTone = 'warning', lastEntry, onSelect, onReextract, onClean } = props
-  const [visibleNotice, setVisibleNotice] = useState<ArchiveNotice | undefined>(undefined)
-  useEffect(() => {
-    if (notice === undefined) {
-      setVisibleNotice(undefined)
-      return undefined
-    }
-    setVisibleNotice(notice)
-    const timer = setTimeout(() => setVisibleNotice(undefined), notice.tone === 'critical' ? 6000 : 4000)
-    return () => clearTimeout(timer)
-  }, [notice])
   const hasActions = (lastEntry !== undefined && onReextract !== undefined) || onClean !== undefined
   const actions = (
     <>
@@ -111,18 +100,18 @@ export function ArchiveList(props: ArchiveListProps) {
             </tbody>
           </table>
         </div>
-        {visibleNotice !== undefined && (
+        {notice !== undefined && (
           <div
             style={{
               ...TOAST,
-              color: visibleNotice.tone === 'critical'
+              color: notice.tone === 'critical'
                 ? 'var(--dsw-alias-state-error-primary)'
                 : 'var(--dsw-alias-label-secondary)',
             }}
             role="status"
             data-archive-notice="true"
           >
-            {visibleNotice.text}
+            {notice.text}
           </div>
         )}
       </div>
