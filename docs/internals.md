@@ -321,7 +321,9 @@ secondary ink），内容区动作另用 `dsh-preview-action`（`bg-layer-2` + �
 `DATA_TABLE_HEADER`：28px、4% ink tint、12/18、600、16px 左右内边距；Model 动画条
 降为 28px 的内容 transport，不再和 32px chrome 同权。
 Markdown 正文用 1.6，标题 700，代码 11/18 + radius-sm，表格用 10/16 padding 和
-横向分隔；Archive EntryView 的路径输入、面板和正文统一到 28px 控件与 13/1.6。
+横向分隔；Archive EntryView 的路径输入、面板和正文统一到 28px 控件与 13/1.6。首版冻结
+解压目录：输入框只读、目录选择按钮禁用，并用 tooltip 说明“仅支持默认目录”；`extract`
+本身也校验 `targetDir === defaultDir`，避免通过状态变化绕过 UI。
 Diff / Log / Archive 主内容代码用 12/18；只有 Markdown/Notebook 代码块用 11/18。
 `ToolbarOverflow` 与 Model 动画菜单共用 `PreviewMenu`，统一 outside-click / Escape /
 菜单 surface / 圆角 / shadow，不再各写一份 popover 状态机。菜单 panel portal 到

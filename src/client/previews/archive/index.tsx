@@ -171,7 +171,6 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
       entry={selected}
       resourceAddress={resourceAddress}
       targetDir={dir}
-      onTargetDir={setDir}
       defaultDir={defaultTargetDir(absolutePath ?? '')}
       loadBytes={() => readEntry(selected)}
       write={(bytes, force) => writeEntry(selected, bytes, force)}

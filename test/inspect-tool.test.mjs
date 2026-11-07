@@ -396,6 +396,22 @@ test('a compressed 7z header is decoded before summarising', async () => {
   assert.match(result.summary, /3 files/u)
 })
 
+test('a ZIP central directory larger than the cap is refused before reading it', async () => {
+  const eocd = new Uint8Array(22)
+  const view = new DataView(eocd.buffer)
+  view.setUint32(0, 0x06054b50, true)
+  view.setUint32(12, 5 * 1024 * 1024, true)
+  view.setUint32(16, 1, true)
+  await assert.rejects(() => inspectZip(eocd.length, async () => eocd), /central directory/u)
+})
+
+test('a 7z header larger than the cap is refused before reading it', async () => {
+  const header = new Uint8Array(32)
+  header.set([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c], 0)
+  new DataView(header.buffer).setBigUint64(20, 9n * 1024n * 1024n, true)
+  await assert.rejects(() => inspectSevenZip(async () => header), /header/u)
+})
+
 test('an encrypted 7z archive says so', async () => {
   const result = await inspectSevenZip(sevenZipReader('sample-encrypted.7z'))
   assert.ok(result.facts.some(fact => fact === 'encrypted: yes'))

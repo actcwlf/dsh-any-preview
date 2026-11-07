@@ -37,6 +37,10 @@ import { findEocd, parseTar, parseZipDirectory, u16, u32, zipEntryBytes } from '
 /** Header window for binary formats. */
 const HEAD_BYTES = 4 * 1024 * 1024
 
+/** Cap before reading a ZIP central directory or a decoded 7z header. */
+const MAX_ZIP_DIRECTORY_BYTES = 4 * 1024 * 1024
+const MAX_7Z_HEADER_BYTES = 8 * 1024 * 1024
+
 /** Text window for delimited files. */
 const TEXT_BYTES = 1 * 1024 * 1024
 
@@ -926,6 +930,9 @@ async function inspectZip(size: number, read: Reader): Promise<InspectResult> {
   const directorySize = u32(tail, eocd + 12)
   const directoryOffset = u32(tail, eocd + 16)
   if (directorySize === 0 || directoryOffset === 0) throw new Error('zip: empty central directory')
+  if (directorySize > MAX_ZIP_DIRECTORY_BYTES) {
+    throw new Error(`zip: central directory ${formatBytes(directorySize)} exceeds the ${formatBytes(MAX_ZIP_DIRECTORY_BYTES)} cap`)
+  }
 
   const directory = await read(directoryOffset, directorySize)
   const listed = parseZipDirectory(directory)
@@ -1010,6 +1017,9 @@ export async function inspectOffice(size: number, read: Reader): Promise<Inspect
   if (eocd < 0) throw new Error('office: no end-of-central-directory record')
   const directorySize = u32(tail, eocd + 12)
   const directoryOffset = u32(tail, eocd + 16)
+  if (directorySize > MAX_ZIP_DIRECTORY_BYTES) {
+    throw new Error(`office: central directory ${formatBytes(directorySize)} exceeds the ${formatBytes(MAX_ZIP_DIRECTORY_BYTES)} cap`)
+  }
   const entries = parseZipDirectory(await read(directoryOffset, directorySize))
   if (entries.length === 0) throw new Error('office: empty package')
   const names = entries.map(entry => entry.name)
@@ -1348,6 +1358,9 @@ async function inspectEpub(size: number, read: Reader): Promise<InspectResult> {
   if (eocd < 0) throw new Error('epub: no end-of-central-directory record')
   const directorySize = u32(tail, eocd + 12)
   const directoryOffset = u32(tail, eocd + 16)
+  if (directorySize > MAX_ZIP_DIRECTORY_BYTES) {
+    throw new Error(`epub: central directory ${formatBytes(directorySize)} exceeds the ${formatBytes(MAX_ZIP_DIRECTORY_BYTES)} cap`)
+  }
   const entries = parseZipDirectory(await read(directoryOffset, directorySize))
 
   const names = entries.map(entry => entry.name)
@@ -1391,8 +1404,14 @@ async function sevenZipDecoder(): Promise<Decoder> {
 async function readSevenZipArchive(read: Reader): Promise<SevenZipArchive> {
   const layout = readLayout(await read(0, 32))
   if (layout === undefined) throw new Error('not a 7z archive (signature mismatch)')
+  if (layout.nextHeaderSize > MAX_7Z_HEADER_BYTES) {
+    throw new Error(`7z: header ${formatBytes(layout.nextHeaderSize)} exceeds the ${formatBytes(MAX_7Z_HEADER_BYTES)} cap`)
+  }
 
   let header = await read(32 + layout.nextHeaderOffset, layout.nextHeaderSize)
+  if (header.length > MAX_7Z_HEADER_BYTES) {
+    throw new Error(`7z: header ${formatBytes(header.length)} exceeds the ${formatBytes(MAX_7Z_HEADER_BYTES)} cap`)
+  }
   if (isEncodedHeader(header)) {
     const streams = parseEncodedHeader(header)
     const folder = streams?.folders[0]
@@ -1400,8 +1419,14 @@ async function readSevenZipArchive(read: Reader): Promise<SevenZipArchive> {
     if (streams === undefined || folder === undefined || stream === undefined) {
       throw new Error('7z: encoded header is incomplete')
     }
+    if (folder.size > MAX_7Z_HEADER_BYTES) {
+      throw new Error(`7z: decoded header ${formatBytes(folder.size)} exceeds the ${formatBytes(MAX_7Z_HEADER_BYTES)} cap`)
+    }
     const bytes = await read(32 + stream.offset, stream.size)
     header = decodeFolder(await sevenZipDecoder(), folder, [bytes])
+    if (header.length > MAX_7Z_HEADER_BYTES) {
+      throw new Error(`7z: decoded header ${formatBytes(header.length)} exceeds the ${formatBytes(MAX_7Z_HEADER_BYTES)} cap`)
+    }
   }
 
   const archive = parseHeader(header)

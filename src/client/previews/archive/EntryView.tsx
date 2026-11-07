@@ -15,7 +15,7 @@ import { errorText } from '../../kernel/errors.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
-import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
+import { openResourceAddress } from '../../runtime.ts'
 import type { ReactNode } from 'react'
 
 /** The fields this view needs from an archive entry. */
@@ -32,7 +32,6 @@ export interface EntryViewProps {
   readonly resourceAddress: string
   /** Extraction directory, owned by the parent so it survives back-and-forth. */
   readonly targetDir: string
-  readonly onTargetDir: (dir: string) => void
   /** Default directory beside the archive, for address building. */
   readonly defaultDir: string
   /** Read this member's bytes. */
@@ -85,7 +84,7 @@ type Loaded =
 
 export function EntryView(props: EntryViewProps) {
   useLocale()
-  const { entry, targetDir, onTargetDir, defaultDir, loadBytes, write, check, addressOf, onOpened, onBack } = props
+  const { entry, targetDir, defaultDir, loadBytes, write, check, addressOf, onOpened, onBack } = props
   const module = contentModuleFor(entry.name)
 
   const [loaded, setLoaded] = useState<Loaded>({ status: 'loading' })
@@ -129,19 +128,16 @@ export function EntryView(props: EntryViewProps) {
     return () => { alive = false }
   }, [entry.name, targetDir, addressOf, onOpened, autoOpened, check])
 
-  const choose = async (): Promise<void> => {
-    setFailure(undefined)
-    try {
-      const chosen = await chooseDirectory(new AbortController().signal)
-      if (chosen !== undefined && chosen.trim() !== '') onTargetDir(chosen)
-    } catch (error) {
-      setFailure(errorText(error, 'archive.chooseFailed'))
-    }
-  }
-
   const extract = async (force = false): Promise<void> => {
     if (targetDir.trim() === '') {
       setFailure(t('archive.dirRequired'))
+      return
+    }
+    // The first release freezes extraction to the default directory. The input
+    // and picker are disabled in the UI; this guard also covers programmatic
+    // state changes and keeps every write addressable by the main preview.
+    if (targetDir !== defaultDir) {
+      setFailure(t('archive.dirLocked'))
       return
     }
     setExtracting(true)
@@ -173,11 +169,22 @@ export function EntryView(props: EntryViewProps) {
       <div style={ROW}>
         <input
           value={targetDir}
-          onChange={event => onTargetDir(event.target.value)}
+          readOnly
+          title={t('archive.dirLocked')}
           aria-label={t('archive.dirLabel')}
+          aria-readonly="true"
           style={PATH_INPUT}
         />
-        <button type="button" onClick={() => { void choose() }} style={SMALL} className="dsh-preview-action">{t('common.choose')}</button>
+        <button
+          type="button"
+          disabled
+          title={t('archive.dirLocked')}
+          aria-label={t('archive.dirLocked')}
+          style={SMALL}
+          className="dsh-preview-action"
+        >
+          {t('common.choose')}
+        </button>
         <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL} className="dsh-preview-action">
           {extracting ? t('archive.extracting') : t('archive.extractOpen')}
         </button>

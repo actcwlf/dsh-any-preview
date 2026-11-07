@@ -95,7 +95,6 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
         entry={selected}
         resourceAddress={resourceAddress}
         targetDir={dir}
-        onTargetDir={setDir}
         defaultDir={defaultDir}
         loadBytes={() => readSevenZipEntry(url, archive, selected)}
         write={(bytes, force) => writeExtracted(selected.name, bytes, dir, force)}
