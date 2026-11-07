@@ -115,6 +115,7 @@ export function SearchBar({
           <button
             type="button"
             title={t('search.case')}
+            aria-label={t('search.case')}
             aria-pressed={options.caseSensitive}
             onClick={() => onChange({ ...options, caseSensitive: !options.caseSensitive })}
             style={inlineToggle(options.caseSensitive)}
@@ -124,6 +125,7 @@ export function SearchBar({
           <button
             type="button"
             title={t('search.regex')}
+            aria-label={t('search.regex')}
             aria-pressed={options.regex}
             onClick={() => onChange({ ...options, regex: !options.regex })}
             style={inlineToggle(options.regex)}
@@ -139,12 +141,16 @@ export function SearchBar({
               onClick={clear}
               style={clearStyle}
             >
-              ×
+              <SearchCloseIcon />
             </button>
           )}
         </div>
-        <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={!committed || matches === 0} style={navStyle}>↑</button>
-        <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={!committed || matches === 0} style={navStyle}>↓</button>
+        <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={!committed || matches === 0} style={navStyle}>
+          <SearchChevron up />
+        </button>
+        <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={!committed || matches === 0} style={navStyle}>
+          <SearchChevron />
+        </button>
         {!compact && active && (
           <span
             style={idle ? hintStyle : feedbackStyle}
@@ -163,8 +169,8 @@ export function SearchBar({
           </span>
         )}
         {scanning && onCancel !== undefined && (
-          <button type="button" className="dsh-preview-control" style={stopStyle} onClick={onCancel} data-search-cancel="true">
-            {t('search.stop')}
+          <button type="button" className="dsh-preview-control" style={stopStyle} onClick={onCancel} data-search-cancel="true" title={t('search.stop')} aria-label={t('search.stop')}>
+            <SearchStopIcon />
           </button>
         )}
         {!compact && committed && filterable && (
@@ -179,12 +185,41 @@ export function SearchBar({
   )
 }
 
+/** 15px host-style chevron used by the match navigation buttons. */
+function SearchChevron({ up = false }: { readonly up?: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d={up ? 'M4 10.5 8 6.5l4 4' : 'M4 5.5 8 9.5l4-4'}
+        stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** Clear-field cross; 12px keeps it inside the 20px target. */
+function SearchCloseIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** Stop marker for an in-flight whole-file scan. */
+function SearchStopIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="7" height="7" rx="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
 // The compact row must be able to shrink: `minWidth: 0` on both the row and the
 // field is what lets it fit a bar that is only ~300px wide.
 const compactRow = {
   display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 auto', minWidth: 0,
 } as const
-
 const rowStyle = {
   display: 'flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
 } as const
@@ -235,14 +270,16 @@ function inlineToggle(on: boolean) {
 }
 
 const navStyle = {
-  font: 'inherit', fontSize: 14, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-sm)',
+  font: 'inherit', fontSize: 14, lineHeight: '18px', padding: 0, borderRadius: 'var(--dsw-radius-sm)',
   cursor: 'pointer', height: 28, minWidth: 28, flex: '0 0 auto', border: 'none',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 } as const
 
 const clearStyle = {
   width: 20, height: 20, padding: 0, flex: '0 0 auto',
   fontSize: 14, lineHeight: '20px', borderRadius: 'var(--dsw-radius-xs)',
   border: 'none', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 } as const
 
 const hintStyle = {
@@ -257,9 +294,9 @@ const feedbackStyle = {
 } as const
 
 const stopStyle = {
-  height: 22, padding: '0 6px', flex: '0 0 auto',
-  fontSize: 11, lineHeight: '16px', border: 'none',
-  borderRadius: 'var(--dsw-radius-xs)', cursor: 'pointer',
+  width: 22, height: 22, padding: 0, flex: '0 0 auto',
+  border: 'none', borderRadius: 'var(--dsw-radius-xs)', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
 } as const
 
 const labelStyle = {

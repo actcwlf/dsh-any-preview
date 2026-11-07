@@ -596,6 +596,7 @@ const COMPACT_WIDTH = 420   // chrome 自身宽度（ResizeObserver 实测）
   扫描完成后再次 `Enter` 才跳下一个；
 - `Shift+Enter` 上一个命中、`Esc` 清空并失焦；
 - 查询非空时显示 20px 清除按钮；字段内 toggle 是 ghost，不再画描边；
+- 上一个/下一个用 15px chevron，清除用 12px cross，停止扫描用 10px stop；
 - 不再显示"共 N 行"——表格里已能看到，属于冗余；
 - `compact` 时隐藏计数与"仅匹配"，搜索框、箭头和停止扫描保留。
 
