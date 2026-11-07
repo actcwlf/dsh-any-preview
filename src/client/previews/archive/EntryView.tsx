@@ -1,4 +1,4 @@
-﻿/**
+/**
  * One archive member, shared by every container format.
  *
  * Zip and 7z differ only in how bytes are obtained and how they reach disk; the
@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { CHROME_CONTROL } from '../../kernel/ui.ts'
 import { contentModuleFor } from '../../kernel/content-modules.ts'
 import { errorText } from '../../kernel/errors.ts'
 import { formatBytes } from '../../kernel/format.ts'
@@ -229,27 +230,26 @@ export function EntryView(props: EntryViewProps) {
   }
 
   return (
-    <PreviewChrome>
-      <div style={BAR}>
+    <PreviewChrome
+      title={(
         <span style={BAR_LEFT}>
           <button type="button" onClick={onBack} style={BACK}>{t('common.back')}</button>
           <span style={NAME}>{entry.name}</span>
         </span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>
-      </div>
+      )}
+      toolbar={<span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{formatBytes(entry.size)}</span>}
+    >
       <div style={BODY_WRAP}>{body}</div>
     </PreviewChrome>
   )
 }
 
-const BAR = {
-  display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', fontSize: 12,
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
-} as const
-const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '1 1 auto' } as const
+const BAR_LEFT = { display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: '0 1 auto' } as const
 const BACK = {
-  font: 'inherit', color: 'var(--dsw-alias-label-primary)', background: 'transparent',
-  border: 'none', padding: 0, cursor: 'pointer', flex: '0 0 auto',
+  ...CHROME_CONTROL,
+  padding: '0 8px',
+  color: 'var(--dsw-alias-label-primary)',
+  flex: '0 0 auto',
 } as const
 const NAME = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const, minWidth: 0 } as const
 const BODY_WRAP = { position: 'relative', flex: '1 1 auto', minHeight: 0, overflow: 'auto' } as const
@@ -272,5 +272,5 @@ const NOTE_INLINE = { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)' } 
 const LOADING = { padding: 12, fontSize: 12, color: 'var(--dsw-alias-label-tertiary)' } as const
 const PRE = {
   margin: 0, padding: '8px 12px', fontSize: 12,
-  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', whiteSpace: 'pre-wrap' as const,
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', whiteSpace: 'pre-wrap' as const,
 } as const

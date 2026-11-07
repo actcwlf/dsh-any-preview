@@ -1,4 +1,4 @@
-﻿import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -94,7 +94,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
           }}
           style={{ flex: '1 1 auto', overflow: 'auto' }}
         >
-        <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
+        <div style={{ fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div
               key={index}
@@ -118,12 +118,6 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
     </PreviewChrome>
   )
 }
-
-const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
 
 const labelStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer',

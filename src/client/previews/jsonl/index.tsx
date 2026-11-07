@@ -1,4 +1,4 @@
-﻿/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
+/** Line-delimited JSON viewer: one row per record, bad lines shown as raw text. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -135,12 +135,6 @@ function cellOf(value: unknown, column: string): string {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return ''
   return formatValue((value as Record<string, unknown>)[column])
 }
-
-const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
 
 const shared = {
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',

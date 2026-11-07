@@ -1,4 +1,4 @@
-﻿/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
+/** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -22,7 +22,7 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
   if (notebook.cells.length === 0) return <div style={PANE_FILL}>{t('ipynb.notNotebook')}</div>
 
   return (
-    <PreviewChrome>
+    <PreviewChrome title={`${t('ipynb.title')} · ${t('ipynb.cells', { count: notebook.cells.length })}`}>
       <style>{NB_CSS}</style>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '8px 14px 24px', fontSize: 13 }} ref={scrollportRef}>
         {notebook.cells.map((cell, index) => (
@@ -62,12 +62,12 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
 
 const cellLabel = {
   fontSize: 11, color: 'var(--dsw-alias-label-tertiary)', marginBottom: 2,
-  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)',
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
 } as const
 
 const codeStyle = {
   margin: 0, padding: '8px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55,
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55,
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 

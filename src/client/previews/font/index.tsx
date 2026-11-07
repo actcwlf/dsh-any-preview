@@ -1,4 +1,4 @@
-﻿/** Font preview: load the file into a FontFace and draw a specimen. */
+/** Font preview: load the file into a FontFace and draw a specimen. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -56,11 +56,7 @@ export function FontBody({ content }: PreviewBodyProps) {
   }
 
   return (
-    <PreviewChrome>
-      <div style={barStyle}>
-        <span>{t('font.sample')}</span>
-        <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('font.loaded')}</span>
-      </div>
+    <PreviewChrome title={t('font.sample')} status={t('font.loaded')}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '12px 16px' }}>
         {SIZES.map(size => (
           <div key={size} style={{ marginBottom: 14 }}>
@@ -103,12 +99,6 @@ export function FontBody({ content }: PreviewBodyProps) {
     </PreviewChrome>
   )
 }
-
-const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
 
 const FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'] as const
 

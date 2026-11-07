@@ -296,6 +296,12 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - `format.ts`：格式适配器注册表，内置 glTF/OBJ/STL，后续 PMX 可独立注册；
 - `decode.ts`：字节解析与资源沙箱，不再靠一个 `if` 链增长格式分支。
 
+UI 基线在 `kernel/ui.ts`：所有预览共用 38px `PreviewChrome`（与 DSH 文档头一致）、
+28px 控件、13/20 的 chrome 字体、12/16 的元信息、`--dsw-font-family` /
+`--dsw-font-mono`；模型与媒体也走同一个 `PreviewChrome`，不再自建不同高度的
+顶栏。格式自身的摘要/工具栏通过 `PreviewChrome` 的 `title` / `toolbar` / `status`
+传入，避免第二层 bar 和内容起点漂移。
+
 ### 解码器与外部资源
 
 - Draco / KTX2 / meshopt 的加载器在 `lib/model-extras-chunk.js`（`model-extras` 策略默认

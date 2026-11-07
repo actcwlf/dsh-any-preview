@@ -54,7 +54,7 @@ const failureStyle = {
 const failureTextStyle = { textAlign: 'center', lineHeight: 1.5 } as const
 
 const retryStyle = {
-  padding: '4px 12px', fontSize: 12, borderRadius: 'var(--dsw-radius-xs)',
+  height: 28, padding: '0 12px', fontSize: 12, borderRadius: 'var(--dsw-radius-sm)',
   border: '0.5px solid var(--dsw-alias-border-l2)', background: 'transparent',
   color: 'var(--dsw-alias-label-primary)', cursor: 'pointer',
 } as const

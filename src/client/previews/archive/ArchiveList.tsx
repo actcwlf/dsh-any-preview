@@ -1,10 +1,11 @@
-﻿/**
+/**
  * The archive listing, shared by every container format.
  *
  * Containers supply data and three callbacks; the bar, the hints and the table are
  * the same everywhere, so zip and 7z cannot drift apart again.
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { CHROME_CONTROL } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
 import type { EntryLike } from './EntryView.tsx'
@@ -25,9 +26,9 @@ export function ArchiveList(props: ArchiveListProps) {
   const { entries, summary, notice, lastEntry, onSelect, onReextract, onClean } = props
 
   return (
-    <PreviewChrome>
-      <div style={BAR}>
-        <span>{summary}</span>
+    <PreviewChrome
+      title={summary}
+      toolbar={(
         <span style={ACTIONS}>
           <span>{notice ?? t('archive.hint')}</span>
           {lastEntry !== undefined && onReextract !== undefined && (
@@ -39,7 +40,8 @@ export function ArchiveList(props: ArchiveListProps) {
             <button type="button" onClick={onClean} style={SMALL}>{t('archive.clean')}</button>
           )}
         </span>
-      </div>
+      )}
+    >
       <div style={{ flex: '1 1 auto', overflow: 'auto' }}>
         <table style={TABLE}>
           <thead>
@@ -70,19 +72,13 @@ export function ArchiveList(props: ArchiveListProps) {
   )
 }
 
-const BAR = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto', minWidth: 0,
-} as const
 const ACTIONS = {
   display: 'flex', alignItems: 'center', gap: 8, color: 'var(--dsw-alias-label-tertiary)',
   flex: '0 1 auto', minWidth: 0, overflow: 'hidden',
 } as const
 const SMALL = {
-  font: 'inherit', fontSize: 12, padding: '2px 10px', borderRadius: 6, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  ...CHROME_CONTROL,
+  flex: '0 0 auto',
 } as const
 const TABLE = {
   borderCollapse: 'collapse', width: '100%', fontFamily: 'var(--dsw-font-family)', fontSize: 12,

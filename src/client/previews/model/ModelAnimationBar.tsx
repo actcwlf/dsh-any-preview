@@ -191,8 +191,9 @@ const MENU_CSS = `
 `
 
 const barStyle = {
+  boxSizing: 'border-box' as const,
   display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto',
-  padding: '2px 8px 2px 10px', fontSize: 11,
+  height: 32, padding: '0 12px 0 16px', fontSize: 12, lineHeight: '16px',
   color: 'var(--dsw-alias-label-secondary)',
   borderBottom: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
@@ -218,10 +219,10 @@ const menuWrapStyle = {
 
 const triggerStyle = {
   display: 'inline-flex', alignItems: 'center', gap: 4, flex: '0 0 auto',
-  height: 20, padding: '0 6px', borderRadius: 999,
+  height: 24, padding: '0 8px', borderRadius: 999,
   border: '0.5px solid var(--dsw-alias-border-l2)',
   background: 'transparent', color: 'var(--dsw-alias-label-secondary)',
-  font: 'inherit', fontSize: 10, lineHeight: 1, cursor: 'pointer',
+  font: 'inherit', fontSize: 11, lineHeight: '16px', cursor: 'pointer',
   whiteSpace: 'nowrap',
 } as const
 

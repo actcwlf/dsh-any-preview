@@ -1,9 +1,10 @@
-﻿/**
+/**
  * EPUB viewer: the book is a zip, so the container is read with the archive
  * helpers, the spine gives chapter order, images become data URIs, and the
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { CHROME_CONTROL } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PreviewError, errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -159,12 +160,9 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
   const total = chapters.length
 
   return (
-    <PreviewChrome>
-      {css !== '' && <style>{css}</style>}
-      <div style={barStyle}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto' }}>
-          {title === '' ? t('epub.title') : title}
-        </span>
+    <PreviewChrome
+      title={title === '' ? t('epub.title') : title}
+      toolbar={(
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
           <button type="button" style={buttonStyle} disabled={current === 0}
             onClick={() => setCurrent(index => Math.max(0, index - 1))}>{t('epub.prev')}</button>
@@ -182,7 +180,9 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
           <button type="button" style={buttonStyle} disabled={current >= total - 1}
             onClick={() => setCurrent(index => Math.min(total - 1, index + 1))}>{t('epub.next')}</button>
         </span>
-      </div>
+      )}
+    >
+      {css !== '' && <style>{css}</style>}
       <div className={SCOPE} style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 18px 24px', fontSize: 13 }}>
         {chapter === undefined
           ? <div style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('epub.noChapter')}</div>
@@ -192,22 +192,16 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
   )
 }
 
-const barStyle = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '6px 12px', fontSize: 12,
-  color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
-
 const buttonStyle = {
-  font: 'inherit', fontSize: 12, padding: '1px 8px', borderRadius: 5, cursor: 'pointer',
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
+  ...CHROME_CONTROL,
+  flex: '0 0 auto',
 } as const
 
 const selectStyle = {
-  font: 'inherit', fontSize: 12, maxWidth: 180, padding: '1px 4px', borderRadius: 5,
-  color: 'var(--dsw-alias-label-primary)', background: 'var(--dsw-alias-bg-layer-2)',
-  border: '0.5px solid var(--dsw-alias-border-l2)',
+  ...CHROME_CONTROL,
+  maxWidth: 180,
+  padding: '0 8px',
+  background: 'var(--dsw-alias-bg-layer-2)',
 } as const
 
 /** What the client entry registers for this format. */

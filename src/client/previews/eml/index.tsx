@@ -28,7 +28,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   ]
 
   return (
-    <PreviewChrome>
+    <PreviewChrome title={t('eml.title')}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 14px' }} ref={scrollportRef}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, marginBottom: 14 }}>
           <tbody>

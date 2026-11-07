@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SQLite schema viewer: the file header, then every `sqlite_master` row.
  * Table contents are intentionally out of scope.
  */
@@ -98,7 +98,7 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
   for (const object of objects) counts.set(object.type, (counts.get(object.type) ?? 0) + 1)
 
   return (
-    <PreviewChrome>
+    <PreviewChrome title={`SQLite · ${objects.length.toLocaleString('en-US')}`}>
       <Summary fields={[
         { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
         { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },
@@ -141,7 +141,7 @@ const typeBadge = {
 
 const sqlStyle = {
   margin: 0, padding: '6px 10px', borderRadius: 6, overflowX: 'auto' as const,
-  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.5,
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.5,
   background: 'var(--dsw-alias-bg-layer-2)', color: 'var(--dsw-alias-label-primary)',
 } as const
 

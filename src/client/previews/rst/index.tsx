@@ -18,7 +18,7 @@ export function RstBody({ content, scrollportRef }: PreviewBodyProps) {
   const text = source.kind === 'text' ? source.text.slice(0, MAX_CHARS) : ''
   if (text.trim() === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
   return (
-    <PreviewChrome>
+    <PreviewChrome title="reStructuredText">
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 16px 24px', fontSize: 13 }} ref={scrollportRef}>
         <Blocks blocks={parseRst(text)} />
       </div>

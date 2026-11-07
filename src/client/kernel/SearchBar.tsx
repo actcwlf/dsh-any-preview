@@ -136,7 +136,7 @@ const rowStyle = {
 
 const fieldStyle = {
   display: 'flex', alignItems: 'center', gap: 2, flex: '1 1 auto', minWidth: 0,
-  padding: '0 2px 0 8px', borderRadius: 'var(--dsw-radius-sm)', height: 24,
+  padding: '0 2px 0 8px', borderRadius: 'var(--dsw-radius-sm)', height: 28,
   background: 'var(--dsw-alias-bg-layer-2)', border: '0.5px solid var(--dsw-alias-border-l2)',
 } as const
 
@@ -144,7 +144,7 @@ const fieldStyle = {
 const RING = { ...fieldStyle, boxShadow: '0 0 0 2px var(--dsw-alias-state-business-primary)', zIndex: 1 } as const
 
 const inputStyle = {
-  font: 'inherit', fontSize: 12, padding: 0, flex: '1 1 auto', minWidth: 0,
+  font: 'inherit', fontSize: 12, lineHeight: '18px', padding: 0, flex: '1 1 auto', minWidth: 0,
   color: 'var(--dsw-alias-label-primary)', background: 'transparent', border: 'none',
   outline: 'none',
 } as const
@@ -152,7 +152,7 @@ const inputStyle = {
 function inlineToggle(on: boolean) {
   return {
     font: 'inherit', fontSize: 11, lineHeight: '16px', padding: '0 4px', borderRadius: 'var(--dsw-radius-xs)',
-    cursor: 'pointer', height: 18, flex: '0 0 auto',
+    cursor: 'pointer', height: 20, flex: '0 0 auto',
     color: on ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)',
     background: on ? 'var(--dsw-alias-bg-base)' : 'transparent',
     border: `0.5px solid ${on ? 'var(--dsw-alias-border-l3)' : 'transparent'}`,
@@ -160,7 +160,7 @@ function inlineToggle(on: boolean) {
 }
 
 const navStyle = {
-  font: 'inherit', fontSize: 11, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-xs)',
+  font: 'inherit', fontSize: 11, lineHeight: '20px', padding: '0 7px', borderRadius: 'var(--dsw-radius-xs)',
   cursor: 'pointer', height: 22, color: 'var(--dsw-alias-label-secondary)',
   background: 'transparent', border: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
 } as const

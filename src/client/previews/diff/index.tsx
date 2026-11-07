@@ -1,4 +1,4 @@
-﻿/** Unified diff / patch viewer with search. */
+/** Unified diff / patch viewer with search. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -90,7 +90,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
       status={diff.truncated ? t('common.truncated') : undefined}
     >
       <div ref={setScroller} style={{ flex: '1 1 auto', overflow: 'auto' }}>
-        <div style={{ fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)', fontSize: 12, lineHeight: 1.55 }}>
+        <div style={{ fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', fontSize: 12, lineHeight: 1.55 }}>
           {visible.map(({ line, index }) => (
             <div
               key={index}
@@ -122,13 +122,6 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
     </PreviewChrome>
   )
 }
-
-const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
-
 
 /** What the client entry registers for this format. */
 export const diffPreview: PreviewModule = {

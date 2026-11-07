@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { TsPlayer } from './ts-player.tsx'
@@ -221,13 +222,20 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
   }
 
   const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
+  const label = kind === 'audio' ? t('media.audio') : t('media.video')
   // Transport streams carry H.264/AAC inside a container the browser cannot
   // demux; remux them to fMP4 instead of asking the element to play them.
   const suffix = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
-  if ((suffix === 'ts' || suffix === 'm2ts') && activeSrc !== undefined) return <TsPlayer src={activeSrc} />
+  if ((suffix === 'ts' || suffix === 'm2ts') && activeSrc !== undefined) {
+    return <PreviewChrome title={label}><TsPlayer src={activeSrc} /></PreviewChrome>
+  }
 
   if (remote === undefined) {
-    return <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
+    return (
+      <PreviewChrome title={label}>
+        <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
+      </PreviewChrome>
+    )
   }
 
   const playerKey = `${remote}|${content.kind === 'renderer' ? String(content.revision) : '0'}|${version ?? ''}`
@@ -237,15 +245,17 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     // decode them. Anything else means the stream itself was not obtainable.
     const message = errCode === 4 ? t('media.unsupported') : t('media.streamFailed')
     return (
-      <div style={styles.frame}>
-        <Status text={message} />
-        {MEDIA_DEBUG && (
-          <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
-        )}
-        {download !== undefined && (
-          <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
-        )}
-      </div>
+      <PreviewChrome title={label}>
+        <div style={styles.frame}>
+          <Status text={message} />
+          {MEDIA_DEBUG && (
+            <p style={styles.notice}>{`lan=${lanStatus} code=${errCode} src=${lanSrc === '' ? 'api' : 'lan'}`}</p>
+          )}
+          {download !== undefined && (
+            <a style={styles.link} href={download} download={name}>{t('media.downloadNamed', { name: metaLine })}</a>
+          )}
+        </div>
+      </PreviewChrome>
     )
   }
 
@@ -275,31 +285,33 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       )
 
   return (
-    <div style={styles.frame} data-any-preview-media={kind}>
-      <div style={styles.stage}>
-        {kind === 'audio'
-          ? (
-              <div style={styles.audioCard}>
-                <div style={styles.audioName}>{metaLine}</div>
-                {player}
-              </div>
-            )
-          : player}
+    <PreviewChrome title={label}>
+      <div style={styles.frame} data-any-preview-media={kind}>
+        <div style={styles.stage}>
+          {kind === 'audio'
+            ? (
+                <div style={styles.audioCard}>
+                  <div style={styles.audioName}>{metaLine}</div>
+                  {player}
+                </div>
+              )
+            : player}
+        </div>
+        {(buffering || blocked) && (
+          <p style={styles.notice}>
+            {buffering
+              ? t('media.buffering')
+              : t('media.cannotSeek', { size: bytes === '' ? '' : `（${bytes}）`, limit: String(MAX_BUFFER_BYTES / 1024 / 1024) })}
+          </p>
+        )}
+        <div style={styles.footer}>
+          {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
+          {info !== '' && <span style={styles.name}>{info}</span>}
+          {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
+          {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
+        </div>
       </div>
-      {(buffering || blocked) && (
-        <p style={styles.notice}>
-          {buffering
-            ? t('media.buffering')
-            : t('media.cannotSeek', { size: bytes === '' ? '' : `（${bytes}）`, limit: String(MAX_BUFFER_BYTES / 1024 / 1024) })}
-        </p>
-      )}
-      <div style={styles.footer}>
-        {kind === 'audio' ? null : <span style={styles.name}>{metaLine}</span>}
-        {info !== '' && <span style={styles.name}>{info}</span>}
-        {MEDIA_DEBUG && diag !== '' && <span style={styles.name}>{diag}</span>}
-        {download !== undefined && <a style={styles.link} href={download} download={name}>{t('common.download')}</a>}
-      </div>
-    </div>
+    </PreviewChrome>
   )
 }
 

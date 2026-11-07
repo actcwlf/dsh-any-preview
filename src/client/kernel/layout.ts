@@ -22,11 +22,13 @@ export const PANE_ROOT: CSSProperties = {
 }
 
 /** A centred placeholder that fills the same box. */
-export const PANE_FILL: CSSProperties = {  position: 'absolute',
+export const PANE_FILL: CSSProperties = {
+  position: 'absolute',
   inset: 0,
   display: 'grid',
   placeItems: 'center',
-  fontSize: 12,
+  fontSize: 13,
+  fontFamily: 'var(--dsw-font-family, inherit)',
   color: 'var(--dsw-alias-label-secondary)',
   background: 'var(--dsw-alias-bg-base)',
 }

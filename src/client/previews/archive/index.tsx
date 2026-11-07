@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Archive listing: zip through its central directory (ranged reads when the
  * size is known, whole-file otherwise), tar and tar.gz through the whole file
  * (gzip inflate is native).
@@ -159,12 +159,6 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
     />
   )
 }
-const barStyle = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-  padding: '6px 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
-
 const headerStyle = {
   position: 'sticky' as const,
   top: 0,
@@ -191,7 +185,7 @@ const backStyle = {
 const preStyle = {
   margin: 0,
   padding: '10px 14px',
-  fontFamily: 'var(--ds-font-family-code, ui-monospace, monospace)',
+  fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
   fontSize: 12,
   lineHeight: 1.6,
   whiteSpace: 'pre-wrap',

@@ -1,5 +1,5 @@
 /**
- * The 3D pane's shell: file name, stats, toolbar and the canvas mount point.
+ * The 3D pane's shell: summary, toolbar and the canvas mount point.
  *
  * Rendering only. The WebGL lifecycle, decoding and theme following live in
  * `useModelViewer`; the controls and overlay are their own components so this
@@ -8,22 +8,12 @@
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
 import { formatBytes } from '../../kernel/format.ts'
-import { PANE_ROOT } from '../../kernel/layout.ts'
+import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { ModelOverlay } from './ModelOverlay.tsx'
 import { ModelToolbar } from './ModelToolbar.tsx'
 import { ModelAnimationBar } from './ModelAnimationBar.tsx'
 import { useModelViewer } from './useModelViewer.ts'
 import type { PreviewBodyProps } from '../../kernel/types.ts'
-
-/**
- * Final path segment for display.
- * @param path - absolute path, either separator.
- * @returns the file name.
- */
-function basenameOf(path: string): string {
-  const name = path.replaceAll('\\', '/')
-  return name.slice(name.lastIndexOf('/') + 1)
-}
 
 /**
  * Compact length for the info bar; units are whatever the file uses.
@@ -68,13 +58,17 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     ].join('')
     : ''
 
+  const title = (
+    <span style={titleStyle} title={absolutePath}>
+      <span>{t('model.title')}</span>
+      {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
+    </span>
+  )
+
   return (
-    <div style={PANE_ROOT} data-model-status={view.status}>
-      <div style={barStyle}>
-        <span style={titleStyle} title={absolutePath}>
-          {typeof absolutePath === 'string' ? basenameOf(absolutePath) : t('model.title')}
-        </span>
-        {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
+    <PreviewChrome
+      title={title}
+      toolbar={(
         <ModelToolbar
           disabled={!ready}
           settings={settings}
@@ -82,8 +76,10 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
           onToggle={toggle}
           onCycleBackground={cycleBackground}
         />
-      </div>
-      {view.note !== '' && <div style={noteStyle}>{view.note}</div>}
+      )}
+      status={view.note === '' ? undefined : view.note}
+      tone={view.note === '' ? 'normal' : 'warning'}
+    >
       {ready && animations.length > 0 && (
         <ModelAnimationBar
           clips={animations}
@@ -100,6 +96,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
         title={t('model.hint')}
         aria-label={t('model.title')}
         role="group"
+        data-model-status={view.status}
       >
         <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
         <ModelOverlay
@@ -110,29 +107,18 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
           onRetry={retry}
         />
       </div>
-    </div>
+    </PreviewChrome>
   )
 }
 
-const barStyle = {
-  display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8,
-  padding: '3px 8px 3px 10px', fontSize: 12, color: 'var(--dsw-alias-label-secondary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
-} as const
-
 const titleStyle = {
-  minWidth: 0, maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap', color: 'var(--dsw-alias-label-primary)',
+  display: 'inline-flex', alignItems: 'center', gap: 8,
+  minWidth: 0, overflow: 'hidden',
 } as const
 
 const statsStyle = {
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  color: 'var(--dsw-alias-label-tertiary)', fontSize: 11,
-} as const
-
-const noteStyle = {
-  padding: '4px 10px', fontSize: 11, color: 'var(--dsw-alias-state-warn-primary)',
-  borderBottom: '0.5px solid var(--dsw-alias-border-l2)', flex: '0 0 auto',
+  color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, fontWeight: 400,
 } as const
 
 const viewportStyle = {
