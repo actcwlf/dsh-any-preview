@@ -194,12 +194,20 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **命中高亮**：匹配片段就地标黄，所有行都显示（默认不隐藏上下文）
 - **上一个/下一个**（↑ ↓）：循环跳转，并把目标行滚到视口中央；CSV 用固定行高定位，
   其余用 `data-row-index` + `scrollIntoView`
-- **计数**：`当前/匹配总数`，空查询时显示总行数
+- **计数**：已提交搜索的 `当前/总数`；CSV 大文件在输入阶段只显示 `Enter 搜索全文`，
+  不把已加载行的局部命中当作总数
 - **`Aa`** 区分大小写、**`.*`** 正则模式；正则写了一半不合法时按「无查询」处理，不报错
 - **「仅匹配」** 勾选后才过滤（等价于原来的行为），行号始终是原始行号
+- **全文扫描**：完整内容输入即全文；windowed CSV 由 Enter 提交，扫描中显示已找到数和
+  进度，可停止；扫描完成后显示全量匹配数，但可跳转匹配仍受 5,000 条上限约束，
+  状态栏会说明
 
 实现：`kernel/search.ts`（编译/区间/选择，纯函数可单测）、`kernel/useSearch.ts`
 （匹配 + 导航状态）、`kernel/marks.tsx`（高亮渲染）、`kernel/SearchBar.tsx`（共用控件）。
+
+本地搜索（按行/record）与全文扫描（原始文本、出现次数）目前仍不是同一套匹配语义；
+详细差异、候选方案和后续块索引前提记录在
+[`search-semantics.md`](search-semantics.md)。
 
 ## 启动与懒加载
 
@@ -538,7 +546,7 @@ target = await ctx.fs.resolve(path, { cwd, signal })
 不许出现 `rgb()`：深色主题由宿主在 `body[data-ds-dark-theme]` 上翻转这些别名，硬编码就翻不过来。
 分隔线统一 **0.5px**（宿主文档面是 hairline，1px 会把表格画成"网格"），圆角取 `--dsw-radius-xs/sm`，
 代码字体是 `--ds-font-family-code`（`--dsw-font-markdown-code-block` 是**简写**，不能当 font-family 用）。
-搜索框的焦点环画在外层 field 上（2px `state-business-primary`），因为 field 才是控件。
+搜索框的焦点颜色画在外层 field 的边框上（`state-business-primary`），不再叠加 2px 外环。
 
 详情与前后对照见 `handoff` §18。
 
@@ -580,9 +588,12 @@ const COMPACT_WIDTH = 420   // chrome 自身宽度（ResizeObserver 实测）
 `src/client/kernel/SearchBar.tsx`：
 
 - `Aa`、`.*` **内嵌在输入框里**（编辑器风格），不额外占顶栏宽度；
-- `Enter` 下一个命中、`Shift+Enter` 上一个、`Esc` 清空并失焦；
+- `Enter` 在完整内容上跳下一个命中；在 windowed CSV 尚未全文扫描时提交全文扫描，
+  扫描完成后再次 `Enter` 才跳下一个；
+- `Shift+Enter` 上一个命中、`Esc` 清空并失焦；
+- 查询非空时显示 20px 清除按钮；字段内 toggle 是 ghost，不再画描边；
 - 不再显示"共 N 行"——表格里已能看到，属于冗余；
-- `compact` 时隐藏计数与"仅匹配"，搜索框与箭头保留。
+- `compact` 时隐藏计数与"仅匹配"，搜索框、箭头和停止扫描保留。
 
 ### 迁移方法（下次照做）
 
