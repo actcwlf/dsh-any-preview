@@ -315,7 +315,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
 function Status({ text }: { readonly text: string }) {
   return (
     <div style={{ height: '100%', display: 'grid', placeItems: 'center', padding: 16 }}>
-      <p style={{ margin: 0, fontSize: 12, textAlign: 'center', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' }}>
+      <p style={{ margin: 0, fontSize: 13, textAlign: 'center', lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary)' }}>
         {text}
       </p>
     </div>
@@ -360,7 +360,7 @@ const styles = {
     maxWidth: '100%',
     maxHeight: '72vh',
     background: '#000',
-    borderRadius: 8,
+    borderRadius: 'var(--dsw-radius-sm)',
     outline: 'none',
   },
   audioCard: {
@@ -370,7 +370,7 @@ const styles = {
     width: '100%',
     maxWidth: 520,
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 'var(--dsw-radius-md)',
     background: 'var(--dsw-alias-bg-layer-2)',
   },
   audio: { width: '100%', outline: 'none' },

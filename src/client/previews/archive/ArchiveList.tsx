@@ -9,21 +9,18 @@ import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { CHROME_CONTROL, DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
+import type { TransientNotice } from '../../kernel/useTransientNotice.ts'
 import type { EntryLike } from './EntryView.tsx'
 
-/** One transient archive action result. `id` lets a repeated message restart the toast. */
-export interface ArchiveNotice {
-  readonly id: number
-  readonly text: string
-  readonly tone?: 'normal' | 'critical'
-}
+/** Backwards-compatible name for the shared transient notice shape. */
+export type ArchiveNotice = TransientNotice
 
 /** Everything a container hands the listing. */
 export interface ArchiveListProps {
   readonly entries: readonly EntryLike[]
   readonly summary: string
   /** Result of the last action (re-extract, clean); shown as a transient toast. */
-  readonly notice?: ArchiveNotice
+  readonly notice?: TransientNotice
   /** Persistent warning about the archive itself, not a just-finished action. */
   readonly status?: string
   readonly statusTone?: 'normal' | 'warning' | 'critical'
@@ -83,7 +80,17 @@ export function ArchiveList(props: ArchiveListProps) {
                 <tr
                   key={`${String(index)}:${entry.name}`}
                   className={entry.directory ? undefined : 'dsh-archive-row'}
+                  data-archive-row={entry.directory ? 'directory' : 'file'}
+                  tabIndex={entry.directory ? undefined : 0}
+                  aria-label={entry.directory ? undefined : entry.name}
                   onClick={entry.directory ? undefined : () => onSelect(entry)}
+                  onKeyDown={entry.directory
+                    ? undefined
+                    : event => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      onSelect(entry)
+                    }}
                   style={{ cursor: entry.directory ? 'default' : 'pointer' }}
                 >
                   <td
@@ -122,6 +129,10 @@ export function ArchiveList(props: ArchiveListProps) {
 const ARCHIVE_CSS = `
 .dsh-archive-row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-archive-row:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
 }
 `
 

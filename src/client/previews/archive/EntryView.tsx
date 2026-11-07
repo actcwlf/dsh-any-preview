@@ -276,6 +276,6 @@ const PATH_TEXT = { marginTop: 6, color: 'var(--dsw-alias-label-tertiary)', word
 const NOTE_INLINE = { marginLeft: 8, color: 'var(--dsw-alias-label-tertiary)' } as const
 const LOADING = { padding: 16, fontSize: 13, lineHeight: 1.6, color: 'var(--dsw-alias-label-tertiary)' } as const
 const PRE = {
-  margin: 0, padding: '8px 12px', fontSize: 12,
+  margin: 0, padding: '8px 12px', fontSize: 12, lineHeight: '18px',
   fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)', whiteSpace: 'pre-wrap' as const,
 } as const

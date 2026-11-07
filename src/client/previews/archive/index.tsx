@@ -6,7 +6,7 @@
  * Listing only — extracting an entry is a later step.
  */
 import { PreviewState } from '../../kernel/PreviewState.tsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { t } from '../../i18n.ts'
 import { errorText, PreviewError } from '../../kernel/errors.ts'
@@ -25,7 +25,7 @@ import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
 import { ArchiveList } from './ArchiveList.tsx'
-import type { ArchiveNotice } from './ArchiveList.tsx'
+import { useTransientNotice } from '../../kernel/useTransientNotice.ts'
 import { EntryView } from './EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from './paths.ts'
 
@@ -50,21 +50,7 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
   const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
-  const [barNotice, setBarNotice] = useState<ArchiveNotice | undefined>(undefined)
-  const noticeId = useRef(0)
-  const noticeTimer = useRef<number | undefined>(undefined)
-  const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
-    noticeId.current += 1
-    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
-    setBarNotice({ id: noticeId.current, text, tone })
-    noticeTimer.current = window.setTimeout(() => {
-      setBarNotice(undefined)
-      noticeTimer.current = undefined
-    }, tone === 'critical' ? 6000 : 4000)
-  }
-  useEffect(() => () => {
-    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
-  }, [])
+  const { notice: barNotice, showNotice } = useTransientNotice()
   const [dir, setDir] = useState(defaultDir)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')

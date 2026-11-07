@@ -1,5 +1,5 @@
 /** 7z listing; a member opens in the shared entry view, like any other archive. */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -13,7 +13,7 @@ import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
 import { ArchiveList } from '../archive/ArchiveList.tsx'
-import type { ArchiveNotice } from '../archive/ArchiveList.tsx'
+import { useTransientNotice } from '../../kernel/useTransientNotice.ts'
 import { EntryView } from '../archive/EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from '../archive/paths.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -36,21 +36,7 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const [selected, setSelected] = useState<SevenZipEntry | undefined>(undefined)
   const [dir, setDir] = useState(defaultDir)
   const [lastEntry, setLastEntry] = useState<SevenZipEntry | undefined>(undefined)
-  const [notice, setNotice] = useState<ArchiveNotice | undefined>(undefined)
-  const noticeId = useRef(0)
-  const noticeTimer = useRef<number | undefined>(undefined)
-  const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
-    noticeId.current += 1
-    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
-    setNotice({ id: noticeId.current, text, tone })
-    noticeTimer.current = window.setTimeout(() => {
-      setNotice(undefined)
-      noticeTimer.current = undefined
-    }, tone === 'critical' ? 6000 : 4000)
-  }
-  useEffect(() => () => {
-    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current)
-  }, [])
+  const { notice, showNotice } = useTransientNotice()
 
   useEffect(() => {
     let alive = true
