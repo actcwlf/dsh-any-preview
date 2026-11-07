@@ -1,5 +1,5 @@
 /** 7z listing; a member opens in the shared entry view, like any other archive. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -13,6 +13,7 @@ import { useDocument } from '../../kernel/useDocument.ts'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
 import { ArchiveList } from '../archive/ArchiveList.tsx'
+import type { ArchiveNotice } from '../archive/ArchiveList.tsx'
 import { EntryView } from '../archive/EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from '../archive/paths.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -35,7 +36,12 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
   const [selected, setSelected] = useState<SevenZipEntry | undefined>(undefined)
   const [dir, setDir] = useState('')
   const [lastEntry, setLastEntry] = useState<SevenZipEntry | undefined>(undefined)
-  const [notice, setNotice] = useState<string | undefined>(undefined)
+  const [notice, setNotice] = useState<ArchiveNotice | undefined>(undefined)
+  const noticeId = useRef(0)
+  const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
+    noticeId.current += 1
+    setNotice({ id: noticeId.current, text, tone })
+  }
 
   useEffect(() => {
     let alive = true
@@ -72,20 +78,20 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
       const path = await writeExtracted(lastEntry.name, bytes, dir, true)
       const address = extractedAddress(resourceAddress, lastEntry.name, dir, defaultDir)
       const opened = address !== undefined && openResourceAddress(address)
-      setNotice(opened
+      showNotice(opened
         ? t('archive.reextracted', { name: lastEntry.name })
         : t('archive.reextractedTo', { path }))
     } catch (error) {
-      setNotice(errorText(error, 'archive.reextractFailed'))
+      showNotice(errorText(error, 'archive.reextractFailed'), 'critical')
     }
   }
 
   const clean = async (): Promise<void> => {
     try {
       const removed = await cleanExtracted(dir)
-      setNotice(removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: removed }))
+      showNotice(removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: removed }))
     } catch (error) {
-      setNotice(errorText(error, 'archive.cleanFailed'))
+      showNotice(errorText(error, 'archive.cleanFailed'), 'critical')
     }
   }
   if (selected !== undefined) {
@@ -126,7 +132,9 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
     <ArchiveList
       entries={archive.entries}
       summary={summary}
-      notice={notice ?? (supported ? undefined : t('sevenzip.unsupported'))}
+      notice={notice}
+      status={supported ? undefined : t('sevenzip.unsupported')}
+      statusTone="warning"
       lastEntry={lastEntry}
       onSelect={entry => { setSelected(entry as SevenZipEntry) }}
       onReextract={() => { void reextract() }}

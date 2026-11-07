@@ -25,6 +25,7 @@ import { MAX_ENTRIES, decodeText } from '../../../shared/zip/parse.ts'
 import type { ArchiveEntry } from '../../../shared/zip/parse.ts'
 import { listTarEntries, listZipEntries, readEntryBytesFromUrl } from '../../kernel/zip.ts'
 import { ArchiveList } from './ArchiveList.tsx'
+import type { ArchiveNotice } from './ArchiveList.tsx'
 import { EntryView } from './EntryView.tsx'
 import { defaultTargetDir, extractedAddress } from './paths.ts'
 
@@ -48,7 +49,12 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   const [entries, setEntries] = useState<ArchiveEntry[]>([])
   const [selected, setSelected] = useState<ArchiveEntry | undefined>(undefined)
   const [lastEntry, setLastEntry] = useState<ArchiveEntry | undefined>(undefined)
-  const [barNotice, setBarNotice] = useState<string | undefined>(undefined)
+  const [barNotice, setBarNotice] = useState<ArchiveNotice | undefined>(undefined)
+  const noticeId = useRef(0)
+  const showNotice = (text: string, tone: 'normal' | 'critical' = 'normal'): void => {
+    noticeId.current += 1
+    setBarNotice({ id: noticeId.current, text, tone })
+  }
   const [dir, setDir] = useState('')
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [detail, setDetail] = useState('')
@@ -101,9 +107,9 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
         action: 'clean',
         targetDir: defaultTargetDir(absolutePath),
       })
-      setBarNotice(result.removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: result.removed }))
+      showNotice(result.removed === 0 ? t('archive.cleanNone') : t('archive.cleaned', { count: result.removed }))
     } catch (error) {
-      setBarNotice(errorText(error, 'archive.cleanFailed'))
+      showNotice(errorText(error, 'archive.cleanFailed'), 'critical')
     }
   }
 
@@ -121,9 +127,9 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
       })
       const address = extractedAddress(resourceAddress, lastEntry.name, dir, dir)
       const opened = address !== undefined && openResourceAddress(address)
-      setBarNotice(opened ? t('archive.reextracted', { name: lastEntry.name }) : t('archive.reextractedTo', { path: result.path }))
+      showNotice(opened ? t('archive.reextracted', { name: lastEntry.name }) : t('archive.reextractedTo', { path: result.path }))
     } catch (error) {
-      setBarNotice(errorText(error, 'archive.reextractFailed'))
+      showNotice(errorText(error, 'archive.reextractFailed'), 'critical')
     }
   }
 

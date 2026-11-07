@@ -9,14 +9,25 @@ import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { CHROME_CONTROL, DATA_TABLE_HEADER } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
+import { useEffect, useState } from 'react'
 import type { EntryLike } from './EntryView.tsx'
+
+/** One transient archive action result. `id` lets a repeated message restart the toast. */
+export interface ArchiveNotice {
+  readonly id: number
+  readonly text: string
+  readonly tone?: 'normal' | 'critical'
+}
 
 /** Everything a container hands the listing. */
 export interface ArchiveListProps {
   readonly entries: readonly EntryLike[]
   readonly summary: string
-  /** Result of the last action (re-extract, clean); shown in the bar. */
-  readonly notice?: string
+  /** Result of the last action (re-extract, clean); shown as a transient toast. */
+  readonly notice?: ArchiveNotice
+  /** Persistent warning about the archive itself, not a just-finished action. */
+  readonly status?: string
+  readonly statusTone?: 'normal' | 'warning' | 'critical'
   readonly lastEntry?: EntryLike
   readonly onSelect: (entry: EntryLike) => void
   readonly onReextract?: () => void
@@ -24,7 +35,17 @@ export interface ArchiveListProps {
 }
 
 export function ArchiveList(props: ArchiveListProps) {
-  const { entries, summary, notice, lastEntry, onSelect, onReextract, onClean } = props
+  const { entries, summary, notice, status, statusTone = 'warning', lastEntry, onSelect, onReextract, onClean } = props
+  const [visibleNotice, setVisibleNotice] = useState<ArchiveNotice | undefined>(undefined)
+  useEffect(() => {
+    if (notice === undefined) {
+      setVisibleNotice(undefined)
+      return undefined
+    }
+    setVisibleNotice(notice)
+    const timer = setTimeout(() => setVisibleNotice(undefined), notice.tone === 'critical' ? 6000 : 4000)
+    return () => clearTimeout(timer)
+  }, [notice])
   const hasActions = (lastEntry !== undefined && onReextract !== undefined) || onClean !== undefined
   const actions = (
     <>
@@ -43,6 +64,8 @@ export function ArchiveList(props: ArchiveListProps) {
     <PreviewChrome
       kind="ARCHIVE"
       title={summary}
+      status={status}
+      tone={statusTone}
       toolbar={!hasActions
         ? undefined
         : compact => (
@@ -88,8 +111,19 @@ export function ArchiveList(props: ArchiveListProps) {
             </tbody>
           </table>
         </div>
-        {notice !== undefined && notice !== '' && (
-          <div style={TOAST} role="status" data-archive-notice="true">{notice}</div>
+        {visibleNotice !== undefined && (
+          <div
+            style={{
+              ...TOAST,
+              color: visibleNotice.tone === 'critical'
+                ? 'var(--dsw-alias-state-error-primary)'
+                : 'var(--dsw-alias-label-secondary)',
+            }}
+            role="status"
+            data-archive-notice="true"
+          >
+            {visibleNotice.text}
+          </div>
         )}
       </div>
     </PreviewChrome>
