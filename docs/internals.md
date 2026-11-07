@@ -324,7 +324,9 @@ Markdown 正文用 1.6，标题 700，代码 11/18 + radius-sm，表格用 10/16
 横向分隔；Archive EntryView 的路径输入、面板和正文统一到 28px 控件与 13/1.6。
 Diff / Log / Archive 主内容代码用 12/18；只有 Markdown/Notebook 代码块用 11/18。
 `ToolbarOverflow` 与 Model 动画菜单共用 `PreviewMenu`，统一 outside-click / Escape /
-菜单 surface / 圆角 / shadow，不再各写一份 popover 状态机。
+菜单 surface / 圆角 / shadow，不再各写一份 popover 状态机。菜单 panel portal 到
+`document.body`，用 fixed positioning 跟随 trigger，并在视口内翻转/夹取；因此侧栏
+底部不会再裁切菜单。
 元数据检查器的 `Summary` 现在位于内容滚动区顶部，不再是一条独立的 32px chrome
 strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一个 32px bar 决定。
 `PreviewChrome.status` 只在 `tone` 为 `warning` / `critical` 时渲染；正常信息不再

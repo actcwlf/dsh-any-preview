@@ -48,6 +48,14 @@ declare module 'react/jsx-runtime' {
   export const Fragment: unknown
 }
 
+declare module 'react-dom' {
+  export function createPortal(
+    children: unknown,
+    container: Element | DocumentFragment,
+    key?: string | null,
+  ): unknown
+}
+
 declare module 'three'
 declare module 'three/addons/*'
 
