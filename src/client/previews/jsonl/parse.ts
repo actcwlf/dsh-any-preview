@@ -20,6 +20,22 @@ export interface JsonlConsumer extends StreamConsumer {
   readonly records: readonly JsonlRecord[]
   readonly invalid: number
   readonly truncated: boolean
+  readonly complete: boolean
+}
+
+/**
+ * Parse one source line into a record.
+ * @param line - 1-based source line number.
+ * @param raw - the line as received.
+ * @returns the record, or undefined for a blank line.
+ */
+export function parseJsonlRecord(line: number, raw: string): JsonlRecord | undefined {
+  if (raw.trim() === '') return undefined
+  try {
+    return { line, raw, value: JSON.parse(raw) as unknown }
+  } catch (error) {
+    return { line, raw, error: error instanceof Error ? error.message : 'invalid JSON' }
+  }
 }
 
 /**
@@ -32,6 +48,7 @@ export function createJsonlConsumer(maxRecords = 20_000): JsonlConsumer {
   let invalid = 0
   let truncated = false
   let sourceLine = 0
+  let complete = false
 
   const sink: LineConsumer = createLineConsumer((raw) => {
     // The source line number counts blanks too, so a reported line can be found
@@ -42,17 +59,18 @@ export function createJsonlConsumer(maxRecords = 20_000): JsonlConsumer {
       truncated = true
       return
     }
-    try {
-      records.push({ line: sourceLine, raw, value: JSON.parse(raw) as unknown })
-    } catch (error) {
-      invalid += 1
-      records.push({ line: sourceLine, raw, error: error instanceof Error ? error.message : 'invalid JSON' })
-    }
+    const record = parseJsonlRecord(sourceLine, raw)
+    if (record === undefined) return
+    if (record.error !== undefined) invalid += 1
+    records.push(record)
   })
 
   return {
     push: sink.push,
-    finish: sink.finish,
+    finish(): void {
+      sink.finish()
+      complete = true
+    },
     get records(): readonly JsonlRecord[] {
       return records
     },
@@ -61,6 +79,9 @@ export function createJsonlConsumer(maxRecords = 20_000): JsonlConsumer {
     },
     get truncated(): boolean {
       return truncated
+    },
+    get complete(): boolean {
+      return complete
     },
   }
 }

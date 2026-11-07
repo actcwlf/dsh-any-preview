@@ -167,6 +167,14 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 文件源上调用 `scrollToBottom`，不再只滚到已加载前缀的底部。`log/rows.ts` 只负责把
 line-aligned slice 变成 one-cell rows。
 
+### JSONL 文件源
+
+`.jsonl` / `.ndjson` 超过约 2 MB 且有绝对路径时同样切换到 `openRowFile`，窗口行保持原始
+JSON 文本；表格在渲染时用 `parseJsonlRecord` 解析，列名从前 200 条记录采样并固定。
+行高 22 px，比例滚动与 `stickyBand` 复用固定行高机制。小文件继续使用
+`createJsonlConsumer` 的 20,000 条上限和 2,000 行渲染上限。大文件当前只搜索当前窗口，
+过滤控件禁用；下一步才是 JSONL 全文扫描。
+
 ### CSV 文件源（按位置跳转）
 
 owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThrough + 1)`，并把页拼成
