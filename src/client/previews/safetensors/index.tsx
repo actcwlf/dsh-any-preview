@@ -1,5 +1,6 @@
 /** SafeTensors header inspector: what tensors a shard holds, and their dtypes. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -7,7 +8,6 @@ import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
-import { PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { readRange } from '../../kernel/zip.ts'
@@ -54,10 +54,14 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
   }, [absolutePath])
 
   if (state.status !== 'ready' || state.header === undefined) {
+    const failed = state.status === 'error'
     return (
-      <div style={PANE_FILL}>
-        {state.status === 'loading' ? t('safetensors.loading') : t('common.error', { detail: state.detail ?? '' })}
-      </div>
+      <PreviewState
+        kind="SAFETENSORS"
+        title={failed ? t('common.failed') : t('safetensors.loading')}
+        message={failed ? t('common.error', { detail: state.detail ?? '' }) : t('safetensors.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
     )
   }
 

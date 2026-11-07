@@ -119,7 +119,7 @@ export const TOOL_CSS = `
   background: var(--dsw-alias-interactive-bg-active);
 }
 .dsh-model-tool:focus-visible {
-  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
   outline-offset: 1px;
 }
 .dsh-model-tool:disabled {

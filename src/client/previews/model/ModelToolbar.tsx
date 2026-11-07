@@ -7,6 +7,7 @@
  * live in `aria-label`/`title`, not in the button body.
  */
 import { t } from '../../i18n.ts'
+import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
 import type { BackgroundMode, ViewerSettings, ViewerToggle } from './useModelViewer.ts'
 
@@ -16,6 +17,8 @@ export interface ModelToolbarProps {
   readonly disabled: boolean
   /** Current toggle states. */
   readonly settings: ViewerSettings
+  /** Hide the less-used toggles behind an overflow menu. */
+  readonly compact?: boolean
   /** Reset the camera to its fitted position. */
   readonly onReset: () => void
   /** Flip one boolean viewport toggle. */
@@ -43,11 +46,43 @@ function backgroundLabel(mode: BackgroundMode): string {
 export function ModelToolbar({
   disabled,
   settings,
+  compact = false,
   onReset,
   onToggle,
   onCycleBackground,
 }: ModelToolbarProps) {
   const backgroundTitle = backgroundLabel(settings.background)
+  const gridButton = (
+    <button
+      type="button" className="dsh-model-tool" disabled={disabled}
+      onClick={() => onToggle('grid')}
+      title={t('model.grid')} aria-label={t('model.grid')}
+      aria-pressed={settings.grid} data-model-tool="grid"
+    >
+      <ToolIcon kind="grid" />
+    </button>
+  )
+  const wireframeButton = (
+    <button
+      type="button" className="dsh-model-tool" disabled={disabled}
+      onClick={() => onToggle('wireframe')}
+      title={t('model.wireframe')} aria-label={t('model.wireframe')}
+      aria-pressed={settings.wireframe} data-model-tool="wireframe"
+    >
+      <ToolIcon kind="wireframe" />
+    </button>
+  )
+  const rotateButton = (
+    <button
+      type="button" className="dsh-model-tool" disabled={disabled}
+      onClick={() => onToggle('autoRotate')}
+      title={t('model.autoRotate')} aria-label={t('model.autoRotate')}
+      aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
+    >
+      <ToolIcon kind="rotate" />
+    </button>
+  )
+
   return (
     <>
       <style>{TOOL_CSS}</style>
@@ -70,30 +105,9 @@ export function ModelToolbar({
             : settings.background === 'dark' ? 'dark' : 'theme'}
           />
         </button>
-        <button
-          type="button" className="dsh-model-tool" disabled={disabled}
-          onClick={() => onToggle('grid')}
-          title={t('model.grid')} aria-label={t('model.grid')}
-          aria-pressed={settings.grid} data-model-tool="grid"
-        >
-          <ToolIcon kind="grid" />
-        </button>
-        <button
-          type="button" className="dsh-model-tool" disabled={disabled}
-          onClick={() => onToggle('wireframe')}
-          title={t('model.wireframe')} aria-label={t('model.wireframe')}
-          aria-pressed={settings.wireframe} data-model-tool="wireframe"
-        >
-          <ToolIcon kind="wireframe" />
-        </button>
-        <button
-          type="button" className="dsh-model-tool" disabled={disabled}
-          onClick={() => onToggle('autoRotate')}
-          title={t('model.autoRotate')} aria-label={t('model.autoRotate')}
-          aria-pressed={settings.autoRotate} data-model-tool="auto-rotate"
-        >
-          <ToolIcon kind="rotate" />
-        </button>
+        {compact
+          ? <ToolbarOverflow label={t('common.more')}>{gridButton}{wireframeButton}{rotateButton}</ToolbarOverflow>
+          : <>{gridButton}{wireframeButton}{rotateButton}</>}
       </span>
     </>
   )

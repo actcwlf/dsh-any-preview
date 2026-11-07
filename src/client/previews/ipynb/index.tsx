@@ -1,11 +1,11 @@
 /** Jupyter notebook viewer: markdown cells rendered, code cells and outputs shown. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import { sanitizeHtml } from '../../kernel/html.ts'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { parseNotebook } from './parse.ts'
@@ -17,9 +17,13 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
   useLocale()
   const source = previewSourceOf(content)
   const raw = source.kind === 'text' ? source.text.slice(0, MAX_CHARS) : ''
-  if (raw.trim() === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
+  if (raw.trim() === '') {
+    return <PreviewState kind="NOTEBOOK" title={t('ipynb.title')} message={t('common.loading')} />
+  }
   const notebook = parseNotebook(raw)
-  if (notebook.cells.length === 0) return <div style={PANE_FILL}>{t('ipynb.notNotebook')}</div>
+  if (notebook.cells.length === 0) {
+    return <PreviewState kind="NOTEBOOK" title={t('ipynb.title')} message={t('ipynb.notNotebook')} tone="critical" />
+  }
 
   return (
     <PreviewChrome

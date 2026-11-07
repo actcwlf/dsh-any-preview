@@ -7,7 +7,7 @@ import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { DataTable, KeyValueTable, Note, Summary } from '../../kernel/inspect.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { PANE_FILL } from '../../kernel/layout.ts'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { readRange } from '../../kernel/zip.ts'
@@ -73,10 +73,14 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
   }, [absolutePath])
 
   if (state.status !== 'ready' || state.header === undefined) {
+    const failed = state.status === 'error'
     return (
-      <div style={PANE_FILL}>
-        {state.status === 'loading' ? t('gguf.loading') : t('common.error', { detail: state.detail ?? '' })}
-      </div>
+      <PreviewState
+        kind="GGUF"
+        title={failed ? t('common.failed') : t('gguf.loading')}
+        message={failed ? t('common.error', { detail: state.detail ?? '' }) : t('gguf.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
     )
   }
 

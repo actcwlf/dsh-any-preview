@@ -1,10 +1,11 @@
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 /** Streaming log viewer: severity colouring, search, tail follow. */
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
-import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { followAfterScroll, isAtBottom } from './follow.ts'
 import { scrollToRow } from '../../kernel/scroll.ts'
@@ -53,7 +54,7 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (log === null) {
-    return <div style={PANE_FILL}>{t('common.loading')}</div>
+    return <PreviewState kind="LOG" title={t('log.title')} message={t('common.loading')} />
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {

@@ -4,6 +4,8 @@
  * book's stylesheet is scoped to this pane. Chapters render as blocks.
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { CHROME_CONTROL } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { PreviewError, errorText } from '../../kernel/errors.ts'
@@ -11,10 +13,10 @@ import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Blocks, parseMarkdownBlocks } from '../../kernel/blocks.tsx'
 import type { Block } from '../../kernel/blocks.tsx'
 import { fileUrl } from '../../kernel/file-url.ts'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { entryBytes, findEntry, listEntriesFromBuffer, normalizeEntryName, readEntryText } from '../../kernel/zip.ts'
@@ -153,35 +155,54 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
   }, [absolutePath])
 
   if (status !== 'ready') {
-    return <div style={PANE_FILL}>{status === 'loading' ? t('epub.loading') : t('common.error', { detail })}</div>
+    const failed = status === 'error'
+    return (
+      <PreviewState
+        kind="EPUB"
+        title={title === '' ? t('epub.title') : title}
+        message={failed ? t('common.error', { detail }) : t('epub.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
+    )
   }
 
   const chapter = chapters[current]
   const total = chapters.length
 
+  const chapterControls = (stacked: boolean): ReactNode => (
+    <span style={{
+      display: 'flex',
+      flexDirection: stacked ? 'column' : 'row',
+      alignItems: stacked ? 'stretch' : 'center',
+      gap: 6,
+      flex: '0 0 auto',
+    }}>
+      <button type="button" style={buttonStyle} className="dsh-preview-control" disabled={current === 0}
+        onClick={() => setCurrent(index => Math.max(0, index - 1))}>{t('epub.prev')}</button>
+      <select
+        aria-label={t('epub.chapter')}
+        value={current}
+        onChange={event => setCurrent(Number(event.target.value))}
+        style={selectStyle}
+        className="dsh-preview-control"
+      >
+        {chapters.map((item, index) => (
+          <option key={index} value={index}>{item.title}</option>
+        ))}
+      </select>
+      <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{current + 1} / {total}</span>
+      <button type="button" style={buttonStyle} className="dsh-preview-control" disabled={current >= total - 1}
+        onClick={() => setCurrent(index => Math.min(total - 1, index + 1))}>{t('epub.next')}</button>
+    </span>
+  )
+
   return (
     <PreviewChrome
       kind="EPUB"
       title={title === '' ? t('epub.title') : title}
-      toolbar={(
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
-          <button type="button" style={buttonStyle} disabled={current === 0}
-            onClick={() => setCurrent(index => Math.max(0, index - 1))}>{t('epub.prev')}</button>
-          <select
-            aria-label={t('epub.chapter')}
-            value={current}
-            onChange={event => setCurrent(Number(event.target.value))}
-            style={selectStyle}
-          >
-            {chapters.map((item, index) => (
-              <option key={index} value={index}>{item.title}</option>
-            ))}
-          </select>
-          <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{current + 1} / {total}</span>
-          <button type="button" style={buttonStyle} disabled={current >= total - 1}
-            onClick={() => setCurrent(index => Math.min(total - 1, index + 1))}>{t('epub.next')}</button>
-        </span>
-      )}
+      toolbar={compact => compact
+        ? <ToolbarOverflow label={t('common.more')}>{chapterControls(true)}</ToolbarOverflow>
+        : chapterControls(false)}
     >
       {css !== '' && <style>{css}</style>}
       <div className={SCOPE} style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 18px 24px', fontSize: 13 }}>

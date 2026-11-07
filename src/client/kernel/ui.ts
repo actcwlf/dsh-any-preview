@@ -49,7 +49,7 @@ export const CHROME_BAR = {
   fontSize: TEXT.chrome.fontSize,
   lineHeight: TEXT.chrome.lineHeight,
   color: 'var(--dsw-alias-label-secondary)',
-  overflow: 'hidden',
+  overflow: 'visible',
 } as const
 
 /** Title/leading slot: one line, yields before the toolbar. */
@@ -71,7 +71,7 @@ export const CHROME_TOOLBAR = {
   gap: CHROME.gap,
   flex: '1 1 auto',
   minWidth: 0,
-  overflow: 'hidden',
+  overflow: 'visible',
   whiteSpace: 'nowrap' as const,
 } as const
 
@@ -108,3 +108,21 @@ export const CHROME_CONTROL = {
   lineHeight: '18px',
   cursor: 'pointer',
 } as const
+
+/** Hover/focus/disabled states shared by text buttons and selects. */
+export const PREVIEW_CONTROL_CSS = `
+.dsh-preview-control:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.dsh-preview-control:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+.dsh-preview-control:focus-visible {
+  outline: 2px solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+.dsh-preview-control:disabled {
+  opacity: .45;
+  cursor: default;
+}
+`

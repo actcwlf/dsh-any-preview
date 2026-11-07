@@ -3,6 +3,7 @@
  * Table contents are intentionally out of scope.
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useEffect, useState } from 'react'
 import { t } from '../../i18n.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -10,7 +11,6 @@ import { PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { Note, Summary } from '../../kernel/inspect.tsx'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import type { MessageKey } from '../../locales.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
@@ -86,10 +86,14 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
   }, [absolutePath])
 
   if (state.status !== 'ready' || state.data === undefined) {
+    const failed = state.status === 'error'
     return (
-      <div style={PANE_FILL}>
-        {state.status === 'loading' ? t('sqlite.loading') : t('common.error', { detail: state.detail ?? '' })}
-      </div>
+      <PreviewState
+        kind="SQLITE"
+        title={failed ? t('common.failed') : t('sqlite.loading')}
+        message={failed ? t('common.error', { detail: state.detail ?? '' }) : t('sqlite.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
     )
   }
 

@@ -5,6 +5,7 @@
  * the same everywhere, so zip and 7z cannot drift apart again.
  */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { ToolbarOverflow } from '../../kernel/ToolbarOverflow.tsx'
 import { CHROME_CONTROL } from '../../kernel/ui.ts'
 import { formatBytes } from '../../kernel/format.ts'
 import { t } from '../../i18n.ts'
@@ -24,23 +25,28 @@ export interface ArchiveListProps {
 
 export function ArchiveList(props: ArchiveListProps) {
   const { entries, summary, notice, lastEntry, onSelect, onReextract, onClean } = props
+  const actions = (
+    <>
+      <span>{notice ?? t('archive.hint')}</span>
+      {lastEntry !== undefined && onReextract !== undefined && (
+        <button type="button" onClick={onReextract} style={SMALL} className="dsh-preview-control">
+          {t('archive.reextract', { name: lastEntry.name })}
+        </button>
+      )}
+      {onClean !== undefined && (
+        <button type="button" onClick={onClean} style={SMALL} className="dsh-preview-control">{t('archive.clean')}</button>
+      )}
+    </>
+  )
 
   return (
     <PreviewChrome
       kind="ARCHIVE"
       title={summary}
-      toolbar={(
-        <span style={ACTIONS}>
-          <span>{notice ?? t('archive.hint')}</span>
-          {lastEntry !== undefined && onReextract !== undefined && (
-            <button type="button" onClick={onReextract} style={SMALL}>
-              {t('archive.reextract', { name: lastEntry.name })}
-            </button>
-          )}
-          {onClean !== undefined && (
-            <button type="button" onClick={onClean} style={SMALL}>{t('archive.clean')}</button>
-          )}
-        </span>
+      toolbar={compact => (
+        compact
+          ? <ToolbarOverflow label={t('common.more')}>{actions}</ToolbarOverflow>
+          : <span style={ACTIONS}>{actions}</span>
       )}
     >
       <div style={{ flex: '1 1 auto', overflow: 'auto' }}>

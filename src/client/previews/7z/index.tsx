@@ -1,10 +1,9 @@
-﻿/** 7z listing; a member opens in the shared entry view, like any other archive. */
+/** 7z listing; a member opens in the shared entry view, like any other archive. */
 import { useEffect, useState } from 'react'
-import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import {
   checkExtracted, cleanExtracted, isSupported, readSevenZip, readSevenZipEntry, streamExtracted, writeExtracted,
 } from '../../kernel/sevenzip.ts'
@@ -57,8 +56,12 @@ export function SevenZipBody({ content, resourceAddress, useResource }: PreviewB
     if (defaultDir !== '') setDir(current => (current === '' ? defaultDir : current))
   }, [defaultDir])
 
-  if (listing.status === 'loading') return <div style={PANE_FILL}>{t('sevenzip.loading')}</div>
-  if (listing.status === 'error') return <div style={PANE_FILL}>{listing.detail}</div>
+  if (listing.status === 'loading') {
+    return <PreviewState kind="ARCHIVE" title={t('archive.title')} message={t('sevenzip.loading')} />
+  }
+  if (listing.status === 'error') {
+    return <PreviewState kind="ARCHIVE" title={t('archive.title')} message={listing.detail} tone="critical" />
+  }
 
   const { archive } = listing
 

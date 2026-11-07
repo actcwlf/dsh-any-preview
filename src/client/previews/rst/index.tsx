@@ -1,9 +1,9 @@
 /** reStructuredText viewer. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { LIMITS } from '../../../shared/limits.ts'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import { Blocks } from '../../kernel/blocks.tsx'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
@@ -16,7 +16,9 @@ export function RstBody({ content, scrollportRef }: PreviewBodyProps) {
   useLocale()
   const source = previewSourceOf(content)
   const text = source.kind === 'text' ? source.text.slice(0, MAX_CHARS) : ''
-  if (text.trim() === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
+  if (text.trim() === '') {
+    return <PreviewState kind="RST" title="reStructuredText" message={t('common.loading')} />
+  }
   return (
     <PreviewChrome kind="RST" title="reStructuredText">
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 16px 24px', fontSize: 13 }} ref={scrollportRef}>

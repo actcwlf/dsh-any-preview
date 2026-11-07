@@ -10,6 +10,7 @@
 /** Simplified Chinese dictionary and the key-set source of truth. */
 export const zh = {
   'common.error': '无法预览：{detail}',
+  'common.failed': '预览失败',
   'common.fileUrl': '无法生成文件地址',
   'common.name': '名称',
   'common.type': '类型',
@@ -57,6 +58,7 @@ export const zh = {
   'sqlite.badPageSize': '文件头里的页大小无效',
 
   'common.back': '← 返回',
+  'common.more': '更多',
   'common.choose': '选择…',
   'common.size': '大小',
   'zip.httpError': '读取失败（HTTP {status}）',
@@ -237,6 +239,7 @@ export type MessageKey = keyof typeof zh
 /** English dictionary, checked against the Chinese key set. */
 export const en: Record<MessageKey, string> = {
   'common.error': 'Cannot preview: {detail}',
+  'common.failed': 'Preview failed',
   'common.fileUrl': 'Cannot build a file URL',
   'common.name': 'Name',
   'common.type': 'Type',
@@ -284,6 +287,7 @@ export const en: Record<MessageKey, string> = {
   'sqlite.badPageSize': 'The header declares an invalid page size',
 
   'common.back': '← Back',
+  'common.more': 'More',
   'common.choose': 'Choose…',
   'common.size': 'Size',
   'zip.httpError': 'Read failed (HTTP {status})',

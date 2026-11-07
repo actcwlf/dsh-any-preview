@@ -1,5 +1,6 @@
 /** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { windowRange } from '../../kernel/window.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
@@ -8,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
-import { ACTIVE_ROW, PANE_FILL, PANE_ROOT } from '../../kernel/layout.ts'
+import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useSearch } from '../../kernel/useSearch.ts'
 import { bandRows, fitColumns, stickyBand, windowedBodyRows } from '../../kernel/window-state.ts'
@@ -155,9 +156,11 @@ export function CsvBody(props: PreviewBodyProps) {
   if (view === null) {
     const empty = props.content.kind === 'text' && props.content.eof && props.content.text.length === 0
     return (
-      <div style={PANE_FILL}>
-        {empty ? t('csv.empty') : t('common.loading')}
-      </div>
+      <PreviewState
+        kind="CSV"
+        title={empty ? t('csv.empty') : t('csv.title')}
+        message={empty ? t('csv.empty') : t('common.loading')}
+      />
     )
   }
 
@@ -250,9 +253,9 @@ export function CsvBody(props: PreviewBodyProps) {
           filterable={filterable}
         >
           {state !== undefined && !state.done
-            ? (<button type="button" onClick={scan.stop} style={cancelStyle}>{t('csv.cancelScan')}</button>)
+            ? (<button type="button" onClick={scan.stop} style={cancelStyle} className="dsh-preview-control">{t('csv.cancelScan')}</button>)
             : (!compact && windowed && options.query.trim() !== ''
-              ? (<button type="button" title={t('csv.scanFile')} onClick={scan.start} style={cancelStyle}>{t('csv.scanFile')}</button>)
+              ? (<button type="button" title={t('csv.scanFile')} onClick={scan.start} style={cancelStyle} className="dsh-preview-control">{t('csv.scanFile')}</button>)
               : undefined)}
         </SearchBar>
       )}

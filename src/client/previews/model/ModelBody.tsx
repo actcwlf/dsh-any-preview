@@ -69,8 +69,9 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     <PreviewChrome
       kind="3D"
       title={title}
-      toolbar={(
+      toolbar={compact => (
         <ModelToolbar
+          compact={compact}
           disabled={!ready}
           settings={settings}
           onReset={resetView}

@@ -141,7 +141,11 @@ const fieldStyle = {
 } as const
 
 /** The host's focus ring, drawn on the field: 2px, business primary, above neighbours. */
-const RING = { ...fieldStyle, boxShadow: '0 0 0 2px var(--dsw-alias-state-business-primary)', zIndex: 1 } as const
+const RING = {
+  ...fieldStyle,
+  boxShadow: '0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary))',
+  zIndex: 1,
+} as const
 
 const inputStyle = {
   font: 'inherit', fontSize: 12, lineHeight: '18px', padding: 0, flex: '1 1 auto', minWidth: 0,

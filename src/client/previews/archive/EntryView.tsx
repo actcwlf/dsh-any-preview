@@ -175,11 +175,11 @@ export function EntryView(props: EntryViewProps) {
           aria-label={t('archive.dirLabel')}
           style={PATH_INPUT}
         />
-        <button type="button" onClick={() => { void choose() }} style={SMALL}>{t('common.choose')}</button>
-        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL}>
+        <button type="button" onClick={() => { void choose() }} style={SMALL} className="dsh-preview-control">{t('common.choose')}</button>
+        <button type="button" onClick={() => { void extract() }} disabled={extracting} style={SMALL} className="dsh-preview-control">
           {extracting ? t('archive.extracting') : t('archive.extractOpen')}
         </button>
-        <button type="button" onClick={() => setHexView(true)} style={SMALL}>{t('archive.viewHex')}</button>
+        <button type="button" onClick={() => setHexView(true)} style={SMALL} className="dsh-preview-control">{t('archive.viewHex')}</button>
       </div>
       {notice !== undefined && <div style={NOTE}>{notice}</div>}
       {progress !== undefined && <div style={NOTE}>{Math.round(progress * 100)}%</div>}
@@ -192,7 +192,7 @@ export function EntryView(props: EntryViewProps) {
       <div>{notice ?? t('archive.openedNote')}</div>
       <div style={PATH_TEXT}>{existing}</div>
       <div style={ROW}>
-        <button type="button" onClick={() => { void extract(true) }} style={SMALL}>
+        <button type="button" onClick={() => { void extract(true) }} style={SMALL} className="dsh-preview-control">
           {extracting ? t('archive.extracting') : t('archive.reextract', { name: entry.name })}
         </button>
       </div>
@@ -219,7 +219,7 @@ export function EntryView(props: EntryViewProps) {
     body = (
       <>
         <div style={PANEL}>
-          <button type="button" onClick={() => setHexView(false)} style={SMALL}>{t('common.back')}</button>
+          <button type="button" onClick={() => setHexView(false)} style={SMALL} className="dsh-preview-control">{t('common.back')}</button>
           <span style={NOTE_INLINE}>{t('sevenzip.binaryHint')}</span>
         </div>
         <pre style={PRE}>{hexDump(loaded.bytes.subarray(0, MAX_HEX_BYTES))}</pre>
@@ -234,7 +234,7 @@ export function EntryView(props: EntryViewProps) {
       kind="ARCHIVE"
       title={(
         <span style={BAR_LEFT}>
-          <button type="button" onClick={onBack} style={BACK}>{t('common.back')}</button>
+          <button type="button" onClick={onBack} style={BACK} className="dsh-preview-control">{t('common.back')}</button>
           <span style={NAME}>{entry.name}</span>
         </span>
       )}

@@ -1,10 +1,10 @@
 /** Font preview: load the file into a FontFace and draw a specimen. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { errorText } from '../../kernel/errors.ts'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useEffect, useState } from 'react'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 
 /** Family name the preview owns, so it never collides with page fonts. */
@@ -48,10 +48,14 @@ export function FontBody({ content }: PreviewBodyProps) {
   }, [bytes])
 
   if (status !== 'ready') {
+    const failed = status === 'error'
     return (
-      <div style={PANE_FILL}>
-        {status === 'loading' ? t('font.loading') : t('common.error', { detail })}
-      </div>
+      <PreviewState
+        kind="FONT"
+        title={t('font.title')}
+        message={failed ? t('common.error', { detail }) : t('font.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
     )
   }
 

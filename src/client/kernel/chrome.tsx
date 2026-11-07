@@ -19,6 +19,7 @@ import {
   CHROME_TITLE,
   CHROME_TOOLBAR,
   FONT_SANS,
+  PREVIEW_CONTROL_CSS,
 } from './ui.ts'
 
 /** One preview's chrome. */
@@ -70,6 +71,7 @@ export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', c
       data-chrome-width={String(width)}
       data-chrome-compact={compact ? '1' : '0'}
     >
+      <style>{PREVIEW_CONTROL_CSS}</style>
       {hasBar && (
         <div style={CHROME_BAR} data-preview-chrome="bar">
           {showTitle && (

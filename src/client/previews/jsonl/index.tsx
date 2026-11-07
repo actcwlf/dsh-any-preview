@@ -4,7 +4,8 @@ import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { ACTIVE_ROW, PANE_FILL } from '../../kernel/layout.ts'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
+import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -38,7 +39,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (jsonl === null) {
-    return <div style={PANE_FILL}>{t('common.loading')}</div>
+    return <PreviewState kind="JSONL" title={t('common.loading')} message={t('common.loading')} />
   }
 
   const columns = collectColumns(jsonl.records)
@@ -96,7 +97,11 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
               const active = index === found.activeRow
               const rowStyle = {
                 height: 22,
-                background: active ? ACTIVE_ROW : record.error === undefined ? undefined : 'rgba(248, 81, 73, 0.14)',
+                background: active
+                  ? ACTIVE_ROW
+                  : record.error === undefined
+                    ? undefined
+                    : 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent)',
                 boxShadow: active ? 'inset 3px 0 0 var(--dsw-alias-state-warn-primary)' : undefined,
               } as const
               return record.error === undefined

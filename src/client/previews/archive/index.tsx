@@ -5,14 +5,13 @@
  *
  * Listing only — extracting an entry is a later step.
  */
-import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { t } from '../../i18n.ts'
 import { errorText, PreviewError } from '../../kernel/errors.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
 import { formatBytes } from '../../kernel/format.ts'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { chooseDirectory, openResourceAddress } from '../../runtime.ts'
@@ -81,10 +80,14 @@ export function ArchiveBody({ content, resourceAddress, useResource }: PreviewBo
   }, [url, size, lower])
 
   if (status !== 'ready') {
+    const failed = status === 'error'
     return (
-      <div style={PANE_FILL}>
-        {status === 'loading' ? t('archive.loading') : t('common.error', { detail })}
-      </div>
+      <PreviewState
+        kind="ARCHIVE"
+        title={t('archive.title')}
+        message={failed ? t('common.error', { detail }) : t('archive.loading')}
+        tone={failed ? 'critical' : 'normal'}
+      />
     )
   }
 

@@ -1,9 +1,9 @@
 /** `.eml` viewer: headers, the message text, and attachment names. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { useLocale } from '../../useLocale.ts'
 import { t } from '../../i18n.ts'
 import { useMemo } from 'react'
-import { PANE_FILL } from '../../kernel/layout.ts'
 import { previewSourceOf } from '../../kernel/source.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { PRIMARY_HEADERS, headerLabel, parseEml } from './parse.ts'
@@ -18,7 +18,9 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   const mail = useMemo(() => parseEml(raw.slice(0, MAX_CHARS)), [raw])
   const subject = mail.headers.find(header => header.name === 'subject')?.value.trim() ?? ''
 
-  if (raw === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
+  if (raw === '') {
+    return <PreviewState kind="EML" title={t('eml.title')} message={t('common.loading')} />
+  }
 
   const ordered = [
     ...PRIMARY_HEADERS

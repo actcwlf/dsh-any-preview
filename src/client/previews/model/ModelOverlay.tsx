@@ -36,7 +36,7 @@ export function ModelOverlay({ status, detail, retryable, loadingText, onRetry }
           <div style={failureStyle} data-model-failure={detail}>
             <span style={failureTextStyle}>{t('common.error', { detail })}</span>
             {retryable && (
-              <button type="button" style={retryStyle} onClick={onRetry}>
+              <button type="button" style={retryStyle} className="dsh-preview-control" onClick={onRetry}>
                 {t('model.retry')}
               </button>
             )}

@@ -4,7 +4,7 @@ import { t } from '../../i18n.ts'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Marked } from '../../kernel/marks.tsx'
 import { PreviewChrome } from '../../kernel/chrome.tsx'
-import { PANE_FILL } from '../../kernel/layout.ts'
+import { PreviewState } from '../../kernel/PreviewState.tsx'
 import { SearchBar } from '../../kernel/SearchBar.tsx'
 import { scrollToRow } from '../../kernel/scroll.ts'
 import { DEFAULT_SEARCH } from '../../kernel/search.ts'
@@ -16,8 +16,8 @@ import { createDiffConsumer } from './parse.ts'
 import type { DiffLineKind } from './parse.ts'
 
 const BACKGROUND: Record<DiffLineKind, string | undefined> = {
-  add: 'rgba(46, 160, 67, 0.16)',
-  del: 'rgba(248, 81, 73, 0.16)',
+  add: 'color-mix(in srgb, var(--dsw-alias-state-success-primary) 16%, transparent)',
+  del: 'color-mix(in srgb, var(--dsw-alias-state-error-primary) 16%, transparent)',
   file: 'var(--dsw-alias-bg-layer-2)',
   hunk: 'var(--dsw-alias-bg-layer-2)',
   note: undefined,
@@ -54,7 +54,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
   }, [found.activeRow])
 
   if (diff === null) {
-    return <div style={PANE_FILL}>{t('common.loading')}</div>
+    return <PreviewState kind="DIFF" title={t('diff.title')} message={t('common.loading')} />
   }
 
   const setScroller = (element: HTMLDivElement | null): void => {
