@@ -1,5 +1,6 @@
 /**
- * The model pane's view controls: reset, grid, wireframe, auto-rotate.
+ * The model pane's view controls: reset, background, grid, wireframe,
+ * auto-rotate.
  *
  * Presentation only: the viewer owns the settings and applies them. Buttons
  * follow the host document toolbar's 28px icon-button language; the labels
@@ -7,7 +8,7 @@
  */
 import { t } from '../../i18n.ts'
 import { TOOL_CSS, ToolIcon } from './model-icons.tsx'
-import type { ViewerSettings } from './useModelViewer.ts'
+import type { BackgroundMode, ViewerSettings, ViewerToggle } from './useModelViewer.ts'
 
 /** Props for the toolbar. */
 export interface ModelToolbarProps {
@@ -17,16 +18,36 @@ export interface ModelToolbarProps {
   readonly settings: ViewerSettings
   /** Reset the camera to its fitted position. */
   readonly onReset: () => void
-  /** Flip one toggle. */
-  readonly onToggle: (field: keyof ViewerSettings) => void
+  /** Flip one boolean viewport toggle. */
+  readonly onToggle: (field: ViewerToggle) => void
+  /** Cycle theme → light → dark → theme. */
+  readonly onCycleBackground: () => void
+}
+
+/**
+ * Label describing the current backdrop mode.
+ * @param mode - theme-following or an explicit light/dark backdrop.
+ * @returns localized button label.
+ */
+function backgroundLabel(mode: BackgroundMode): string {
+  if (mode === 'light') return t('model.backgroundLight')
+  if (mode === 'dark') return t('model.backgroundDark')
+  return t('model.backgroundTheme')
 }
 
 /**
  * Render the tool row.
- * @param props - disabled state, settings, and the two callbacks.
- * @returns the style sheet and the four buttons.
+ * @param props - disabled state, settings, and callbacks.
+ * @returns the style sheet and the five buttons.
  */
-export function ModelToolbar({ disabled, settings, onReset, onToggle }: ModelToolbarProps) {
+export function ModelToolbar({
+  disabled,
+  settings,
+  onReset,
+  onToggle,
+  onCycleBackground,
+}: ModelToolbarProps) {
+  const backgroundTitle = backgroundLabel(settings.background)
   return (
     <>
       <style>{TOOL_CSS}</style>
@@ -37,6 +58,17 @@ export function ModelToolbar({ disabled, settings, onReset, onToggle }: ModelToo
           title={t('model.resetView')} aria-label={t('model.resetView')} data-model-tool="reset"
         >
           <ToolIcon kind="reset" />
+        </button>
+        <button
+          type="button" className="dsh-model-tool" disabled={disabled}
+          onClick={onCycleBackground}
+          title={backgroundTitle} aria-label={backgroundTitle}
+          data-model-tool="background" data-model-background={settings.background}
+        >
+          <ToolIcon kind={settings.background === 'light'
+            ? 'light'
+            : settings.background === 'dark' ? 'dark' : 'theme'}
+          />
         </button>
         <button
           type="button" className="dsh-model-tool" disabled={disabled}

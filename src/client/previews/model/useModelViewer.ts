@@ -58,15 +58,27 @@ const PROBE_BYTES = 1023
 /** Last progress update, so a fast stream does not re-render every chunk. */
 const PROGRESS_INTERVAL_MS = 120
 
+/** The backdrop follows the host theme unless the reader overrides it. */
+export type BackgroundMode = 'theme' | 'light' | 'dark'
+
+/** Boolean viewport toggles; background is a three-state cycle instead. */
+export type ViewerToggle = 'grid' | 'wireframe' | 'autoRotate'
+
 /** What the viewport can toggle without rebuilding the scene. */
 export interface ViewerSettings {
   readonly grid: boolean
   readonly wireframe: boolean
   readonly autoRotate: boolean
+  readonly background: BackgroundMode
 }
 
 /** Defaults for a first open. */
-const DEFAULT_SETTINGS: ViewerSettings = { grid: true, wireframe: false, autoRotate: false }
+const DEFAULT_SETTINGS: ViewerSettings = {
+  grid: true,
+  wireframe: false,
+  autoRotate: false,
+  background: 'theme',
+}
 
 /** Imperative operations the toolbar drives. */
 export interface ViewerHandle {
@@ -120,8 +132,9 @@ export interface ModelViewer {
   readonly animationPlaying: boolean
   readonly animationTime: number
   resetView(): void
-  toggle(field: keyof ViewerSettings): void
+  toggle(field: ViewerToggle): void
   retry(): void
+  cycleBackground(): void
   toggleAnimationClip(index: number): void
   toggleAnimation(): void
   seekAnimation(time: number): void
@@ -228,6 +241,32 @@ function themeOf(THREE: ThreeBundle['THREE'], host: HTMLElement): SceneTheme {
     gridMajor: new THREE.Color(light ? 0x9aa1aa : 0x5f6672),
     gridMinor: new THREE.Color(light ? 0xd2d6db : 0x363c46),
     wire: new THREE.Color(light ? 0x2b3038 : 0xe3e7ec),
+  }
+}
+
+/** Fixed palettes for the explicit light/dark backdrop, independent of the host. */
+const LIGHT_THEME = { background: 0xf5f6f8, gridMajor: 0x9aa1aa, gridMinor: 0xd2d6db, wire: 0x2b3038 }
+const DARK_THEME = { background: 0x101216, gridMajor: 0x5f6672, gridMinor: 0x363c46, wire: 0xe3e7ec }
+
+/**
+ * Pick the scene colours for a background mode.
+ * @param THREE - three.js module.
+ * @param host - element whose inherited tokens decide the theme.
+ * @param mode - theme-following or an explicit light/dark backdrop.
+ * @returns background and grid/wire colours.
+ */
+function sceneThemeFor(
+  THREE: ThreeBundle['THREE'],
+  host: HTMLElement,
+  mode: BackgroundMode,
+): SceneTheme {
+  if (mode === 'theme') return themeOf(THREE, host)
+  const fixed = mode === 'light' ? LIGHT_THEME : DARK_THEME
+  return {
+    background: new THREE.Color(fixed.background),
+    gridMajor: new THREE.Color(fixed.gridMajor),
+    gridMinor: new THREE.Color(fixed.gridMinor),
+    wire: new THREE.Color(fixed.wire),
   }
 }
 
@@ -634,10 +673,30 @@ export function useModelViewer(
       let viewer: ViewerHandle | undefined
 
       /**
+       * Swap the scene surface and the colours that must contrast with it.
+       * @param next - theme snapshot to apply.
+       */
+      const applySceneTheme = (next: SceneTheme): void => {
+        if (sameTheme(currentTheme, next)) return
+        currentTheme = next
+        scene.background = next.background
+        if (grid !== undefined && gridSpec !== undefined) {
+          const visible = grid.visible
+          scene.remove(grid)
+          disposeObject(grid)
+          grid = buildGrid(gridSpec)
+          grid.visible = visible
+        }
+        wireMaterial?.color?.copy?.(next.wire)
+        invalidate()
+      }
+
+      /**
        * Apply a toolbar toggle to the live scene.
        * @param next - the settings to show.
        */
       const apply = (next: ViewerSettings): void => {
+        applySceneTheme(sceneThemeFor(THREE, host, next.background))
         if (grid !== undefined) grid.visible = next.grid
         setWireframe(next.wireframe)
         controls.autoRotate = next.autoRotate
@@ -701,19 +760,9 @@ export function useModelViewer(
        * attribute, so one observer covers a palette switch and a theme plugin.
        */
       const retheme = (): void => {
-        const next = themeOf(THREE, host)
-        if (sameTheme(currentTheme, next)) return
-        currentTheme = next
-        scene.background = next.background
-        if (grid !== undefined && gridSpec !== undefined) {
-          const visible = grid.visible
-          scene.remove(grid)
-          disposeObject(grid)
-          grid = buildGrid(gridSpec)
-          grid.visible = visible
-        }
-        wireMaterial?.color?.copy?.(next.wire)
-        invalidate()
+        // An explicit backdrop wins until the reader cycles back to "theme".
+        if (settingsRef.current.background !== 'theme') return
+        applySceneTheme(themeOf(THREE, host))
       }
       if (typeof MutationObserver !== 'undefined') {
         themeObserver = new MutationObserver(retheme)
@@ -960,8 +1009,19 @@ export function useModelViewer(
     setAttempt((count) => count + 1)
   }, [key])
 
-  const toggle = useCallback((field: keyof ViewerSettings): void => {
+  const toggle = useCallback((field: ViewerToggle): void => {
     const next = { ...settingsRef.current, [field]: !settingsRef.current[field] }
+    settingsRef.current = next
+    setSettings(next)
+    viewerRef.current?.apply(next)
+  }, [])
+
+  const cycleBackground = useCallback((): void => {
+    const current = settingsRef.current.background
+    const background: BackgroundMode = current === 'theme'
+      ? 'light'
+      : current === 'light' ? 'dark' : 'theme'
+    const next = { ...settingsRef.current, background }
     settingsRef.current = next
     setSettings(next)
     viewerRef.current?.apply(next)
@@ -996,6 +1056,7 @@ export function useModelViewer(
     resetView,
     toggle,
     retry,
+    cycleBackground,
     toggleAnimationClip,
     toggleAnimation,
     seekAnimation,

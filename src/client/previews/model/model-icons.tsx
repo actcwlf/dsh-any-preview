@@ -7,7 +7,10 @@
  */
 
 /** Glyphs the model toolbar uses. */
-export type ToolKind = 'reset' | 'grid' | 'wireframe' | 'rotate' | 'play' | 'pause'
+export type ToolKind =
+  | 'reset' | 'grid' | 'wireframe' | 'rotate'
+  | 'theme' | 'light' | 'dark'
+  | 'play' | 'pause'
 
 /**
  * One line icon.
@@ -51,6 +54,22 @@ export function ToolIcon({ kind }: { readonly kind: ToolKind }) {
           <path d="M3.2 7.8a4.9 4.9 0 0 1 8.4-3.4" />
           <path d="M11.6 2.2v2.7H8.9" />
         </>
+      )}
+      {kind === 'theme' && (
+        <>
+          <circle cx="8" cy="8" r="5.5" />
+          <path d="M8 2.5a5.5 5.5 0 0 0 0 11Z" fill="currentColor" stroke="none" />
+        </>
+      )}
+      {kind === 'light' && (
+        <>
+          <circle cx="8" cy="8" r="2.6" />
+          <path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8" />
+          <path d="m3.4 3.4 1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3" />
+        </>
+      )}
+      {kind === 'dark' && (
+        <path d="M12.8 9.4A5.2 5.2 0 0 1 6.6 3.2a5.2 5.2 0 1 0 6.2 6.2Z" />
       )}
       {kind === 'play' && (
         <path d="M5.2 3.1 13 8l-7.8 4.9V3.1Z" fill="currentColor" stroke="none" />

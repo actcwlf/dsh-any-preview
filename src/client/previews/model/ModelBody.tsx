@@ -44,7 +44,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
   const {
     view, progress, absolutePath, mountRef, settings, resetView, toggle, retry,
     animations, animationActive, animationPlaying, animationTime,
-    toggleAnimationClip, toggleAnimation, seekAnimation,
+    cycleBackground, toggleAnimationClip, toggleAnimation, seekAnimation,
   } = useModelViewer(content, resourceAddress, useResource)
   const ready = view.status === 'ready'
   const loadingText = view.phase === 'decoding'
@@ -80,6 +80,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
           settings={settings}
           onReset={resetView}
           onToggle={toggle}
+          onCycleBackground={cycleBackground}
         />
       </div>
       {view.note !== '' && <div style={noteStyle}>{view.note}</div>}

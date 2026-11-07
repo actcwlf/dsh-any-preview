@@ -269,8 +269,10 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
   `ACESFilmicToneMapping` 让 PBR 金属不再发黑；OBJ/MTL 保持原生 Phong（不吃
   `scene.environment`），另有一盏低强度下方补光（`DirectionalLight` 0.4，位置
   `(0, -4, 2)`）避免朝下表面只剩深色半球地面光。信息条显示三角形/顶点/材质数与包围盒尺寸，
-  工具栏提供重置视角、网格、线框、自动旋转，沿用宿主文档工具条的 28px 图标按钮
-  （15px、1px 线宽、`--dsw-alias-interactive-bg-hover` 悬停/按下态）；线框用无光照的
+  工具栏提供重置视角、背景切换、网格、线框、自动旋转，沿用宿主文档工具条的 28px 图标按钮
+  （15px、1px 线宽、`--dsw-alias-interactive-bg-hover` 悬停/按下态）；背景默认跟随
+  宿主主题，额外提供 跟随主题 → 浅色 → 深色 的三态循环，固定背景时主题观察者不覆盖，
+  并同步切换网格/线框的对比色。线框用无光照的
   `MeshBasicMaterial({ wireframe: true, toneMapped: false })` 替换网格材质，
   线条颜色按主题取对比色（原先是让受光材质自己画线，浅色模型在浅色背景上几乎看不见）。
   渲染改为按需：`OrbitControls.update()` 返回是否变化，阻尼/自动旋转/动画都停下后即停掉
