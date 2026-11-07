@@ -22,7 +22,10 @@ export function IpynbBody({ content, scrollportRef }: PreviewBodyProps) {
   if (notebook.cells.length === 0) return <div style={PANE_FILL}>{t('ipynb.notNotebook')}</div>
 
   return (
-    <PreviewChrome title={`${t('ipynb.title')} · ${t('ipynb.cells', { count: notebook.cells.length })}`}>
+    <PreviewChrome
+      kind="NOTEBOOK"
+      title={t('ipynb.cells', { count: notebook.cells.length })}
+    >
       <style>{NB_CSS}</style>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '8px 14px 24px', fontSize: 13 }} ref={scrollportRef}>
         {notebook.cells.map((cell, index) => (

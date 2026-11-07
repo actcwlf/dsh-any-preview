@@ -63,6 +63,8 @@ export function LogBody({ content, scrollportRef }: PreviewBodyProps) {
 
   return (
     <PreviewChrome
+      kind="LOG"
+      title={t('log.summary', { count: log.lines.length.toLocaleString('en-US') })}
       toolbar={compact => (
         <SearchBar
           compact={compact}

@@ -98,7 +98,10 @@ export function SqliteBody({ content, resourceAddress, useResource }: PreviewBod
   for (const object of objects) counts.set(object.type, (counts.get(object.type) ?? 0) + 1)
 
   return (
-    <PreviewChrome title={`SQLite · ${objects.length.toLocaleString('en-US')}`}>
+    <PreviewChrome
+      kind="SQLITE"
+      title={t('count.items', { count: objects.length.toLocaleString('en-US') })}
+    >
       <Summary fields={[
         { label: t('common.pageSize'), value: formatBytes(header.pageSize) },
         { label: t('common.pages'), value: header.pageCount.toLocaleString('en-US') },

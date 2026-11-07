@@ -58,15 +58,16 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
     ].join('')
     : ''
 
+  const summary = statsText.replace(/^ · /u, '')
   const title = (
     <span style={titleStyle} title={absolutePath}>
-      <span>{t('model.title')}</span>
-      {statsText !== '' && <span style={statsStyle}>{statsText}</span>}
+      {summary === '' ? t('model.loading') : summary}
     </span>
   )
 
   return (
     <PreviewChrome
+      kind="3D"
       title={title}
       toolbar={(
         <ModelToolbar
@@ -112,13 +113,7 @@ export function ModelBody({ content, resourceAddress, useResource }: PreviewBody
 }
 
 const titleStyle = {
-  display: 'inline-flex', alignItems: 'center', gap: 8,
-  minWidth: 0, overflow: 'hidden',
-} as const
-
-const statsStyle = {
   minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-  color: 'var(--dsw-alias-label-tertiary)', fontSize: 12, fontWeight: 400,
 } as const
 
 const viewportStyle = {

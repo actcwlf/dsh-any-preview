@@ -66,7 +66,8 @@ export function SafeTensorsBody({ content, resourceAddress, useResource }: Previ
 
   return (
     <PreviewChrome
-      title={<span>{'Safetensors · ' + t('common.tensors') + ' ' + header.tensors.length.toLocaleString('en-US')}</span>}
+      kind="SAFETENSORS"
+      title={<span>{t('common.tensors') + ' ' + header.tensors.length.toLocaleString('en-US')}</span>}
       status={header.tensors.length > shown.length ? t('tensors.count', { count: header.tensors.length, shown: shown.length }) : undefined}
     >
       <Summary fields={[

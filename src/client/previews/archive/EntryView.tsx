@@ -231,6 +231,7 @@ export function EntryView(props: EntryViewProps) {
 
   return (
     <PreviewChrome
+      kind="ARCHIVE"
       title={(
         <span style={BAR_LEFT}>
           <button type="button" onClick={onBack} style={BACK}>{t('common.back')}</button>

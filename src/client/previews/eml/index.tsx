@@ -16,6 +16,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   const source = previewSourceOf(content)
   const raw = source.kind === 'text' ? source.text : ''
   const mail = useMemo(() => parseEml(raw.slice(0, MAX_CHARS)), [raw])
+  const subject = mail.headers.find(header => header.name === 'subject')?.value.trim() ?? ''
 
   if (raw === '') return <div style={PANE_FILL}>{t('common.loading')}</div>
 
@@ -28,7 +29,7 @@ export function EmlBody({ content, scrollportRef }: PreviewBodyProps) {
   ]
 
   return (
-    <PreviewChrome title={t('eml.title')}>
+    <PreviewChrome kind="EML" title={subject === '' ? t('eml.title') : subject}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '10px 14px' }} ref={scrollportRef}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, marginBottom: 14 }}>
           <tbody>

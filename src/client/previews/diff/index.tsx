@@ -64,6 +64,7 @@ export function DiffBody({ content, scrollportRef }: PreviewBodyProps) {
 
   return (
     <PreviewChrome
+      kind="DIFF"
       title={(
         <span>
           {t('diff.rows', { count: diff.lines.length.toLocaleString('en-US') })}

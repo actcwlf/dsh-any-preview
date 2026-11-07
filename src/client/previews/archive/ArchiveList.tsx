@@ -27,6 +27,7 @@ export function ArchiveList(props: ArchiveListProps) {
 
   return (
     <PreviewChrome
+      kind="ARCHIVE"
       title={summary}
       toolbar={(
         <span style={ACTIONS}>

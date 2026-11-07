@@ -1,4 +1,4 @@
-﻿/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
+/** Streaming CSV/TSV table with windowed rows and search, over the incremental pipeline. */
 import { PreviewChrome } from '../../kernel/chrome.tsx'
 import { windowRange } from '../../kernel/window.ts'
 import { useLocale } from '../../useLocale.ts'
@@ -227,6 +227,7 @@ export function CsvBody(props: PreviewBodyProps) {
 
   return (
     <PreviewChrome
+      kind="CSV"
       title={(
         <span>
           {t('csv.summary', { rows: dataRows.toLocaleString('en-US'), columns: view.columns })}

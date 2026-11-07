@@ -161,6 +161,7 @@ export function EpubBody({ content, resourceAddress, useResource }: PreviewBodyP
 
   return (
     <PreviewChrome
+      kind="EPUB"
       title={title === '' ? t('epub.title') : title}
       toolbar={(
         <span style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>

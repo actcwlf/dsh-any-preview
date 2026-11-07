@@ -223,16 +223,18 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
 
   const activeSrc = bufferedUrl !== '' ? bufferedUrl : lanSrc !== '' ? lanSrc : remote
   const label = kind === 'audio' ? t('media.audio') : t('media.video')
+  const kindLabel = kind === 'audio' ? 'AUDIO' : 'VIDEO'
+  const title = name === '' ? label : name
   // Transport streams carry H.264/AAC inside a container the browser cannot
   // demux; remux them to fMP4 instead of asking the element to play them.
   const suffix = name.slice(name.lastIndexOf('.') + 1).toLowerCase()
   if ((suffix === 'ts' || suffix === 'm2ts') && activeSrc !== undefined) {
-    return <PreviewChrome title={label}><TsPlayer src={activeSrc} /></PreviewChrome>
+    return <PreviewChrome kind={kindLabel} title={title}><TsPlayer src={activeSrc} /></PreviewChrome>
   }
 
   if (remote === undefined) {
     return (
-      <PreviewChrome title={label}>
+      <PreviewChrome kind={kindLabel} title={title}>
         <Status text={absolutePath === undefined ? t('media.noPath') : t('media.loading')} />
       </PreviewChrome>
     )
@@ -245,7 +247,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
     // decode them. Anything else means the stream itself was not obtainable.
     const message = errCode === 4 ? t('media.unsupported') : t('media.streamFailed')
     return (
-      <PreviewChrome title={label}>
+      <PreviewChrome kind={kindLabel} title={title}>
         <div style={styles.frame}>
           <Status text={message} />
           {MEDIA_DEBUG && (
@@ -285,7 +287,7 @@ function MediaBody({ kind, content, resourceAddress, useResource }: MediaBodyPro
       )
 
   return (
-    <PreviewChrome title={label}>
+    <PreviewChrome kind={kindLabel} title={title}>
       <div style={styles.frame} data-any-preview-media={kind}>
         <div style={styles.stage}>
           {kind === 'audio'

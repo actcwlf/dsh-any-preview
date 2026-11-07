@@ -12,6 +12,7 @@
 import type { ReactNode } from 'react'
 import { useElementWidth } from './useWidth.ts'
 import { PANE_ROOT } from './layout.ts'
+import { PreviewTitle } from './PreviewTitle.tsx'
 import {
   CHROME_BAR,
   CHROME_STATUS,
@@ -22,6 +23,8 @@ import {
 
 /** One preview's chrome. */
 export interface PreviewChromeProps {
+  /** Short format label shown before the title, e.g. CSV, LOG, EPUB. */
+  readonly kind?: string
   /** Name, size and format hint; every preview supplies at least a format summary. */
   readonly title?: ReactNode
   /** Search, filters and view switches; a function receives the compact flag. */
@@ -41,7 +44,7 @@ export interface PreviewChromeProps {
  */
 const COMPACT_WIDTH = 420
 
-export function PreviewChrome({ title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
+export function PreviewChrome({ kind, title, toolbar, status, tone = 'normal', children }: PreviewChromeProps) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   // At the sidebar's minimum width there is no room for a label and a control in
   // one line; the label is the one that can go, because the document tab already
@@ -69,7 +72,11 @@ export function PreviewChrome({ title, toolbar, status, tone = 'normal', childre
     >
       {hasBar && (
         <div style={CHROME_BAR} data-preview-chrome="bar">
-          {showTitle && <span style={CHROME_TITLE}>{title}</span>}
+          {showTitle && (
+            <span style={CHROME_TITLE}>
+              <PreviewTitle kind={kind}>{title}</PreviewTitle>
+            </span>
+          )}
           {toolbar !== undefined && (
             <div style={CHROME_TOOLBAR}>
               {typeof toolbar === 'function' ? toolbar(compact) : toolbar}

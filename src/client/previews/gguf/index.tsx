@@ -85,7 +85,8 @@ export function GgufBody({ content, resourceAddress, useResource }: PreviewBodyP
 
   return (
     <PreviewChrome
-      title={<span>{`GGUF v${String(header.version)}`}</span>}
+      kind="GGUF"
+      title={<span>{`v${String(header.version)}`}</span>}
       status={header.kvCount > header.kv.length ? t('metadata.count', { count: header.kvCount, shown: header.kv.length }) : undefined}
     >
       <Summary fields={[

@@ -56,7 +56,7 @@ export function FontBody({ content }: PreviewBodyProps) {
   }
 
   return (
-    <PreviewChrome title={t('font.sample')} status={t('font.loaded')}>
+    <PreviewChrome kind="FONT" title={t('font.sample')} status={t('font.loaded')}>
       <div style={{ flex: '1 1 auto', overflow: 'auto', padding: '12px 16px' }}>
         {SIZES.map(size => (
           <div key={size} style={{ marginBottom: 14 }}>

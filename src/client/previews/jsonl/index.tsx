@@ -51,6 +51,7 @@ export function JsonlBody({ content, scrollportRef }: PreviewBodyProps) {
 
   return (
     <PreviewChrome
+      kind="JSONL"
       title={(
         <span>
         <span>

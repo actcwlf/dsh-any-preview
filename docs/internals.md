@@ -301,6 +301,9 @@ UI 基线在 `kernel/ui.ts`：所有预览共用 38px `PreviewChrome`（与 DSH 
 `--dsw-font-mono`；模型与媒体也走同一个 `PreviewChrome`，不再自建不同高度的
 顶栏。格式自身的摘要/工具栏通过 `PreviewChrome` 的 `title` / `toolbar` / `status`
 传入，避免第二层 bar 和内容起点漂移。
+`PreviewChrome` 的左侧统一由 `PreviewTitle` 渲染：小号格式 badge（CSV/LOG/EPUB/3D…）
+加 13/20、500 字重的主标题；主标题可以是内容摘要、文件名或书名，但字号、字重和
+颜色不再由各预览自行决定。
 
 ### 解码器与外部资源
 
