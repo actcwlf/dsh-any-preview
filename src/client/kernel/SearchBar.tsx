@@ -1,5 +1,5 @@
 /** The shared search field: query, toggles, match navigation, optional filtering. */
-import { useState } from 'react'
+import { useRef } from 'react'
 import { useLocale } from '../useLocale.ts'
 import { t } from '../i18n.ts'
 import type { ReactNode } from 'react'
@@ -52,8 +52,12 @@ export function SearchBar({
   filterable = true, placeholder, children, compact = false,
 }: SearchBarProps) {
   useLocale()
-  const [focused, setFocused] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
   const active = options.query.trim() !== ''
+  const clear = (): void => {
+    onChange({ ...options, query: '' })
+    inputRef.current?.focus()
+  }
   // Enter walks the matches the way an editor does; Esc clears and drops focus. A preview
   // that scans on demand gets the Enter first, so typing stays cheap.
   const onKeyDown = (event: any): void => {
@@ -71,56 +75,70 @@ export function SearchBar({
     }
   }
   return (
-    <div style={compact ? compactRow : rowStyle}>
-      {/* The field owns its toggles, like an editor's find box: they read as part
-          of the input instead of competing with it for bar width. The ring lives on
-          the field rather than the input, because the field is the control. */}
-      <div style={focused ? RING : fieldStyle}>
-        <input
-          type="search"
-          value={options.query}
-          onChange={event => onChange({ ...options, query: event.target.value })}
-          placeholder={placeholder ?? t('search.placeholder')}
-          aria-label={t('search.aria')}
-          onKeyDown={onKeyDown}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-        style={inputStyle}
-        />
-        <button
-          type="button"
-          title={t('search.case')}
-          aria-pressed={options.caseSensitive}
-          onClick={() => onChange({ ...options, caseSensitive: !options.caseSensitive })}
-          style={inlineToggle(options.caseSensitive)}
-        >
-          Aa
-        </button>
-        <button
-          type="button"
-          title={t('search.regex')}
-          aria-pressed={options.regex}
-          onClick={() => onChange({ ...options, regex: !options.regex })}
-          style={inlineToggle(options.regex)}
-        >
-          .*
-        </button>
-      </div>
-      <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
-      <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
-      {!compact && (
-        <>
-          {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
-          {filterable && (
-            <label style={labelStyle}>
-              <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
-              {t('search.onlyMatches')}
-            </label>
+    <>
+      <style>{SEARCH_CSS}</style>
+      <div style={compact ? compactRow : rowStyle}>
+        {/* The field owns its toggles, like an editor's find box: they read as part
+            of the input instead of competing with it for bar width. Host search fields
+            put the focus colour on the border, not on an extra box-shadow ring. */}
+        <div className="dsh-preview-search" style={fieldStyle}>
+          <input
+            ref={inputRef}
+            type="search"
+            value={options.query}
+            onChange={event => onChange({ ...options, query: event.target.value })}
+            placeholder={placeholder ?? t('search.placeholder')}
+            aria-label={t('search.aria')}
+            onKeyDown={onKeyDown}
+            style={inputStyle}
+          />
+          <button
+            type="button"
+            title={t('search.case')}
+            aria-pressed={options.caseSensitive}
+            onClick={() => onChange({ ...options, caseSensitive: !options.caseSensitive })}
+            style={inlineToggle(options.caseSensitive)}
+          >
+            Aa
+          </button>
+          <button
+            type="button"
+            title={t('search.regex')}
+            aria-pressed={options.regex}
+            onClick={() => onChange({ ...options, regex: !options.regex })}
+            style={inlineToggle(options.regex)}
+          >
+            .*
+          </button>
+          {options.query !== '' && (
+            <button
+              type="button"
+              className="dsh-preview-control"
+              title={t('search.clear')}
+              aria-label={t('search.clear')}
+              onClick={clear}
+              style={clearStyle}
+            >
+              ×
+            </button>
           )}
-        </>
-      )}
-      {children}
-    </div>
+        </div>
+        <button type="button" className="dsh-preview-control" title={t('search.prev')} onClick={onPrev} disabled={matches === 0} style={navStyle}>↑</button>
+        <button type="button" className="dsh-preview-control" title={t('search.next')} onClick={onNext} disabled={matches === 0} style={navStyle}>↓</button>
+        {!compact && (
+          <>
+            {active && <span style={countStyle}>{`${index + 1}/${matches}`}</span>}
+            {filterable && (
+              <label style={labelStyle}>
+                <input type="checkbox" checked={filter} onChange={event => onFilter(event.target.checked)} />
+                {t('search.onlyMatches')}
+              </label>
+            )}
+          </>
+        )}
+        {children}
+      </div>
+    </>
   )
 }
 
@@ -136,16 +154,30 @@ const rowStyle = {
 
 const fieldStyle = {
   display: 'flex', alignItems: 'center', gap: 2, flex: '1 1 auto', minWidth: 0,
-  padding: '0 2px 0 8px', borderRadius: 'var(--dsw-radius-sm)', height: 28,
-  background: 'var(--dsw-alias-bg-layer-2)', border: '0.5px solid var(--dsw-alias-border-l2)',
+  padding: '0 2px 0 8px', height: 28,
 } as const
 
-/** The host's focus ring, drawn on the field: 2px, business primary, above neighbours. */
-const RING = {
-  ...fieldStyle,
-  boxShadow: '0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary))',
-  zIndex: 1,
-} as const
+/** Host search-field language: hairline l3, focus colour on the border. */
+const SEARCH_CSS = `
+.dsh-preview-search {
+  box-sizing: border-box;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-sm);
+  background: transparent;
+}
+.dsh-preview-search:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+.dsh-preview-search:focus-within {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+.dsh-preview-search input::placeholder {
+  color: var(--dsw-alias-label-caption);
+}
+.dsh-preview-search input::-webkit-search-cancel-button {
+  display: none;
+}
+`
 
 const inputStyle = {
   font: 'inherit', fontSize: 12, lineHeight: '18px', padding: 0, flex: '1 1 auto', minWidth: 0,
@@ -155,17 +187,25 @@ const inputStyle = {
 
 function inlineToggle(on: boolean) {
   return {
-    font: 'inherit', fontSize: 11, lineHeight: '16px', padding: '0 4px', borderRadius: 'var(--dsw-radius-xs)',
+    font: 'inherit', fontSize: 11, lineHeight: '16px', padding: '0 4px',
+    borderRadius: 'var(--dsw-radius-xs)',
     cursor: 'pointer', height: 20, flex: '0 0 auto',
     color: on ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)',
-    background: on ? 'var(--dsw-alias-bg-base)' : 'transparent',
-    border: `0.5px solid ${on ? 'var(--dsw-alias-border-l3)' : 'transparent'}`,
+    fontWeight: on ? 600 : 400,
+    background: on ? 'var(--dsw-alias-interactive-bg-hover)' : 'transparent',
+    border: 'none',
   } as const
 }
 
 const navStyle = {
-  font: 'inherit', fontSize: 12, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-sm)',
+  font: 'inherit', fontSize: 14, lineHeight: '18px', padding: '0 6px', borderRadius: 'var(--dsw-radius-sm)',
   cursor: 'pointer', height: 28, minWidth: 28, flex: '0 0 auto', border: 'none',
+} as const
+
+const clearStyle = {
+  width: 20, height: 20, padding: 0, flex: '0 0 auto',
+  fontSize: 14, lineHeight: '20px', borderRadius: 'var(--dsw-radius-xs)',
+  border: 'none', cursor: 'pointer',
 } as const
 
 const countStyle = {

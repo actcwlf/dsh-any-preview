@@ -313,7 +313,9 @@ secondary ink），内容区动作另用 `dsh-preview-action`（`bg-layer-2` + �
 元数据检查器的 `Summary` 现在位于内容滚动区顶部，不再是一条独立的 32px chrome
 strip；空间不足时 chip 换行并随内容滚走，内容起点仍由同一个 32px bar 决定。
 `PreviewChrome.status` 只在 `tone` 为 `warning` / `critical` 时渲染；正常信息不再
-额外占用一条 28px 底栏。
+额外占用一条 28px 底栏。搜索框沿用宿主 search-field 语法：28px、l3 细边框、
+`:focus-within` 只改边框颜色，不再叠加 2px 外环；`Aa` / `.*` 是字段内的 ghost
+切换，查询非空时显示 20px 清除按钮。
 
 ### 解码器与外部资源
 

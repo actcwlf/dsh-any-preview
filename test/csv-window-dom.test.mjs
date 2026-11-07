@@ -600,5 +600,6 @@ test('the shared chrome keeps a fixed 32px bar', { skip: !available }, async (t)
   assert.ok(bar, 'the preview chrome bar is mounted')
   assert.equal(bar.style.height, '32px')
   assert.match(bar.textContent ?? '', /CSV/u)
+  assert.ok(view.container.querySelector('.dsh-preview-search'), 'the host-style search field is mounted')
 })
 
