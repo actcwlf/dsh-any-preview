@@ -130,6 +130,8 @@ export interface RowFile {
   scanLines(pattern: RegExp, options: {
     readonly signal: AbortSignal
     readonly lineLimit?: number
+    /** Ignore blank lines; line-oriented JSONL skips them, log does not. */
+    readonly skipEmpty?: boolean
     readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
   }): Promise<FileLineScan>
   /** Forget everything read so far. */
@@ -379,6 +381,7 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
     async scanLines(pattern: RegExp, options: {
       readonly signal: AbortSignal
       readonly lineLimit?: number
+      readonly skipEmpty?: boolean
       readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
     }): Promise<FileLineScan> {
       const limit = options.lineLimit ?? Number.POSITIVE_INFINITY
@@ -404,6 +407,8 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
             }
           }
           if (matched) {
+            const raw = cells[0] ?? ''
+            if (options.skipEmpty === true && raw.trim() === '') continue
             matches += 1
             if (lines.length < limit) lines.push(line + rowOffset)
           }

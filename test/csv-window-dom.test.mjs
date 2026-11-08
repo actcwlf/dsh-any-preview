@@ -808,6 +808,20 @@ test('a small jsonl past the record budget switches to its file source', { skip:
   })
   await tick(400)
   assert.ok(container.querySelector('tr[data-row-index="20400"]'), 'the tail is reachable from the file source')
+
+  const input = container.querySelector('input[type="search"]')
+  assert.ok(input, 'the search field is mounted')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, '20400')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  const found = await waitFor(() => /1\/1/u.test(container.textContent ?? ''), 4_000)
+  assert.ok(found, 'the whole file is searchable after falling back to the file source')
+  assert.ok(container.querySelector('tr[data-row-index="20399"]'), 'the recorded hit is revealed')
 })
 
 test('a small log past the line budget switches to its file source', { skip: !available }, async (t) => {

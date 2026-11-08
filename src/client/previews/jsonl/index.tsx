@@ -15,6 +15,7 @@ import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
 import { stickyBand } from '../../kernel/window-state.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { useLogScroll } from '../log/scroll.ts'
+import { useLogScan } from '../log/scan.ts'
 import { collectColumns, formatValue, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { useJsonlSource } from './source.ts'
@@ -66,7 +67,23 @@ export function JsonlBody(props: PreviewBodyProps) {
     : collectColumns(source.records)
   const found = useSearch(useMemo(() => searchRecords.map(record => record.raw), [searchRecords, searchRecords.length]), options)
   const activeRecord = found.activeRow === undefined ? undefined : searchRecords[found.activeRow]
-  const activeLine = activeRecord === undefined ? undefined : activeRecord.line - 1
+  const localActiveLine = activeRecord === undefined ? undefined : activeRecord.line - 1
+  const scan = useLogScan({
+    scan: source.scan,
+    query: options.query,
+    regex: options.regex,
+    caseSensitive: options.caseSensitive,
+  })
+  const scanning = scan.state !== undefined && !scan.state.done
+  const searched = scan.state !== undefined
+  const fullSearch = source.fileMode
+    ? scan.state === undefined
+      ? 'idle'
+      : scan.state.done
+        ? scan.state.aborted ? 'stopped' : 'done'
+        : 'scanning'
+    : 'complete'
+  const activeLine = scan.activeLine ?? localActiveLine
 
   // A text source can filter all of its records without a second file pass. The filtered
   // list is still bounded by the existing 20,000-record consumer cap, never by 2,000.
@@ -81,9 +98,11 @@ export function JsonlBody(props: PreviewBodyProps) {
   const activeFilteredIndex = filtered && found.activeRow !== undefined
     ? found.matches.indexOf(found.activeRow)
     : -1
-  const revealRow = filtered
-    ? (activeFilteredIndex >= 0 ? activeFilteredIndex : undefined)
-    : activeLine
+  const revealRow = scan.activeLine !== undefined
+    ? scan.activeLine
+    : filtered
+      ? (activeFilteredIndex >= 0 ? activeFilteredIndex : undefined)
+      : localActiveLine
 
   useEffect(() => {
     if (revealRow === undefined) return
@@ -99,7 +118,14 @@ export function JsonlBody(props: PreviewBodyProps) {
     ? stickyBand(scroll.logical, source.totalRows, scroll.geometry.visibleRows, ROW_HEIGHT, OVERSCAN)
     : undefined
   const status = source.fileMode
-    ? source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
+    ? scan.state?.done === true && scan.state.aborted
+      ? t('jsonl.scanStopped', { count: scan.count.toLocaleString('en-US') })
+      : scan.state?.done === true && scan.state.lines.length < scan.state.matches
+        ? t('jsonl.scanDoneCapped', {
+          count: scan.count.toLocaleString('en-US'),
+          shown: scan.state.lines.length.toLocaleString('en-US'),
+        })
+        : source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
     : source.truncated ? t('common.truncated') : undefined
   const count = source.fileMode ? source.totalRows : source.records.length
   const invalid = source.fileMode ? 0 : source.records.filter(record => record.error !== undefined).length
@@ -123,15 +149,28 @@ export function JsonlBody(props: PreviewBodyProps) {
           compact={compact}
           options={options}
           onChange={setOptions}
-          matches={found.matches.length}
-          index={found.index}
+          matches={searched ? scan.count : found.matches.length}
+          index={searched ? scan.index : found.index}
           total={count}
-          onPrev={found.prev}
-          onNext={found.next}
+          onPrev={searched ? scan.prev : found.prev}
+          onNext={searched ? scan.next : found.next}
+          onSubmit={source.fileMode
+            ? () => {
+              if (scan.state?.done === true) {
+                if (scan.state.aborted) scan.start()
+                else if (scan.count > 0) scan.next()
+              } else if (!scanning) {
+                scan.start()
+              }
+            }
+            : undefined}
+          onCancel={source.fileMode ? scan.stop : undefined}
+          fullSearch={fullSearch}
+          scanProgress={scan.state?.progress ?? 0}
           filter={filter}
           onFilter={setFilter}
           filterable={!source.fileMode}
-          placeholder={source.fileMode ? t('jsonl.windowSearch') : undefined}
+          placeholder={source.fileMode ? t('jsonl.searchFull') : undefined}
         />
       )}
       status={status}

@@ -180,8 +180,10 @@ JSON 文本；表格在渲染时用 `parseJsonlRecord` 解析，列名从前 200
 `read` 从内存 `records` 切片；因此 2,000 行不再是显示上限，`createJsonlConsumer` 的
 20,000 条上限是文本模型的边界。若文本模型 `truncated` 且文件可寻址，会自动切到
 `openRowFile`，避免 20,000 条后出现不可达空档；无绝对路径时才只能保留 truncated。
-小文件搜索覆盖全部已解析记录，过滤后按可见索引窗口化；大文件当前只搜索当前窗口，
-过滤控件禁用。
+小文件搜索覆盖全部已解析记录，过滤后按可见索引窗口化。大文件输入阶段只高亮当前窗口，
+Enter 后由 `jsonl/search.ts` + `RowFile.scanLines` 搜索原始行：非空行一条记录、一行一个结果、
+坏行按原始文本参与、新字段天然参与，匹配记录总数完整，导航保留前 5,000 条；过滤控件仍禁用。
+大文件不会再把“当前窗口”伪装成完整结果。
 
 ### CSV 文件源（按位置跳转）
 
@@ -223,24 +225,27 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **上一个/下一个**（↑ ↓）：循环跳转，并把目标行滚到视口中央；CSV 用固定行高定位，
   其余用 `data-row-index` + `scrollIntoView`
 - **计数**：已提交搜索的 `当前/总数`；CSV 的计数单位是**单元格内出现次数**，导航也按
-  occurrence 移动；log 是**匹配行**，一行只算一次；diff / JSONL 仍是一行一个结果。CSV / log
-  大文件在输入阶段只显示 `Enter 搜索全文`，不把已加载行的局部命中当作总数
+  occurrence 移动；log 是**匹配行**，一行只算一次；JSONL 是**匹配记录**，一条非空行只算一次；
+  diff 仍是一行一个结果。CSV / log / JSONL 大文件在输入阶段只显示 `Enter 搜索全文`，
+  不把已加载行的局部命中当作总数
 - **`Aa`** 区分大小写、**`.*`** 正则模式；正则写了一半不合法时按「无查询」处理，不报错
 - **「仅匹配」** 勾选后才过滤（等价于原来的行为），行号始终是原始行号
-- **全文扫描**：完整内容输入即全文；windowed CSV / log 由 Enter 提交，扫描中显示已找到数和
-  进度，可停止；扫描完成后显示全量出现次数（CSV）或匹配行数（log），但可跳转结果仍受
-  5,000 上限约束，状态栏会说明。扫描按文件顺序进行，CSV 表头 / log 无表头
+- **全文扫描**：完整内容输入即全文；windowed CSV / log / JSONL 由 Enter 提交，扫描中显示已找到数
+  和进度，可停止；扫描完成后显示全量出现次数（CSV）、匹配行数（log）或匹配记录数（JSONL），
+  但可跳转结果仍受 5,000 上限约束，状态栏会说明。扫描按文件顺序进行，CSV 表头 / log 无表头，
+  JSONL 跳过空行、坏行按 raw 文本参与
 
 实现：`kernel/search.ts`（编译/区间/occurrence 遍历，纯函数可单测）、
 `previews/csv/match.ts`（CSV 单元格 matcher）、`previews/csv/search.ts`（本地扫描与
 全文文本扫描）、`previews/csv/scan.ts`（同语义状态机）、`previews/log/search.ts`（行匹配，
-一行一个结果）、`previews/log/scan.ts`（log 全文扫描状态机）、`kernel/row-file.ts`
-（`scan` / `scanLines`）、`kernel/marks.tsx`（高亮渲染，支持单个 active occurrence）、
-`kernel/SearchBar.tsx`（共用控件）。
+一行一个结果）、`previews/log/scan.ts`（行全文扫描状态机）、`previews/jsonl/search.ts`
+（JSONL 记录匹配，空行跳过、坏行按 raw 参与）、`kernel/row-file.ts`
+（`scan` / `scanLines`，后者支持 `skipEmpty`）、`kernel/marks.tsx`（高亮渲染，支持单个
+active occurrence）、`kernel/SearchBar.tsx`（共用控件）。
 
 CSV 已统一为 A2：单元格出现次数计数 + occurrence 导航，详见
-[`search-semantics.md`](search-semantics.md)。log 使用行级全文扫描，但仍然是一行一个结果；
-diff / JSONL 暂未复用全文扫描。
+[`search-semantics.md`](search-semantics.md)。log 使用行级全文扫描，一行一个结果；JSONL
+使用记录级全文扫描，一条非空行一个结果，坏行和新字段不会因此被丢掉；diff 暂未复用全文扫描。
 
 ## 启动与懒加载
 

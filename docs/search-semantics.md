@@ -1,8 +1,8 @@
 # Search semantics: local rows vs whole-file scan
 
-Status: **CSV A2 and log line-level full scan implemented**
-Scope: CSV uses cell occurrences; log uses one result per matching line; diff / JSONL still
-use the older one-cell row search without whole-file scanning.
+Status: **CSV A2, log line-level and JSONL record-level full scan implemented**
+Scope: CSV uses cell occurrences; log uses one result per matching line; JSONL uses one result
+per non-empty raw record. diff still uses the older one-cell row search without a whole-file scan.
 
 ## Implemented CSV A2
 

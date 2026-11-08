@@ -16,6 +16,8 @@ import { fileSize } from '../../kernel/zip.ts'
 import { collectColumns, createJsonlConsumer, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { parseJsonlSlice } from './rows.ts'
+import { scanJsonlText } from './search.ts'
+import type { JsonlScanRunner } from './search.ts'
 
 /** Text larger than this attempts the file-backed path. */
 const LARGE_TEXT_CHARS = 2 * 1024 * 1024
@@ -38,6 +40,7 @@ export interface JsonlSource {
   readonly revision: number
   readonly sourceKey: string
   readonly read: (startRow: number, count: number) => Promise<WindowRead>
+  readonly scan: JsonlScanRunner
 }
 
 /**
@@ -50,6 +53,9 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
   const { meta, absolutePath } = useDocument(content, resourceAddress, useResource)
   const streamed = useStreamedText(content, () => createJsonlConsumer())
   const records = streamed?.records ?? []
+  const text = content.kind === 'text' ? content.text : ''
+  const textRef = useRef(text)
+  textRef.current = text
   const [columns, setColumns] = useState<readonly string[]>(() => collectColumns(records))
 
   const fileRef = useRef<RowFile | null>(null)
@@ -159,6 +165,15 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
     }
   }, [records])
 
+  const scan = useCallback<JsonlScanRunner>(async (pattern, options) => {
+    const file = fileRef.current
+    if (file !== null) {
+      const result = await file.scanLines(pattern, { ...options, skipEmpty: true })
+      return { matches: result.matches, lines: result.lines }
+    }
+    return scanJsonlText(textRef.current, pattern, options)
+  }, [])
+
   return {
     records,
     fileMode,
@@ -171,5 +186,6 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
     revision: fileMode ? revision : records.length,
     sourceKey,
     read,
+    scan,
   }
 }
