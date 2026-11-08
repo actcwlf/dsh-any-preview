@@ -19,9 +19,6 @@ import { collectColumns, formatValue, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { useJsonlSource } from './source.ts'
 
-/** Small-table rows rendered at once; the rest are counted, not mounted. */
-const DISPLAY_ROWS = 2_000
-
 /** One JSONL row height. */
 const ROW_HEIGHT = 22
 
@@ -59,43 +56,53 @@ export function JsonlBody(props: PreviewBodyProps) {
     })
     return records
   }, [win.rows, win.startRow])
-  const records = source.windowed ? windowRecords : source.records
-  const columns = source.windowed
+  const searchRecords = source.fileMode ? windowRecords : source.records
+  const fallbackRecords = useMemo(
+    () => (source.fileMode ? [] : source.records.slice(0, 5_000)),
+    [source.fileMode, source.records, source.records.length],
+  )
+  const columns = source.fileMode
     ? (source.columns.length > 0 ? source.columns : collectColumns(windowRecords))
-    : collectColumns(records)
-  const found = useSearch(useMemo(() => records.map(record => record.raw), [records, records.length]), options)
-  const activeRow = found.activeRow === undefined
-    ? undefined
-    : (records[found.activeRow]?.line ?? 1) - 1
+    : collectColumns(source.records)
+  const found = useSearch(useMemo(() => searchRecords.map(record => record.raw), [searchRecords, searchRecords.length]), options)
+  const activeRecord = found.activeRow === undefined ? undefined : searchRecords[found.activeRow]
+  const activeLine = activeRecord === undefined ? undefined : activeRecord.line - 1
 
-  const visible = useMemo(() => {
-    if (!filter || found.pattern === undefined) return records.map((record, index) => ({ record, index }))
-    return found.matches.map(index => ({ record: records[index]!, index }))
-  }, [records, records.length, filter, found.pattern, found.matches])
+  // A text source can filter all of its records without a second file pass. The filtered
+  // list is still bounded by the existing 20,000-record consumer cap, never by 2,000.
+  const filtered = !source.fileMode && filter && found.pattern !== undefined
+  const displayRecords = useMemo(() => {
+    if (filtered) {
+      return found.matches.map(index => source.records[index]).filter((record): record is JsonlRecord => record !== undefined)
+    }
+    return windowRecords.length === 0 && win.startRow === 0 ? fallbackRecords : windowRecords
+  }, [filtered, windowRecords, fallbackRecords, found.matches, source.records, win.startRow])
+  const displayStart = filtered ? 0 : win.startRow
+  const activeFilteredIndex = filtered && found.activeRow !== undefined
+    ? found.matches.indexOf(found.activeRow)
+    : -1
+  const revealRow = filtered
+    ? (activeFilteredIndex >= 0 ? activeFilteredIndex : undefined)
+    : activeLine
 
   useEffect(() => {
-    if (activeRow === undefined) return
-    scroll.reveal(activeRow)
-  }, [activeRow, scroll.reveal])
+    if (revealRow === undefined) return
+    scroll.reveal(revealRow)
+  }, [revealRow, scroll.reveal])
 
-  if (!source.windowed && source.records.length === 0) {
+  if (!source.fileMode && source.records.length === 0) {
     return <PreviewState kind="JSONL" title={t('common.loading')} message={t('common.loading')} />
   }
 
-  const shown = source.windowed ? records : visible.slice(0, DISPLAY_ROWS).map(item => item.record)
-  const hidden = source.windowed ? 0 : visible.length - shown.length
-  const pinned = source.windowed && scroll.geometry !== undefined
+  const pinned = !filtered && windowRecords.length > 0 && scroll.geometry !== undefined
   const band = pinned
     ? stickyBand(scroll.logical, source.totalRows, scroll.geometry.visibleRows, ROW_HEIGHT, OVERSCAN)
     : undefined
-  const status = source.windowed
+  const status = source.fileMode
     ? source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
-    : source.truncated
-      ? t('common.truncated')
-      : hidden > 0 ? t('jsonl.shown', { count: DISPLAY_ROWS.toLocaleString('en-US') }) : undefined
-  const sourceRecords = source.records
-  const count = source.windowed ? source.totalRows : sourceRecords.length
-  const invalid = source.windowed ? 0 : sourceRecords.filter(record => record.error !== undefined).length
+    : source.truncated ? t('common.truncated') : undefined
+  const count = source.fileMode ? source.totalRows : source.records.length
+  const invalid = source.fileMode ? 0 : source.records.filter(record => record.error !== undefined).length
 
   return (
     <PreviewChrome
@@ -123,8 +130,8 @@ export function JsonlBody(props: PreviewBodyProps) {
           onNext={found.next}
           filter={filter}
           onFilter={setFilter}
-          filterable={!source.windowed}
-          placeholder={source.windowed ? t('jsonl.windowSearch') : undefined}
+          filterable={!source.fileMode}
+          placeholder={source.fileMode ? t('jsonl.windowSearch') : undefined}
         />
       )}
       status={status}
@@ -136,16 +143,16 @@ export function JsonlBody(props: PreviewBodyProps) {
       >
         <JsonlTable
           columns={columns}
-          records={shown}
-          startRow={source.windowed ? win.startRow : 0}
-          totalRows={source.windowed ? source.totalRows : shown.length}
-          activeRow={activeRow}
+          records={displayRecords}
+          startRow={displayStart}
+          totalRows={filtered ? displayRecords.length : source.totalRows}
+          activeRow={activeLine}
           pattern={found.pattern}
           pinned={pinned}
           band={band}
           contentHeight={pinned ? scroll.contentHeight : undefined}
           viewportHeight={scroll.viewportHeight}
-          loading={source.windowed && win.loading}
+          loading={source.fileMode && win.loading}
         />
       </div>
     </PreviewChrome>

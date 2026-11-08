@@ -728,6 +728,54 @@ test('the shared chrome keeps a fixed 32px bar', { skip: !available }, async (t)
   assert.ok(view.container.querySelector('.dsh-preview-search'), 'the host-style search field is mounted')
 })
 
+test('a small jsonl exposes every record instead of stopping at 2000', { skip: !available }, async (t) => {
+  const { component } = await mountPreview('dsh-any-preview/jsonl')
+  const text = Array.from({ length: 3_000 }, (_value, index) => JSON.stringify({ id: index + 1, name: `user_${String(index + 1)}` })).join('\n')
+  const container = document.getElementById('root')
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(React.createElement(component, {
+      content: { kind: 'text', text, eof: true },
+      resourceAddress: 'dsh-resource://file/session/s/records.jsonl',
+      wrap: false,
+    }))
+  })
+  t.after(async () => { await act(async () => { root.unmount() }) })
+  await tick(400)
+  assert.match(container.textContent ?? '', /3,000 条记录/u)
+  assert.doesNotMatch(container.textContent ?? '', /仅显示前/u)
+
+  const table = container.querySelector('table')
+  const scroller = table?.parentElement
+  assert.ok(table && scroller, 'the table is mounted in its scroller')
+  await act(async () => {
+    scroller.scrollTop = 2_500 * ROW
+    scroller.dispatchEvent(new window.Event('scroll'))
+  })
+  await tick(400)
+  assert.ok(container.querySelector('tr[data-row-index="2500"]'), 'row 2,500 is reachable')
+
+  const input = container.querySelector('input[type="search"]')
+  assert.ok(input, 'the search field is mounted')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'user_2500')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await tick(100)
+  const feedback = container.querySelector('[data-search-feedback="done"]')
+  assert.match(feedback?.textContent ?? '', /1\/1/u, 'search covers the whole text source')
+  assert.ok(container.querySelector('tr[data-row-index="2499"]'), 'the hit is revealed outside the old cap')
+
+  await act(async () => {
+    const only = container.querySelector('input[type="checkbox"]')
+    assert.ok(only, 'filtering is available for the text source')
+    only.click()
+  })
+  await tick(100)
+  assert.ok(container.querySelector('tr[data-row-index="2499"]'), 'filtering keeps the row outside the old cap')
+})
+
 test('archive rows are keyboard reachable and open a single embedded chrome', { skip: !archiveAvailable }, async (t) => {
   const bytes = new Uint8Array(readFileSync(archiveZip))
   const host = installArchiveHost(bytes)

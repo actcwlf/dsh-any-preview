@@ -26,6 +26,9 @@ const COLUMN_SAMPLE = 200
 /** What the body needs from a JSONL source. */
 export interface JsonlSource {
   readonly records: readonly JsonlRecord[]
+  /** True for the file-backed path (large files). */
+  readonly fileMode: boolean
+  /** Both paths render through a window; only the backing store differs. */
   readonly windowed: boolean
   readonly totalRows: number
   readonly columns: readonly string[]
@@ -142,14 +145,21 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
 
   const read = useCallback(async (startRow: number, count: number): Promise<WindowRead> => {
     const file = fileRef.current
-    if (file === null) return { rows: [], overlong: false, exact: true }
-    const window = await file.read(startRow, count)
-    return { rows: window.rows, overlong: window.overlong, exact: window.exact }
-  }, [])
+    if (file !== null) {
+      const window = await file.read(startRow, count)
+      return { rows: window.rows, overlong: window.overlong, exact: window.exact }
+    }
+    return {
+      rows: records.slice(startRow, startRow + count).map(record => [record.raw]),
+      overlong: false,
+      exact: true,
+    }
+  }, [records])
 
   return {
     records,
-    windowed: fileMode,
+    fileMode,
+    windowed: true,
     totalRows: fileMode ? totalRows : records.length,
     columns,
     progress,
