@@ -7,14 +7,13 @@ settings:
 importers:
 
   .:
-    dependencies:
-      sharp:
-        specifier: ^0.35.5
-        version: 0.35.5
     devDependencies:
       mux.js:
         specifier: ^7.1.0
         version: 7.1.0
+      sharp:
+        specifier: ^0.35.5
+        version: 0.35.5
       three:
         specifier: ^0.180.0
         version: 0.180.0

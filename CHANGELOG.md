@@ -22,6 +22,7 @@
 - 包管理统一为 pnpm：删除 `package-lock.json`，提交 `pnpm-lock.yaml` 和
   `pnpm-workspace.yaml`；pnpm store 固定在项目内 `.pnpm-store`。
 - `packageManager` 固定为 `pnpm@11.28.5`，Node `>=20.9.0`。
+- `sharp` 未被运行时代码引用，从 `dependencies` 移到 `devDependencies`；用户安装不再下载原生 sharp。
 - log / JSONL 的共享扫描和固定行高滚动移入 kernel：
   `useLineScan`、`useFixedRowScroll`、`useLineFileSource`。
 - RowFile 的全文/分页扫描统一到共享 slice walker。
