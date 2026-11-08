@@ -1,8 +1,8 @@
 /** JSONL record search: one result per non-empty raw line. */
-import { forEachMatch } from '../../kernel/search.ts'
+import { forEachMatch, SEARCH_PAGE_SIZE } from '../../kernel/search.ts'
 
 /** Matching records kept for navigation; the total count is always complete. */
-export const JSONL_MATCH_LIMIT = 5_000
+export const JSONL_MATCH_LIMIT = SEARCH_PAGE_SIZE
 
 /** One JSONL search result. */
 export interface JsonlSearchResult {
@@ -98,4 +98,21 @@ export async function scanJsonlText(
   const result = matchJsonlLines(text.split(/\r?\n/u), pattern, options.lineLimit)
   options.onSlice(1, result.total, result.lines)
   return { matches: result.total, lines: result.lines, pages: result.pages }
+}
+
+/**
+ * Search one page of delivered JSONL text.
+ * @param text - complete text.
+ * @param pattern - compiled query.
+ * @param cursor - first line wanted.
+ * @param limit - page size.
+ * @returns matching lines in file order.
+ */
+export async function scanJsonlTextPage(
+  text: string,
+  pattern: RegExp,
+  cursor: number,
+  limit: number,
+): Promise<readonly number[]> {
+  return matchJsonlPage(text.split(/\r?\n/u), pattern, cursor, limit)
 }

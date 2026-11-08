@@ -1,25 +1,18 @@
 /**
  * Log input source: delivered text for small files, a row-file for large ones.
  *
- * The file source reuses the same byte-anchor / window machinery as CSV; the only
- * format-specific part is that each line becomes a one-cell row.
+ * The format-specific part is only "one line becomes a one-cell row"; opening,
+ * indexing and page cursors are shared with JSONL.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PreviewBodyProps } from '../../kernel/types.ts'
 import { useDocument } from '../../kernel/useDocument.ts'
 import { useStreamedText } from '../../kernel/stream.ts'
-import { openRowFile } from '../../kernel/row-file.ts'
-import type { RowFile } from '../../kernel/row-file.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
-import { fileUrl } from '../../kernel/file-url.ts'
-import { fileSize } from '../../kernel/zip.ts'
+import { useLineFileSource } from '../../kernel/useLineFileSource.ts'
 import { createLogConsumer } from './parse.ts'
 import { parseLogSlice } from './rows.ts'
-import { matchLogPage, scanLogText } from './search.ts'
+import { scanLogText, scanLogTextPage } from './search.ts'
 import type { LogPageRunner, LogScanRunner } from './scan.ts'
-
-/** Text larger than this attempts the file-backed path. */
-const LARGE_TEXT_CHARS = 2 * 1024 * 1024
 
 /** What the log body needs from its source. */
 export interface LogSource {
@@ -49,124 +42,28 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
   const streamed = useStreamedText(content, () => createLogConsumer())
   const lines = streamed?.lines ?? []
   const text = content.kind === 'text' ? content.text : ''
-  const textRef = useRef(text)
-  textRef.current = text
-
-  const fileRef = useRef<RowFile | null>(null)
-  const openedRef = useRef<string | null>(null)
-  const [fileMode, setFileMode] = useState(false)
-  const [totalRows, setTotalRows] = useState(0)
-  const [progress, setProgress] = useState(0)
-  const [complete, setComplete] = useState(false)
-  const [revision, setRevision] = useState(0)
-  const [sourceKey, setSourceKey] = useState('text')
-
-  useEffect(() => {
-    const path = absolutePath
-    const truncated = streamed?.truncated === true
-    if (path === undefined || openedRef.current === path) return undefined
-    const controller = new AbortController()
-    let live = true
-    void (async () => {
-      try {
-        const url = fileUrl(path)
-        const size = url === undefined
-          ? undefined
-          : (meta?.size !== undefined && meta.size > 0 ? meta.size : await fileSize(url))
-        // A line cap is also a reason to leave the text path: a small file can hold more
-        // than 20,000 short lines, and truncating it would leave an invisible gap.
-        if (!truncated && (size === undefined || size <= LARGE_TEXT_CHARS)) return
-        openedRef.current = path
-        const file = await openRowFile(path, { parse: parseLogSlice }, controller.signal)
-        if (!live) {
-          file.dispose()
-          return
-        }
-        fileRef.current = file
-        setFileMode(true)
-        setSourceKey(`file:${path}`)
-        setTotalRows(file.totalRows())
-        setProgress(file.size > 0 ? file.scanned / file.size : 1)
-        setComplete(file.complete)
-        setRevision(value => value + 1)
-      } catch {
-        // Keep the delivered-text path; a file the Host cannot serve is still viewable.
-      }
-    })()
-    return () => {
-      live = false
-      controller.abort()
-      fileRef.current?.dispose()
-      fileRef.current = null
-      setFileMode(false)
-      openedRef.current = null
-    }
-  }, [absolutePath, meta?.size, streamed?.truncated])
-
-  // Count the rest of the file in the background so the scrollbar and line count
-  // become exact without delaying the first window.
-  useEffect(() => {
-    if (!fileMode) return undefined
-    let live = true
-    let published = progress
-    const step = (): void => {
-      const file = fileRef.current
-      if (!live || file === null) return
-      void file.advance().then((more) => {
-        if (!live) return
-        const nextProgress = file.size > 0 ? file.scanned / file.size : 1
-        if (file.complete || nextProgress - published >= 0.02) {
-          published = nextProgress
-          setProgress(nextProgress)
-          setTotalRows(file.totalRows())
-          setComplete(file.complete)
-          setRevision(value => value + 1)
-        }
-        if (more) setTimeout(step, 0)
-      }).catch(() => {
-        if (live) setComplete(true)
-      })
-    }
-    const timer = setTimeout(step, 0)
-    return () => {
-      live = false
-      window.clearTimeout(timer)
-    }
-  }, [fileMode])
-
-  const read = useCallback(async (startRow: number, count: number): Promise<WindowRead> => {
-    const file = fileRef.current
-    if (file === null) return { rows: [], overlong: false, exact: true }
-    const window = await file.read(startRow, count)
-    return { rows: window.rows, overlong: window.overlong, exact: window.exact }
-  }, [])
-
-  const scan = useCallback<LogScanRunner>(async (pattern, options) => {
-    const file = fileRef.current
-    if (file !== null) {
-      const result = await file.scanLines(pattern, options)
-      return { matches: result.matches, lines: result.lines, pages: result.pages }
-    }
-    return scanLogText(textRef.current, pattern, options)
-  }, [])
-
-  const page = useCallback<LogPageRunner>(async (pattern, cursor, signal, limit) => {
-    const file = fileRef.current
-    if (file !== null) return file.scanPageLines(pattern, { signal, cursor, limit })
-    return matchLogPage(textRef.current.split(/\r?\n/u), pattern, cursor, limit)
-  }, [])
+  const file = useLineFileSource({
+    absolutePath,
+    metaSize: meta?.size,
+    truncated: streamed?.truncated === true,
+    parse: parseLogSlice,
+    skipEmpty: false,
+    text,
+    scanText: scanLogText,
+    pageText: scanLogTextPage,
+  })
 
   return {
     lines,
-    windowed: fileMode,
-    totalRows: fileMode ? totalRows : lines.length,
-    progress,
-    complete: fileMode ? complete : streamed?.complete === true,
-    truncated: !fileMode && streamed?.truncated === true,
-    revision: fileMode ? revision : lines.length,
-    sourceKey,
-    read,
-    scan,
-    page,
+    windowed: file.fileMode,
+    totalRows: file.fileMode ? file.totalRows : lines.length,
+    progress: file.progress,
+    complete: file.fileMode ? file.complete : streamed?.complete === true,
+    truncated: !file.fileMode && streamed?.truncated === true,
+    revision: file.fileMode ? file.revision : lines.length,
+    sourceKey: file.sourceKey,
+    read: file.read,
+    scan: file.scan,
+    page: file.page,
   }
 }

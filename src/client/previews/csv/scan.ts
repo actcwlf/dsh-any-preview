@@ -9,12 +9,13 @@
  */
 import { useEffect, useReducer, useRef, useState } from 'react'
 import type { SearchOccurrence } from '../../kernel/search.ts'
+import { SEARCH_PAGE_SIZE } from '../../kernel/search.ts'
 import { trimPageCache } from '../../kernel/page-cache.ts'
 import { NO_OCCURRENCES, scanState as scanReducer } from './state.ts'
 import type { ScanState } from './state.ts'
 
 /** Occurrences kept per navigation page; the total count stays whole. */
-const SCAN_PAGE_SIZE = 5_000
+const SCAN_PAGE_SIZE = SEARCH_PAGE_SIZE
 
 /** One request for a whole-file search: what to look for. */
 export interface ScanRequest {

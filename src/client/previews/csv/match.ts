@@ -1,9 +1,9 @@
 /** Pure CSV A2 matcher: occurrences inside cells, results as rows. */
-import { forEachMatch } from '../../kernel/search.ts'
+import { forEachMatch, SEARCH_PAGE_SIZE } from '../../kernel/search.ts'
 import type { MatchRange, SearchOccurrence } from '../../kernel/search.ts'
 
 /** Occurrences kept for navigation; the total count is always complete. */
-export const CSV_OCCURRENCE_LIMIT = 5_000
+export const CSV_OCCURRENCE_LIMIT = SEARCH_PAGE_SIZE
 
 /** The result of matching one CSV body. */
 export interface CsvSearchResult {

@@ -10,6 +10,9 @@ export interface SearchOptions {
 /** Neutral search state. */
 export const DEFAULT_SEARCH: SearchOptions = { query: '', regex: false, caseSensitive: false }
 
+/** One page of navigable search results, shared by CSV, log and JSONL. */
+export const SEARCH_PAGE_SIZE = 5_000
+
 /** One matched span within a text. */
 export interface MatchRange {
   readonly start: number
