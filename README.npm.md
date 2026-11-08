@@ -56,15 +56,6 @@ To uninstall, open the plugin from the same screen and use the uninstall button 
 | Databases | `sqlite` `sqlite3` `db` `db3` | Read tables, views, and indexes without writing |
 
 
-## Notes
-
-- Encrypted archives, ZIP64, and RAR are not supported. 7z support covers common unencrypted archives.
-- JSONL search works by record; field queries such as `level=error` are not supported.
-- Diff/patch has no full-text scan or paging.
-- Large files without an absolute path may be truncated to the text-buffer limit.
-- Page jumping currently has an API but no page-number input.
-- Video and audio playback depends on the codecs available to the WebView or operating system.
-
 ## License
 
 MIT. See [LICENSE](https://github.com/actcwlf/dsh-any-preview/blob/master/LICENSE).
