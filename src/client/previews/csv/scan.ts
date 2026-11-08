@@ -9,6 +9,7 @@
  */
 import { useEffect, useReducer, useRef, useState } from 'react'
 import type { SearchOccurrence } from '../../kernel/search.ts'
+import { trimPageCache } from '../../kernel/page-cache.ts'
 import { NO_OCCURRENCES, scanState as scanReducer } from './state.ts'
 import type { ScanState } from './state.ts'
 
@@ -58,6 +59,8 @@ export interface WholeFileScan extends ScanNavigation {
   readonly state: ScanState | undefined
   /** True while a later page is being read. */
   readonly loadingPage: boolean
+  /** True when the last page read failed. */
+  readonly pageError: boolean
   /** Start a run from where the reader is (Enter, or the toolbar button). */
   readonly start: () => void
   /** Stop the run; the occurrences already on screen stay usable. */
@@ -108,8 +111,10 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
   const [pageIndex, setPageIndex] = useState(0)
   const [pageOccurrences, setPageOccurrences] = useState<readonly SearchOccurrence[] | undefined>(undefined)
   const [loadingPage, setLoadingPage] = useState(false)
+  const [pageError, setPageError] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const pageAbortRef = useRef<AbortController | null>(null)
+  const loadingRef = useRef(false)
   const pageCache = useRef(new Map<number, readonly SearchOccurrence[]>())
   const patternRef = useRef<RegExp | undefined>(undefined)
   const runnerRef = useRef(scan)
@@ -137,6 +142,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     setPageIndex(0)
     setPageOccurrences(undefined)
     setLoadingPage(false)
+    setPageError(false)
     setIndex(0)
     dispatchScan({ type: 'start', query: request.query })
     const report = (progress: number, matches: number, occurrences: readonly SearchOccurrence[]): void => {
@@ -174,6 +180,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
       setPageIndex(0)
       setPageOccurrences(undefined)
       setLoadingPage(false)
+      setPageError(false)
       dispatchScan({ type: 'clear' })
     }
   }, [query, request])
@@ -190,13 +197,15 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     pageAbortRef.current?.abort()
     pageAbortRef.current = null
     pageCache.current.clear()
+    loadingRef.current = false
     setPageIndex(0)
     setPageOccurrences(undefined)
     setLoadingPage(false)
+    setPageError(false)
   }
 
   const load = (page: number, position: 'first' | 'last'): void => {
-    if (!navigating || page < 0 || page >= pageCount || page === pageIndex) return
+    if (loadingRef.current || !navigating || page < 0 || page >= pageCount || page === pageIndex) return
     const cached = pageCache.current.get(page)
     if (cached !== undefined) {
       setPageIndex(page)
@@ -211,23 +220,21 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     pageAbortRef.current?.abort()
     const controller = new AbortController()
     pageAbortRef.current = controller
+    loadingRef.current = true
+    setPageError(false)
     setLoadingPage(true)
     void loader(pattern, cursor, controller.signal, SCAN_PAGE_SIZE).then((next) => {
       if (controller.signal.aborted) return
       pageCache.current.set(page, next)
-      // Keep the current page and its neighbours; a long walk must not grow without bound.
-      if (pageCache.current.size > 6) {
-        for (const key of pageCache.current.keys()) {
-          if (key !== page) pageCache.current.delete(key)
-        }
-        pageCache.current.set(0, state?.occurrences ?? [])
-        pageCache.current.set(page, next)
-      }
+      trimPageCache(pageCache.current, page)
       setPageIndex(page)
       setPageOccurrences(next)
       setIndex(position === 'last' ? Math.max(0, next.length - 1) : 0)
-    }).catch(() => { /* stopped, or the file went away */ })
+    }).catch(() => {
+      if (!controller.signal.aborted) setPageError(true)
+    })
       .finally(() => {
+        loadingRef.current = false
         if (!controller.signal.aborted) setLoadingPage(false)
       })
   }
@@ -244,10 +251,12 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     abortRef.current?.abort()
     pageAbortRef.current?.abort()
     pageAbortRef.current = null
+    loadingRef.current = false
     setLoadingPage(false)
     dispatchScan({ type: 'stop' })
   }
   const next = (): void => {
+    if (loadingRef.current) return
     if (!navigating) {
       fallback.next()
       return
@@ -258,6 +267,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     else setIndex(0)
   }
   const prev = (): void => {
+    if (loadingRef.current) return
     if (!navigating) {
       fallback.prev()
       return
@@ -279,6 +289,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     index: navigating ? pageIndex * SCAN_PAGE_SIZE + activeIndex : fallback.index,
     count: navigating ? (state?.matches ?? occurrences.length) : fallback.count,
     loadingPage,
+    pageError,
     next,
     prev,
     start,

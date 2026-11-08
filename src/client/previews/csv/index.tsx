@@ -228,6 +228,8 @@ export function CsvBody(props: PreviewBodyProps) {
     ? t('csv.scanStopped', { count: scanState.matches.toLocaleString('en-US') })
     : scan.loadingPage
     ? t('csv.pageLoading')
+    : scan.pageError
+    ? t('csv.pageError')
     : scanState === undefined && found.matches > found.result.occurrences.length
     ? t('csv.localCapped', {
       count: found.matches.toLocaleString('en-US'),

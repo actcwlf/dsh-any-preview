@@ -97,7 +97,7 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
         }
         fileRef.current = file
         setFileMode(true)
-        setSourceKey('file')
+        setSourceKey(`file:${path}`)
         setTotalRows(file.totalRows())
         setProgress(file.size > 0 ? file.scanned / file.size : 1)
         setComplete(file.complete)

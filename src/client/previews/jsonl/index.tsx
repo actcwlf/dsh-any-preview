@@ -71,6 +71,7 @@ export function JsonlBody(props: PreviewBodyProps) {
   const scan = useLogScan({
     scan: source.scan,
     loadPage: source.page,
+    sourceKey: source.sourceKey,
     query: options.query,
     regex: options.regex,
     caseSensitive: options.caseSensitive,
@@ -123,7 +124,9 @@ export function JsonlBody(props: PreviewBodyProps) {
       ? t('jsonl.scanStopped', { count: scan.count.toLocaleString('en-US') })
       : scan.loadingPage
         ? t('jsonl.pageLoading')
-        : source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
+        : scan.pageError
+          ? t('jsonl.pageError')
+          : source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
     : source.truncated ? t('common.truncated') : undefined
   const count = source.fileMode ? source.totalRows : source.records.length
   const invalid = source.fileMode ? 0 : source.records.filter(record => record.error !== undefined).length
