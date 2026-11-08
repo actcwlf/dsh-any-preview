@@ -1,12 +1,20 @@
 # Changelog
 
-## 0.1.0-test.3 — 2026-11-08
+## 0.1.0-beta.1 — 2026-11-08
+
+第一个 beta 版本，汇总 test.1–test.3 的功能、修复和发布文档。
+
+### Added
+
+- 英文默认 README、中文 README 和 npm 专用 README。
+- `publish:npm` 发布脚本：用 `README.npm.md` 生成 tarball，再发布该 tarball；
+  预发布版本会自动使用 `beta` / `test` / `rc` 等对应 dist-tag。
+- 7z 的 `preview_inspect` 输出增加单成员检查提示，明确可以继续调用
+  `archive.7z!/member`；工具参数说明也加入同样示例。
 
 ### Changed
 
-- 7z 的 `preview_inspect` 输出增加单成员检查提示，明确可以继续调用
-  `archive.7z!/member`；工具参数说明也加入同样示例。
-- 加密 7z 不显示该提示，避免暗示可以在没有密码时解码成员。
+- 加密 7z 不显示单成员提示，避免暗示可以在没有密码时解码成员。
 
 ## 0.1.0-test.2 — 2026-11-08
 

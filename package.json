@@ -1,6 +1,6 @@
 {
   "name": "dsh-any-preview",
-  "version": "0.1.0-test.3",
+  "version": "0.1.0-beta.1",
   "description": "General-purpose file preview renderers for the DeepSeek Harness right Sidebar",
   "type": "module",
   "private": false,
@@ -48,6 +48,7 @@
     "lib/basis_transcoder.wasm",
     "cordis.patch.yml",
     "CHANGELOG.md",
+    "README.npm.md",
     "LICENSE",
     "licenses"
   ],
@@ -56,7 +57,8 @@
     "build:decoders": "node scripts/sync-decoders.mjs",
     "build": "tsdown && node scripts/sync-decoders.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --test-isolation=none \"test/*.test.mjs\""
+    "test": "node --test --test-isolation=none \"test/*.test.mjs\"",
+    "publish:npm": "node scripts/publish-npm.mjs"
   },
   "devDependencies": {
     "mux.js": "^7.1.0",
