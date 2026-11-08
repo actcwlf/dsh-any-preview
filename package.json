@@ -1,6 +1,6 @@
 {
   "name": "dsh-any-preview",
-  "version": "0.1.0",
+  "version": "0.1.0-test.1",
   "description": "General-purpose file preview renderers for the DeepSeek Harness right Sidebar",
   "type": "module",
   "private": true,
@@ -38,6 +38,7 @@
     "lib/basis_transcoder.js",
     "lib/basis_transcoder.wasm",
     "cordis.patch.yml",
+    "CHANGELOG.md",
     "licenses"
   ],
   "scripts": {

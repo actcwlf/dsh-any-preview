@@ -26,6 +26,9 @@ const sampleObjAvailable = existsSync(sampleObj)
 /** The fixture whose facet normals are all zero. */
 const sampleStl = new URL('../../samples/tetra.stl', import.meta.url)
 const sampleStlAvailable = existsSync(sampleStl)
+const sampleGlbSkip = sampleAvailable ? false : 'samples/tetra.glb not found'
+const sampleObjSkip = sampleObjAvailable ? false : 'samples/cube.obj not found'
+const sampleStlSkip = sampleStlAvailable ? false : 'samples/tetra.stl not found'
 
 const encoder = new TextEncoder()
 
@@ -252,7 +255,7 @@ test('an obj decodes and its faces are triangulated', async () => {
   assert.equal(mesh.material.side, THREE.DoubleSide)
 })
 
-test('a clockwise OBJ renders both sides instead of its inside', { skip: !sampleObjAvailable }, async () => {
+test('a clockwise OBJ renders both sides instead of its inside', { skip: sampleObjSkip }, async () => {
   const bytes = readFileSync(sampleObj)
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
   const scene = await parseModel(bundle, 'obj', buffer)
@@ -276,7 +279,7 @@ test('an STL with zero facet normals still shades', async () => {
   assert.ok(Math.hypot(normal.getX(0), normal.getY(0), normal.getZ(0)) > 0.5)
 })
 
-test('the real STL fixture with zero normals is recomputed', { skip: !sampleStlAvailable }, async () => {
+test('the real STL fixture with zero normals is recomputed', { skip: sampleStlSkip }, async () => {
   const bytes = readFileSync(sampleStl)
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
   const object = await parseModel(bundle, 'stl', buffer)
@@ -288,7 +291,7 @@ test('the real STL fixture with zero normals is recomputed', { skip: !sampleStlA
   assert.equal(nonZero, normal.count, 'every recomputed normal is a unit facet normal')
 })
 
-test('a real Blender glb parses', { skip: !sampleAvailable }, async () => {
+test('a real Blender glb parses', { skip: sampleGlbSkip }, async () => {
   const bytes = readFileSync(sampleGlb)
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
   const scene = await parseModel(bundle, 'glb', buffer)

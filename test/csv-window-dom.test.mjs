@@ -38,6 +38,10 @@ const archiveAvailable = available && existsSync(archiveZip)
 /** The same members packed as tar.gz, for the tar-specific read path. */
 const archiveTar = new URL('../../samples/bundle.tar.gz', import.meta.url)
 const tarAvailable = available && existsSync(archiveTar)
+const unavailable = available ? false : 'requires a DSH checkout (DSH_REPO) and built lib/client.js'
+const hugeSkip = hugeAvailable ? false : 'samples/huge.csv not found; set DSH_HUGE_CSV to run this test'
+const archiveSkip = archiveAvailable ? false : 'samples/bundle.zip not found'
+const tarSkip = tarAvailable ? false : 'samples/bundle.tar.gz not found'
 
 const React = available ? anchorRequire('react') : undefined
 /**
@@ -294,7 +298,7 @@ async function render(component, text, options = {}) {
   return { container, scroller, content, painted, scrollToBodyRow, scrollToFraction, dispose, summaryRows }
 }
 
-test('a windowed csv knows its row count and first rows on the first paint', { skip: !available }, async (t) => {
+test('a windowed csv knows its row count and first rows on the first paint', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const text = csvOf(120_000)
   assert.ok(text.length > 2 * 1024 * 1024, 'the fixture is past the windowing threshold')
@@ -308,7 +312,7 @@ test('a windowed csv knows its row count and first rows on the first paint', { s
   assert.equal(view.container.querySelector('input[type="checkbox"]'), null)
 })
 
-test('a small csv is not windowed and paints on the first render', { skip: !available }, async (t) => {
+test('a small csv is not windowed and paints on the first render', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const view = await render(component, 'id,name\n1,alpha\n2,beta\n')
   t.after(view.dispose)
@@ -318,7 +322,7 @@ test('a small csv is not windowed and paints on the first render', { skip: !avai
   assert.ok(view.container.querySelector('input[type="checkbox"]'), 'only-matches is available')
 })
 
-test('csv search counts cell occurrences and marks one active occurrence', { skip: !available }, async (t) => {
+test('csv search counts cell occurrences and marks one active occurrence', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const view = await render(component, 'id,note\n1,foo bar\n2,foo foo foo\n')
   t.after(view.dispose)
@@ -348,7 +352,7 @@ test('csv search counts cell occurrences and marks one active occurrence', { ski
   assert.equal(view.painted().length, 2, 'filtering still selects matching rows')
 })
 
-test('a table past the scroll limit keeps 22px rows and a proportional scrollbar', { skip: !available }, async (t) => {
+test('a table past the scroll limit keeps 22px rows and a proportional scrollbar', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const rows = 800_000
   // 800,000 rows at 22px would need 17.6M px, past the browser's 16.7M cap.
@@ -384,7 +388,7 @@ test('a table past the scroll limit keeps 22px rows and a proportional scrollbar
   assert.equal(last.cells[2], `user_${String(rows)}`)
 })
 
-test('a windowed csv paints absolute row numbers after the scroll settles', { skip: !available }, async (t) => {
+test('a windowed csv paints absolute row numbers after the scroll settles', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const view = await render(component, csvOf(120_000))
   t.after(view.dispose)
@@ -421,7 +425,7 @@ test('a windowed csv paints absolute row numbers after the scroll settles', { sk
   assert.equal(again[0].cells[0], '1')
 })
 
-test('a windowed csv keeps its filler the height of the whole file', { skip: !available }, async (t) => {
+test('a windowed csv keeps its filler the height of the whole file', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const view = await render(component, csvOf(120_000))
   t.after(view.dispose)
@@ -442,7 +446,7 @@ test('a windowed csv keeps its filler the height of the whole file', { skip: !av
   assert.ok(header, 'the header is still drawn once')
 })
 
-test('the 22 MB fixture browses to row 200,000', { skip: !hugeAvailable }, async (t) => {
+test('the 22 MB fixture browses to row 200,000', { skip: hugeSkip }, async (t) => {
   const text = readFileSync(hugeCsv, 'utf8')
   assert.ok(text.length > 20 * 1024 * 1024, 'the fixture is the 22 MB one')
   const { component } = await mountCsv()
@@ -467,7 +471,7 @@ test('the 22 MB fixture browses to row 200,000', { skip: !hugeAvailable }, async
   assert.equal(Math.round(heights.reduce((sum, value) => sum + value, 0)), 300_000 * ROW)
 })
 
-test('a file the owner would page reads a jump straight from the file', { skip: !available }, async (t) => {
+test('a file the owner would page reads a jump straight from the file', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const total = 120_000
   const host = installHost(csvOf(total))
@@ -501,7 +505,7 @@ test('a file the owner would page reads a jump straight from the file', { skip: 
   assert.match(tail[tail.length - 1].cells[2], /^user_120000$/u, 'the file ends here')
 })
 
-test('the background walk makes the row count and the numbers exact', { skip: !available }, async (t) => {
+test('the background walk makes the row count and the numbers exact', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const host = installHost(csvOf(120_000))
   t.after(host.restore)
@@ -527,7 +531,7 @@ test('the background walk makes the row count and the numbers exact', { skip: !a
   assert.equal(atTop.cells[2], 'user_100001')
 })
 
-test('the table never goes blank while the file is being indexed', { skip: !available }, async (t) => {
+test('the table never goes blank while the file is being indexed', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const host = installHost(csvOf(400_000))
   t.after(host.restore)
@@ -552,7 +556,7 @@ test('the table never goes blank while the file is being indexed', { skip: !avai
   assert.equal(blanks, 0, `the table went blank while indexing: ${samples.join(',')}`)
 })
 
-test('a scan hit past the loaded rows is one click away', { skip: !available }, async (t) => {
+test('a scan hit past the loaded rows is one click away', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const host = installHost(csvOf(120_000))
   t.after(host.restore)
@@ -628,7 +632,7 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   assert.ok(lastPage, 'the last page is reachable beyond the first 5,000 results')
 })
 
-test('an active search hit does not pin the view in the proportional mode', { skip: !available }, async (t) => {
+test('an active search hit does not pin the view in the proportional mode', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const rows = 800_000
   const view = await render(component, csvOf(rows))
@@ -661,7 +665,7 @@ test('an active search hit does not pin the view in the proportional mode', { sk
   assert.ok(!moved.some(row => row.index === 399_999), 'and no longer sits on the hit')
 })
 
-test('stopping a scan keeps the hits it had already found', { skip: !available }, async (t) => {
+test('stopping a scan keeps the hits it had already found', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   // Each slice waits, so the stop lands while the scan is still in flight.
   const rows = 120_000
@@ -694,7 +698,7 @@ test('stopping a scan keeps the hits it had already found', { skip: !available }
   assert.equal(view.container.querySelector('input[type="search"]')?.value, 'user_70000')
 })
 
-test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !hugeAvailable }, async (t) => {
+test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: hugeSkip }, async (t) => {
   const text = readFileSync(hugeCsv, 'utf8')
   assert.ok(text.length > 20 * 1024 * 1024, 'the fixture is the 22 MB one')
   const { component } = await mountCsv()
@@ -727,7 +731,7 @@ test('the 22 MB fixture reaches row 200,000 the way the app does', { skip: !huge
   assert.match(tail[tail.length - 1].cells[2] ?? '', /^user_300000$/u, 'the file ends here')
 })
 
-test('the shared chrome keeps a fixed 32px bar', { skip: !available }, async (t) => {
+test('the shared chrome keeps a fixed 32px bar', { skip: unavailable }, async (t) => {
   const { component } = await mountCsv()
   const view = await render(component, 'id,name\n1,alpha\n')
   t.after(view.dispose)
@@ -738,7 +742,7 @@ test('the shared chrome keeps a fixed 32px bar', { skip: !available }, async (t)
   assert.ok(view.container.querySelector('.dsh-preview-search'), 'the host-style search field is mounted')
 })
 
-test('a small jsonl exposes every record instead of stopping at 2000', { skip: !available }, async (t) => {
+test('a small jsonl exposes every record instead of stopping at 2000', { skip: unavailable }, async (t) => {
   const { component } = await mountPreview('dsh-any-preview/jsonl')
   const text = Array.from({ length: 3_000 }, (_value, index) => JSON.stringify({ id: index + 1, name: `user_${String(index + 1)}` })).join('\n')
   const container = document.getElementById('root')
@@ -786,7 +790,7 @@ test('a small jsonl exposes every record instead of stopping at 2000', { skip: !
   assert.ok(container.querySelector('tr[data-row-index="2499"]'), 'filtering keeps the row outside the old cap')
 })
 
-test('a small jsonl past the record budget switches to its file source', { skip: !available }, async (t) => {
+test('a small jsonl past the record budget switches to its file source', { skip: unavailable }, async (t) => {
   const total = 20_500
   const text = Array.from({ length: total }, (_value, index) => JSON.stringify({ n: index + 1, pad: 'x'.repeat(24) })).join('\n')
   assert.ok(Buffer.byteLength(text, 'utf8') < 2 * 1024 * 1024, 'the fixture is below the size threshold')
@@ -852,7 +856,7 @@ test('a small jsonl past the record budget switches to its file source', { skip:
   assert.ok(container.querySelector('tr[data-row-index="20499"]'), 'the last record is reachable')
 })
 
-test('a small log past the line budget switches to its file source', { skip: !available }, async (t) => {
+test('a small log past the line budget switches to its file source', { skip: unavailable }, async (t) => {
   const total = 20_500
   const text = Array.from({ length: total }, (_value, index) => `line ${String(index + 1)} error`).join('\n')
   const host = installHost(text)
@@ -904,7 +908,7 @@ test('a small log past the line budget switches to its file source', { skip: !av
   )
 })
 
-test('archive rows are keyboard reachable and open a single embedded chrome', { skip: !archiveAvailable }, async (t) => {
+test('archive rows are keyboard reachable and open a single embedded chrome', { skip: archiveSkip }, async (t) => {
   const bytes = new Uint8Array(readFileSync(archiveZip))
   const host = installArchiveHost(bytes)
   const view = await mountArchive(bytes)
@@ -934,7 +938,7 @@ test('archive rows are keyboard reachable and open a single embedded chrome', { 
   assert.ok(await waitFor(() => view.container.querySelector('[data-archive-row="file"]') !== null), 'back returns to the list')
 })
 
-test('a tar.gz member opens from the inflated data offset', { skip: !tarAvailable }, async (t) => {
+test('a tar.gz member opens from the inflated data offset', { skip: tarSkip }, async (t) => {
   const bytes = new Uint8Array(readFileSync(archiveTar))
   const host = installArchiveHost(bytes)
   const view = await mountArchive(bytes, 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz')
@@ -962,7 +966,7 @@ test('a tar.gz member opens from the inflated data offset', { skip: !tarAvailabl
   )
 })
 
-test('the archive overflow menu portals to the document body and closes on Escape', { skip: !archiveAvailable }, async (t) => {
+test('the archive overflow menu portals to the document body and closes on Escape', { skip: archiveSkip }, async (t) => {
   const bytes = new Uint8Array(readFileSync(archiveZip))
   const host = installArchiveHost(bytes)
   const view = await mountArchive(bytes)

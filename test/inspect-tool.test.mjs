@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, inspectImage, inspectPdf, inspectFont, inspectModel, inspectMedia, inspectOffice, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
+const imageSample = join(samples, 'asstes', '【女主角_荧】_by_原神_39fd8673fd145a6c65858227788cb173', 'Texture', '髪.png')
+const imageSkip = existsSync(imageSample) ? false : 'samples image fixture not found'
+const fontSkip = existsSync(join(samples, 'font.ttf')) ? false : 'samples/font.ttf not found'
+const wavSkip = existsSync(join(samples, 'tone.wav')) ? false : 'samples/tone.wav not found'
 
 test('the delimiter is the one that appears most on the first line', () => {
   assert.equal(detectDelimiter('a,b,c'), ',')
@@ -291,15 +295,15 @@ test('a PDF header reports its version', () => {
   assert.ok(result.facts.some(fact => fact === 'version: 1.7'))
 })
 
-test('an image reports dimensions from its header', { skip: !existsSync(join(samples, 'asstes', '【女主角_荧】_by_原神_39fd8673fd145a6c65858227788cb173', 'Texture', '髪.png')) }, () => {
-  const path = join(samples, 'asstes', '【女主角_荧】_by_原神_39fd8673fd145a6c65858227788cb173', 'Texture', '髪.png')
+test('an image reports dimensions from its header', { skip: imageSkip }, () => {
+  const path = imageSample
   const bytes = new Uint8Array(readFileSync(path))
   const result = inspectImage(bytes.subarray(0, 64 * 1024), bytes.length)
   assert.equal(result.kind, 'image')
   assert.match(result.summary, /PNG image · \d+×\d+/u)
 })
 
-test('a font reports its format, tables and glyph count', { skip: !existsSync(join(samples, 'font.ttf')) }, () => {
+test('a font reports its format, tables and glyph count', { skip: fontSkip }, () => {
   const bytes = new Uint8Array(readFileSync(join(samples, 'font.ttf')))
   const result = inspectFont(bytes.subarray(0, 128 * 1024), bytes.length)
   assert.equal(result.kind, 'font')
@@ -323,7 +327,7 @@ test('a glTF document reports scene counts', () => {
   assert.ok(result.schema.includes('root'))
 })
 
-test('a WAV header reports container facts', { skip: !existsSync(join(samples, 'tone.wav')) }, () => {
+test('a WAV header reports container facts', { skip: wavSkip }, () => {
   const bytes = new Uint8Array(readFileSync(join(samples, 'tone.wav')))
   const result = inspectMedia(bytes.subarray(0, 64 * 1024), bytes.length)
   assert.equal(result.kind, 'media')

@@ -12,6 +12,7 @@ import { existsSync } from 'node:fs'
 const repo = process.env.DSH_REPO ?? 'D:/DSH/deepseek-harness'
 const anchor = `${repo}/packages/client/ui-sidebar-documentpreview/package.json`
 const available = existsSync(anchor) && existsSync(new URL('../lib/client.js', import.meta.url))
+const unavailable = available ? false : 'requires a DSH checkout (DSH_REPO) and built lib/client.js'
 
 // The bundle is a classic script: ESM caches the import, so it executes once.
 let entryPromise
@@ -60,7 +61,7 @@ async function mount() {
   return { definitions, seats }
 }
 
-test('client bundle registers every preview in the list', { skip: !available }, async () => {
+test('client bundle registers every preview in the list', { skip: unavailable }, async () => {
   const { definitions } = await mount()
   const ids = definitions.map(definition => definition.id)
   for (const expected of [
@@ -99,7 +100,7 @@ test('client bundle registers every preview in the list', { skip: !available }, 
   assert.equal(csv.binaryExtensions, undefined)
 })
 
-test('apply survives hostile optional capabilities', { skip: !available }, async () => {
+test('apply survives hostile optional capabilities', { skip: unavailable }, async () => {
   const entry = await loadEntry()
   const repoRequire = createRequire(anchor)
   const mod = entry.factory(specifier => repoRequire(specifier))
@@ -117,7 +118,7 @@ test('apply survives hostile optional capabilities', { skip: !available }, async
   assert.ok(definitions.length >= 10, 'every preview still registers')
 })
 
-test('csv body renders a table', { skip: !available }, async () => {
+test('csv body renders a table', { skip: unavailable }, async () => {
   const { seats } = await mount()
   const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/csv')
   const csv = [
@@ -142,7 +143,7 @@ test('csv body renders a table', { skip: !available }, async () => {
   assert.doesNotMatch(html, /已读完/)
 })
 
-test('media bodies stream from the range route', { skip: !available }, async () => {
+test('media bodies stream from the range route', { skip: unavailable }, async () => {
   const { seats } = await mount()
   // The player builds its URL against document.baseURI, like the built-ins do.
   globalThis.document = { baseURI: 'http://127.0.0.1:1234/' }
@@ -176,7 +177,7 @@ test('media bodies stream from the range route', { skip: !available }, async () 
   assert.doesNotMatch(audioHtml, /<video/)
 })
 
-test('diff body renders a classified patch', { skip: !available }, async () => {
+test('diff body renders a classified patch', { skip: unavailable }, async () => {
   const { seats } = await mount()
   const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/diff')
   const patch = [
@@ -202,7 +203,7 @@ test('diff body renders a classified patch', { skip: !available }, async () => {
   assert.match(html, /上一个匹配/)
 })
 
-test('log body renders lines and a filter', { skip: !available }, async () => {
+test('log body renders lines and a filter', { skip: unavailable }, async () => {
   const { seats } = await mount()
   const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/log')
   const log = ['booting', 'ERROR failed to bind', 'INFO listening'].join('\n')
@@ -220,7 +221,7 @@ test('log body renders lines and a filter', { skip: !available }, async () => {
   assert.match(html, /var\(--dsw-alias-state-business-primary\)/)
 })
 
-test('jsonl body renders records as a table and flags bad lines', { skip: !available }, async () => {
+test('jsonl body renders records as a table and flags bad lines', { skip: unavailable }, async () => {
   const { seats } = await mount()
   const seat = seats.find(entry => entry.entry.key === 'dsh-any-preview/jsonl')
   const text = ['{"id":1,"name":"a"}', '{"id":2,"name":"b"}', 'broken'].join('\n')
@@ -243,7 +244,7 @@ const NEEDS_RESOURCE = new Set([
   'dsh-any-preview/font',
 ])
 
-test('every preview definition is well-formed', { skip: !available }, async () => {
+test('every preview definition is well-formed', { skip: unavailable }, async () => {
   const { definitions } = await mount()
   const ids = new Set()
   for (const definition of definitions) {
@@ -257,7 +258,7 @@ test('every preview definition is well-formed', { skip: !available }, async () =
   }
 })
 
-test('every preview body renders without throwing', { skip: !available }, async () => {
+test('every preview body renders without throwing', { skip: unavailable }, async () => {
   const { seats } = await mount()
   const failures = []
   for (const seat of seats) {

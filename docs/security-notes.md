@@ -1,6 +1,7 @@
 # 安全边界记录（暂不修复）
 
-记录日期：2026-10-27。这些是**平台层**的事实，不是本仓库的缺陷；先记下来，将来再决定改法。
+记录日期：2026-10-27，2026-11-08 更新。这些主要是**平台层**的事实；本仓库只在
+`preview_inspect` 工具内部做有限缓解。
 
 ## 1. 文件沙箱只约束写，不约束读
 
@@ -20,9 +21,12 @@
 
 `ctx.fs` 不是沙箱接口，而是"宿主路径 → 资源地址"的便利封装：
 
-- `ctx.fs.processPathFromHostPath(absolutePath)` 接受工作区外路径；
+- `ctx.fs.processPathFromHostPath(absolutePath)` 把 Host 路径映射成资源地址；
 - `ctx.fs.resolve` + `readByteRange` 直接按 App 进程权限读文件；
-- 实测：插件工具读 `C:\Users\…\cordis.yml` 时**通过了路径解析**，直到内容校验才失败（错误是"不是 GGUF"，而不是"路径越界"）。
+- 插件代码可以绕过 `preview_inspect`，直接调用 `ctx.fs` 读取任意文件。
+
+`preview_inspect` 当前会拒绝 `processPathFromHostPath` 返回 `undefined` 的绝对路径；
+这限制的是**这个工具**，不是插件的 Host 权限。
 
 也就是说：**安装插件 = 授予其代码以用户身份读全部文件**。文件沙箱保护的是"模型通过工具能做什么"，保护不了"插件代码自己做什么"。
 
@@ -30,15 +34,24 @@
 
 本次注册的 `preview_inspect` 在会话中直接执行，未弹出审批。结合第 2 点，意味着：模型可以借插件工具读任意文件，而工具自身是唯一的边界。
 
-## 4. 当前仓库内的缓解（未完成）
+## 4. 当前仓库内的缓解
 
-`src/host/inspect-tool.ts`（`experiment/inspect-tool` 分支）只做了三件事：
+`src/host/inspect-tool.ts` 当前做了这些限制：
 
-- 只返回 GGUF 头部摘要，非 GGUF 直接拒绝；
-- 每次最多读 4 MB 头部；
-- 输出有界（KV/张量各 ≤ 20）。
+- 绝对路径必须通过 `ctx.fs.processPathFromHostPath`；映射失败直接报
+  `path is outside the workspace`；
+- 相对路径优先按 `sandboxPolicy.resolve(...).workspaceRoot` 解析；
+- 读取有 10 秒 AbortSignal 超时；
+- 各格式头部读取有上限（例如文本/二进制 4 MB），归档成员也有大小上限；
+- 输出字段、列表和坏行数量都有界。
 
-**尚未做**：工作区根校验（`realpath` 后比较、拒绝越界）、拿不到会话工作区根时默认拒绝。
+**仍然存在的边界**：
+
+- `realpath` / symlink escape 没有单独测试；路径映射成功不代表目标真实路径仍在工作区内；
+- 拿不到 `sandboxPolicy` 时，相对路径会退回 `ctx.fs.resolve` 的服务默认目录，而不是默认拒绝；
+- 工具之外的插件 Host 代码仍可直接使用 `ctx.fs` 读任意文件。
+
+因此这里只是**降低误用面**，不是完整的工作区沙箱。
 
 ## 5. 将来可选的处理方向
 

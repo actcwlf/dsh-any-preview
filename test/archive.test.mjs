@@ -12,8 +12,9 @@ import { safeEntryPath } from '../src/shared/archive-paths.ts'
 const ZIP = 'F:/DSH/workspace/ext_preview/samples/bundle.zip'
 const TGZ = 'F:/DSH/workspace/ext_preview/samples/bundle.tar.gz'
 const available = existsSync(ZIP) && existsSync(TGZ)
+const unavailable = available ? false : 'samples/bundle.zip or samples/bundle.tar.gz not found'
 
-test('the zip fixture lists both members through its central directory', { skip: !available }, () => {
+test('the zip fixture lists both members through its central directory', { skip: unavailable }, () => {
   const bytes = new Uint8Array(readFileSync(ZIP))
   const eocd = findEocd(bytes)
   assert.ok(eocd >= 0, 'end-of-central-directory found')
@@ -25,7 +26,7 @@ test('the zip fixture lists both members through its central directory', { skip:
   assert.equal(entries.find(entry => entry.name === 'readme.txt')?.size, 34)
 })
 
-test('the zip tail alone is enough to locate the directory', { skip: !available }, () => {
+test('the zip tail alone is enough to locate the directory', { skip: unavailable }, () => {
   const bytes = new Uint8Array(readFileSync(ZIP))
   const tail = bytes.subarray(Math.max(0, bytes.length - 66_000))
   const eocd = findEocd(tail)
@@ -36,14 +37,14 @@ test('the zip tail alone is enough to locate the directory', { skip: !available 
   assert.equal(range.offset + range.size, eocd)
 })
 
-test('the tar.gz fixture lists its members after inflate', { skip: !available }, () => {
+test('the tar.gz fixture lists its members after inflate', { skip: unavailable }, () => {
   const raw = new Uint8Array(gunzipSync(readFileSync(TGZ)))
   const names = parseTar(raw).map(entry => entry.name.replace(/^\.\//u, ''))
   assert.ok(names.includes('readme.txt'), `names: ${names.join(', ')}`)
   assert.ok(names.includes('data.csv'), `names: ${names.join(', ')}`)
 })
 
-test('a tar header reports its size in octal', { skip: !available }, () => {
+test('a tar header reports its size in octal', { skip: unavailable }, () => {
   const raw = new Uint8Array(gunzipSync(readFileSync(TGZ)))
   const entries = parseTar(raw)
   const csv = entries.find(entry => entry.name.endsWith('data.csv'))
@@ -51,7 +52,7 @@ test('a tar header reports its size in octal', { skip: !available }, () => {
   assert.equal(csv?.directory, false)
 })
 
-test('a tar.gz member is read from its inflated data offset', { skip: !available }, async () => {
+test('a tar.gz member is read from its inflated data offset', { skip: unavailable }, async () => {
   const bytes = new Uint8Array(readFileSync(TGZ))
   const entries = parseTar(new Uint8Array(gunzipSync(bytes)))
   const csv = entries.find(entry => entry.name.endsWith('data.csv'))
@@ -66,7 +67,7 @@ test('a tar.gz member is read from its inflated data offset', { skip: !available
   }
 })
 
-test('a deflated member inflates back to its text', { skip: !available }, async () => {
+test('a deflated member inflates back to its text', { skip: unavailable }, async () => {
   const bytes = new Uint8Array(readFileSync(ZIP))
   const eocd = findEocd(bytes)
   const range = zipDirectoryRange(bytes, eocd)
@@ -94,7 +95,7 @@ test('entry names cannot escape the target directory', () => {
   assert.equal(safeEntryPath('a/../b.txt'), 'a/b.txt')
 })
 
-test('an entry extracts to disk with its content', { skip: !available }, async () => {
+test('an entry extracts to disk with its content', { skip: unavailable }, async () => {
   const dir = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
   const archive = new Uint8Array(readFileSync(ZIP))
   const path = await extractEntryTo(archive, 'data.csv', dir)
@@ -102,7 +103,7 @@ test('an entry extracts to disk with its content', { skip: !available }, async (
   rmSync(dir, { recursive: true, force: true })
 })
 
-test('extraction is reusable, reportable and cleanable', { skip: !available }, async () => {
+test('extraction is reusable, reportable and cleanable', { skip: unavailable }, async () => {
   const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
   const dir = `${root}/.dsh-any-preview/b.zip`
   const archive = new Uint8Array(readFileSync(ZIP))
@@ -122,7 +123,7 @@ test('extraction is reusable, reportable and cleanable', { skip: !available }, a
   rmSync(root, { recursive: true, force: true })
 })
 
-test('different entry directories stay separate', { skip: !available }, async () => {
+test('different entry directories stay separate', { skip: unavailable }, async () => {
   const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
   const dir = `${root}/.dsh-any-preview/b.zip`
   const payload = new Uint8Array([1, 2, 3])
@@ -134,7 +135,7 @@ test('different entry directories stay separate', { skip: !available }, async ()
   rmSync(root, { recursive: true, force: true })
 })
 
-test('cleaning one archive keeps a non-empty extraction parent', { skip: !available }, async () => {
+test('cleaning one archive keeps a non-empty extraction parent', { skip: unavailable }, async () => {
   const root = 'F:/DSH/workspace/ext_preview/.tmp-extract-test'
   const parent = `${root}/.dsh-any-preview`
   const first = `${parent}/a.zip`
