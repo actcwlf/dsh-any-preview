@@ -287,7 +287,7 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
   // A window cannot hide rows — it never holds the whole file — so a windowed table
   // keeps the highlight and drops filtering rather than filtering only what it can see.
   const windowed = textWindowed || fileMode
-  const searchable = fileMode || (isText && text.length >= LARGE_TEXT_CHARS)
+  const searchable = fileMode || (isText && (text.length >= LARGE_TEXT_CHARS || buffer?.truncated === true))
 
   return {
     view,

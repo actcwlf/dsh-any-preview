@@ -776,6 +776,73 @@ test('a small jsonl exposes every record instead of stopping at 2000', { skip: !
   assert.ok(container.querySelector('tr[data-row-index="2499"]'), 'filtering keeps the row outside the old cap')
 })
 
+test('a small jsonl past the record budget switches to its file source', { skip: !available }, async (t) => {
+  const total = 20_500
+  const text = Array.from({ length: total }, (_value, index) => JSON.stringify({ n: index + 1, pad: 'x'.repeat(24) })).join('\n')
+  assert.ok(Buffer.byteLength(text, 'utf8') < 2 * 1024 * 1024, 'the fixture is below the size threshold')
+  const host = installHost(text)
+  t.after(host.restore)
+  globalThis.requestIdleCallback = () => 0
+  const { component } = await mountPreview('dsh-any-preview/jsonl')
+  const container = document.getElementById('root')
+  const root = createRoot(container)
+  const useResource = () => ({ value: { absolutePath: '/data/twenty-thousand.jsonl', version: 'v1' } })
+  await act(async () => {
+    root.render(React.createElement(component, {
+      content: { kind: 'text', text, eof: true },
+      resourceAddress: 'dsh-resource://file/session/s/twenty-thousand.jsonl',
+      wrap: false,
+      useResource,
+    }))
+  })
+  t.after(async () => { await act(async () => { root.unmount() }) })
+  await waitFor(() => /20,500 条记录/u.test(container.textContent ?? ''), 4_000)
+  assert.match(container.textContent ?? '', /20,500 条记录/u, 'the full file count replaced the truncated text count')
+  assert.doesNotMatch(container.textContent ?? '', /已截断/u)
+
+  const scroller = container.querySelector('table')?.parentElement
+  assert.ok(scroller, 'the table is mounted in its scroller')
+  await act(async () => {
+    scroller.scrollTop = 20_400 * ROW
+    scroller.dispatchEvent(new window.Event('scroll'))
+  })
+  await tick(400)
+  assert.ok(container.querySelector('tr[data-row-index="20400"]'), 'the tail is reachable from the file source')
+})
+
+test('a small log past the line budget switches to its file source', { skip: !available }, async (t) => {
+  const total = 20_500
+  const text = Array.from({ length: total }, (_value, index) => `line ${String(index + 1)} error`).join('\n')
+  const host = installHost(text)
+  t.after(host.restore)
+  globalThis.requestIdleCallback = () => 0
+  const { component } = await mountPreview('dsh-any-preview/log')
+  const container = document.getElementById('root')
+  const root = createRoot(container)
+  const useResource = () => ({ value: { absolutePath: '/data/twenty-thousand.log', version: 'v1' } })
+  await act(async () => {
+    root.render(React.createElement(component, {
+      content: { kind: 'text', text, eof: true },
+      resourceAddress: 'dsh-resource://file/session/s/twenty-thousand.log',
+      wrap: false,
+      useResource,
+    }))
+  })
+  t.after(async () => { await act(async () => { root.unmount() }) })
+  await waitFor(() => /20,500 行/u.test(container.textContent ?? ''), 4_000)
+  assert.match(container.textContent ?? '', /20,500 行/u, 'the full file count replaced the truncated line count')
+  assert.doesNotMatch(container.textContent ?? '', /已截断/u)
+
+  const scroller = container.querySelector('[data-log-scroller="true"]')
+  assert.ok(scroller, 'the log scroller is mounted')
+  await act(async () => {
+    scroller.scrollTop = 20_400 * 18
+    scroller.dispatchEvent(new window.Event('scroll'))
+  })
+  await tick(400)
+  assert.ok(container.querySelector('[data-row-index="20400"]'), 'the log tail is reachable from the file source')
+})
+
 test('archive rows are keyboard reachable and open a single embedded chrome', { skip: !archiveAvailable }, async (t) => {
   const bytes = new Uint8Array(readFileSync(archiveZip))
   const host = installArchiveHost(bytes)

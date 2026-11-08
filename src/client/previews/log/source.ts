@@ -62,8 +62,8 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
 
   useEffect(() => {
     const path = absolutePath
+    const truncated = streamed?.truncated === true
     if (path === undefined || openedRef.current === path) return undefined
-    openedRef.current = path
     const controller = new AbortController()
     let live = true
     void (async () => {
@@ -72,7 +72,10 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
         const size = url === undefined
           ? undefined
           : (meta?.size !== undefined && meta.size > 0 ? meta.size : await fileSize(url))
-        if (size === undefined || size <= LARGE_TEXT_CHARS) return
+        // A line cap is also a reason to leave the text path: a small file can hold more
+        // than 20,000 short lines, and truncating it would leave an invisible gap.
+        if (!truncated && (size === undefined || size <= LARGE_TEXT_CHARS)) return
+        openedRef.current = path
         const file = await openRowFile(path, { parse: parseLogSlice }, controller.signal)
         if (!live) {
           file.dispose()
@@ -97,7 +100,7 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
       setFileMode(false)
       openedRef.current = null
     }
-  }, [absolutePath, meta?.size])
+  }, [absolutePath, meta?.size, streamed?.truncated])
 
   // Count the rest of the file in the background so the scrollbar and line count
   // become exact without delaying the first window.

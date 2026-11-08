@@ -139,6 +139,7 @@ export function JsonlBody(props: PreviewBodyProps) {
     >
       <div
         ref={scroll.bindScroller}
+        onScroll={event => { scroll.setScrollTop(event.currentTarget.scrollTop) }}
         style={{ flex: '1 1 auto', overflow: 'auto', overflowAnchor: 'none' }}
       >
         <JsonlTable

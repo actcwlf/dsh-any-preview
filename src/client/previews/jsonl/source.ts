@@ -69,8 +69,8 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
 
   useEffect(() => {
     const path = absolutePath
+    const truncated = streamed?.truncated === true
     if (path === undefined || openedRef.current === path) return undefined
-    openedRef.current = path
     const controller = new AbortController()
     let live = true
     void (async () => {
@@ -79,7 +79,10 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
         const size = url === undefined
           ? undefined
           : (meta?.size !== undefined && meta.size > 0 ? meta.size : await fileSize(url))
-        if (size === undefined || size <= LARGE_TEXT_CHARS) return
+        // A record cap is also a reason to leave the text path: a small file can hold
+        // more than 20,000 short records, and truncating it would leave an invisible gap.
+        if (!truncated && (size === undefined || size <= LARGE_TEXT_CHARS)) return
+        openedRef.current = path
         const file = await openRowFile(path, { parse: parseJsonlSlice }, controller.signal)
         if (!live) {
           file.dispose()
@@ -112,7 +115,7 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
       setFileMode(false)
       openedRef.current = null
     }
-  }, [absolutePath, meta?.size])
+  }, [absolutePath, meta?.size, streamed?.truncated])
 
   useEffect(() => {
     if (!fileMode) return undefined
