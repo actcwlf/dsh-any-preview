@@ -11,7 +11,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20.9-339933?style=flat-square)](./package.json)
 
-dsh-any-preview 为 DSH 侧栏带来更完整的文件预览体验。文本、音视频、3D 模型、压缩包等文件，都能在这里直接打开。少一次界面切换，多一分专注，让工作顺着心流继续。
+dsh-any-preview 为 DSH 侧栏带来更完整的文件预览体验。文本、音视频、3D 模型、压缩包等文件，都能在这里直接打开。少一次界面切换，多一分专注，让创作顺着心流继续。
 
 当前 beta 版本：`0.1.0-beta.1`
 

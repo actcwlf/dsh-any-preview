@@ -11,7 +11,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D20.9-339933?style=flat-square)](./package.json)
 
-A file preview plugin for the DSH sidebar. It opens the formats DSH does not cover and handles the large text files it does not handle well. Stay in the current task instead of switching apps just to look at a file.
+A file preview plugin for the DSH sidebar. It opens the formats DSH does not cover and handles the large text files it does not handle well. Stay in your creative flow instead of switching apps just to look at a file.
 
 Current beta version: `0.1.0-beta.1`
 

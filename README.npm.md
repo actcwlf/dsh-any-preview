@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-A file preview plugin for the DSH (DeepSeek Harness) sidebar. Open common file types and large text files without leaving the current task.
+A file preview plugin for the DSH (DeepSeek Harness) sidebar. Open common file types and large text files without leaving your creative flow.
 
 Current beta version: `0.1.0-beta.1`
 
