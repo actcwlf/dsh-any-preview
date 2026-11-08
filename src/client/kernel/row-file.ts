@@ -291,6 +291,54 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
     totalRows = () => (complete ? counted : Math.max(counted + 1, rowsAt(size, probes)))
   }
 
+  /**
+   * Walk one byte range, handing parsed rows to a visitor.
+   *
+   * Full-file scans record anchors and count rows; page scans only need rows. Both share
+   * the same slice fetching, abort/yield behavior and line numbering.
+   * @param from - byte offset to start at (a row boundary).
+   * @param line - file row of that offset.
+   * @param stop - byte offset to stop before.
+   * @param searchSignal - caller lifetime.
+   * @param recordAnchors - whether this walk should feed the search anchor list.
+   * @param visit - receives the parsed rows and their first file row; true stops the walk.
+   * @param onSlice - receives bytes walked and the next file row after each slice.
+   * @returns bytes walked in this range.
+   */
+  const walkRows = async (
+    from: number,
+    line: number,
+    stop: number,
+    searchSignal: AbortSignal,
+    recordAnchors: boolean,
+    visit: (rows: readonly (readonly string[])[], startLine: number) => boolean,
+    onSlice?: (walked: number, nextLine: number) => void,
+  ): Promise<number> => {
+    let offset = from
+    let current = line
+    let walked = 0
+    while (offset < stop) {
+      if (searchSignal.aborted === true) break
+      const slice = await fetchSlice(url, offset, Math.max(1, Math.min(SLICE_BYTES, stop - offset)), true, searchSignal)
+      if (slice.text.length === 0 || slice.end <= slice.start) break
+      if (recordAnchors) {
+        const previous = scanAnchors[scanAnchors.length - 1]
+        if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: current, byte: slice.start })
+      }
+      const parsed = parse(slice.text)
+      const shouldStop = visit(parsed.rows, current)
+      current += parsed.rows.length
+      if (recordAnchors) scanCounted = Math.max(scanCounted, current)
+      walked += slice.end - slice.start
+      onSlice?.(walked, current)
+      if (shouldStop || slice.eof) break
+      offset = slice.end
+      // Yield so a search over a huge file never blocks input for long.
+      await new Promise(resolve => { setTimeout(resolve, 0) })
+    }
+    return walked
+  }
+
   return {
     get size(): number { return size },
     get counted(): number { return counted },
@@ -368,52 +416,35 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       let scanned = 0
       const pageSize = Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY
 
-      /**
-       * Walk `[from, stop)`, parsing rows and counting cell occurrences.
-       * @param from - byte offset to start at (a row boundary).
-       * @param line - file row of that offset.
-       * @param stop - byte offset to stop before.
-       */
-      const walk = async (from: number, line: number, stop: number): Promise<void> => {
-        let offset = from
-        while (offset < stop) {
-          if (options.signal.aborted === true) return
-          const slice = await fetchSlice(url, offset, Math.max(1, Math.min(SLICE_BYTES, stop - offset)), true, options.signal)
-          if (slice.text.length === 0 || slice.end <= slice.start) return
-          const previous = scanAnchors[scanAnchors.length - 1]
-          if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: line, byte: slice.start })
-          const parsed = parse(slice.text)
-          for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
-            const fileRow = line + rowOffset
-            if (fileRow !== 0) {
-              const bodyRow = fileRow - 1
-              const cells = parsed.rows[rowOffset] ?? []
-              for (let cell = 0; cell < cells.length; cell += 1) {
-                forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
-                  const occurrence = { row: bodyRow, cell, start: range.start, end: range.end }
-                  if (matches > 0 && Number.isFinite(pageSize) && matches % pageSize === 0) {
-                    pages.push(occurrence)
-                  }
-                  matches += 1
-                  if (occurrences.length < limit) occurrences.push(occurrence)
-                })
+      const collect = (rows: readonly (readonly string[])[], startLine: number): boolean => {
+        for (let rowOffset = 0; rowOffset < rows.length; rowOffset += 1) {
+          const fileRow = startLine + rowOffset
+          if (fileRow === 0) continue
+          const bodyRow = fileRow - 1
+          const cells = rows[rowOffset] ?? []
+          for (let cell = 0; cell < cells.length; cell += 1) {
+            forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
+              const occurrence = { row: bodyRow, cell, start: range.start, end: range.end }
+              if (matches > 0 && Number.isFinite(pageSize) && matches % pageSize === 0) {
+                pages.push(occurrence)
               }
-            }
+              matches += 1
+              if (occurrences.length < limit) occurrences.push(occurrence)
+            })
           }
-          line += parsed.rows.length
-          scanCounted = Math.max(scanCounted, line)
-          scanned += slice.end - slice.start
-          options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, occurrences.slice())
-          if (slice.eof) return
-          offset = slice.end
-          // Yield so a search over a huge file never blocks input for long.
-          await new Promise(resolve => { setTimeout(resolve, 0) })
         }
+        return false
+      }
+      const report = (walked: number): void => {
+        scanned += walked
+        options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, occurrences.slice())
       }
 
-      await walk(start.byte, start.line, size)
+      await walkRows(start.byte, start.line, size, options.signal, true, collect, report)
       // Finish the file when the walk began in the middle of it.
-      if (start.byte > 0 && options.signal.aborted !== true) await walk(0, 0, start.byte)
+      if (start.byte > 0 && options.signal.aborted !== true) {
+        await walkRows(0, 0, start.byte, options.signal, true, collect, report)
+      }
       return { matches, occurrences, pages }
     },
     async scanPage(pattern: RegExp, options: {
@@ -424,20 +455,13 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       const fileRow = toFileRow(options.cursor.row)
       const anchor = fileRow > 0 ? anchorBefore(fileRow) : undefined
       const startLine = anchor?.row ?? 0
-      let offset = anchor?.byte ?? 0
-      let line = startLine
       const page: SearchOccurrence[] = []
-
-      while (offset < size && page.length < options.limit) {
-        if (options.signal.aborted === true) break
-        const slice = await fetchSlice(url, offset, SLICE_BYTES, true, options.signal)
-        if (slice.text.length === 0 || slice.end <= slice.start) break
-        const parsed = parse(slice.text)
-        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
-          const currentFileRow = line + rowOffset
+      const visit = (rows: readonly (readonly string[])[], firstLine: number): boolean => {
+        for (let rowOffset = 0; rowOffset < rows.length; rowOffset += 1) {
+          const currentFileRow = firstLine + rowOffset
           if (currentFileRow === 0) continue
           const bodyRow = currentFileRow - 1
-          const cells = parsed.rows[rowOffset] ?? []
+          const cells = rows[rowOffset] ?? []
           for (let cell = 0; cell < cells.length; cell += 1) {
             let stop = false
             forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
@@ -451,11 +475,9 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
           }
           if (page.length >= options.limit) break
         }
-        if (page.length >= options.limit || slice.eof) break
-        line += parsed.rows.length
-        offset = slice.end
-        await new Promise(resolve => { setTimeout(resolve, 0) })
+        return page.length >= options.limit
       }
+      await walkRows(anchor?.byte ?? 0, startLine, size, options.signal, false, visit)
       return page
     },
     async scanLines(pattern: RegExp, options: {
@@ -469,17 +491,10 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       const pages: number[] = []
       let matches = 0
       let scanned = 0
-      let line = 0
-
-      while (scanned < size) {
-        if (options.signal.aborted === true) break
-        const slice = await fetchSlice(url, scanned, SLICE_BYTES, true, options.signal)
-        if (slice.text.length === 0 || slice.end <= slice.start) break
-        const previous = scanAnchors[scanAnchors.length - 1]
-        if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: line, byte: slice.start })
-        const parsed = parse(slice.text)
-        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
-          const cells = parsed.rows[rowOffset] ?? []
+      const visit = (rows: readonly (readonly string[])[], firstLine: number): boolean => {
+        for (let rowOffset = 0; rowOffset < rows.length; rowOffset += 1) {
+          const current = firstLine + rowOffset
+          const cells = rows[rowOffset] ?? []
           let matched = false
           for (const cell of cells) {
             if (forEachMatch(cell, pattern, () => {}) > 0) {
@@ -487,23 +502,20 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
               break
             }
           }
-          if (matched) {
-            const raw = cells[0] ?? ''
-            if (options.skipEmpty === true && raw.trim() === '') continue
-            if (matches > 0 && Number.isFinite(limit) && matches % limit === 0) {
-              pages.push(line + rowOffset)
-            }
-            matches += 1
-            if (lines.length < limit) lines.push(line + rowOffset)
-          }
+          if (!matched) continue
+          const raw = cells[0] ?? ''
+          if (options.skipEmpty === true && raw.trim() === '') continue
+          if (matches > 0 && Number.isFinite(limit) && matches % limit === 0) pages.push(current)
+          matches += 1
+          if (lines.length < limit) lines.push(current)
         }
-        line += parsed.rows.length
-        scanCounted = Math.max(scanCounted, line)
-        scanned = slice.end
-        options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, lines.slice())
-        if (slice.eof) break
-        await new Promise(resolve => { setTimeout(resolve, 0) })
+        return false
       }
+      const report = (walked: number): void => {
+        scanned += walked
+        options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, lines.slice())
+      }
+      await walkRows(0, 0, size, options.signal, true, visit, report)
       return { matches, lines, pages }
     },
     async scanPageLines(pattern: RegExp, options: {
@@ -513,18 +525,13 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       readonly skipEmpty?: boolean
     }): Promise<readonly number[]> {
       const anchor = options.cursor > 0 ? anchorBefore(options.cursor) : undefined
-      let line = anchor?.row ?? 0
-      let offset = anchor?.byte ?? 0
+      const startLine = anchor?.row ?? 0
       const page: number[] = []
-      while (offset < size && page.length < options.limit) {
-        if (options.signal.aborted === true) break
-        const slice = await fetchSlice(url, offset, SLICE_BYTES, true, options.signal)
-        if (slice.text.length === 0 || slice.end <= slice.start) break
-        const parsed = parse(slice.text)
-        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
-          const current = line + rowOffset
+      const visit = (rows: readonly (readonly string[])[], firstLine: number): boolean => {
+        for (let rowOffset = 0; rowOffset < rows.length; rowOffset += 1) {
+          const current = firstLine + rowOffset
           if (current < options.cursor) continue
-          const cells = parsed.rows[rowOffset] ?? []
+          const cells = rows[rowOffset] ?? []
           const raw = cells[0] ?? ''
           if (options.skipEmpty === true && raw.trim() === '') continue
           let matched = false
@@ -536,16 +543,13 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
           }
           if (!matched) continue
           page.push(current)
-          if (page.length >= options.limit) break
+          if (page.length >= options.limit) return true
         }
-        if (page.length >= options.limit || slice.eof) break
-        line += parsed.rows.length
-        offset = slice.end
-        await new Promise(resolve => { setTimeout(resolve, 0) })
+        return false
       }
+      await walkRows(anchor?.byte ?? 0, startLine, size, options.signal, false, visit)
       return page
-    },
-    dispose(): void {
+    },    dispose(): void {
       disposed = true
       anchors.length = 0
       scanAnchors.length = 0
