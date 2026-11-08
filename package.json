@@ -3,7 +3,16 @@
   "version": "0.1.0-test.1",
   "description": "General-purpose file preview renderers for the DeepSeek Harness right Sidebar",
   "type": "module",
-  "private": true,
+  "private": false,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/actcwlf/dsh-any-preview.git"
+  },
+  "homepage": "https://github.com/actcwlf/dsh-any-preview#readme",
+  "bugs": {
+    "url": "https://github.com/actcwlf/dsh-any-preview/issues"
+  },
   "main": "lib/index.js",
   "packageManager": "pnpm@11.28.5",
   "engines": {
@@ -39,6 +48,7 @@
     "lib/basis_transcoder.wasm",
     "cordis.patch.yml",
     "CHANGELOG.md",
+    "LICENSE",
     "licenses"
   ],
   "scripts": {

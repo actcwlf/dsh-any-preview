@@ -133,3 +133,7 @@ dsh plugin --profile desktop remove dsh-any-preview
 - [架构设计](./docs/architecture.md)、[格式规划](./docs/formats-plan.md)
 - [第三方许可](./licenses/README.md)：随包分发的组件与义务
 - [安全边界记录](./docs/security-notes.md)：读不受限、插件 fs 不受沙箱约束（已知问题，暂不修复）
+
+## 许可
+
+本项目使用 MIT License，见 [LICENSE](./LICENSE)。
