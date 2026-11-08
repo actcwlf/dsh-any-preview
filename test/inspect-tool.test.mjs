@@ -392,6 +392,7 @@ test('a 7z archive is summarised with its files and solid flag', async () => {
   assert.match(result.summary, /3 files/u)
   assert.ok(result.facts.some(fact => fact === 'solid: yes'))
   assert.ok(result.schema.some(line => line.startsWith('alpha.txt:')))
+  assert.ok(result.next.some(line => line.includes('!/')), 'member syntax is offered to the model')
 })
 
 test('a compressed 7z header is decoded before summarising', async () => {

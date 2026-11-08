@@ -61,7 +61,7 @@ const PARAMETERS = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    path: { type: 'string', description: 'Absolute file path, or archive path with !/member for zip/tar/7z.' },
+    path: { type: 'string', description: 'Absolute file path, or archive path with !/member for zip/tar/7z (for example archive.7z!/alpha.txt).' },
   },
 } as const
 
@@ -1518,6 +1518,7 @@ async function inspectSevenZip(read: Reader): Promise<InspectResult> {
     notes,
     next: [
       '在面板中打开可直接列出条目并按需解码',
+      ...(encrypted ? [] : ['查看单个成员：在 path 后加 "!/成员名"，例如 archive.7z!/alpha.txt']),
       encrypted ? '"解压后用主预览查看" 是当前对加密包的处理' : 'read(offset=…) 无法直接读压缩内容，需先解压',
     ],
     truncated: files.length > MAX_ITEMS,
