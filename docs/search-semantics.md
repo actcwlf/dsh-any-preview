@@ -13,7 +13,9 @@ cell matcher
 → occurrence navigation
 → header excluded
 → full scan parses rows with the same matcher
-→ 5,000 navigable occurrences, complete count retained
+→ 5,000 occurrences per navigation page
+→ later pages loaded from captured cursors
+→ complete count retained
 ```
 
 The active occurrence is highlighted separately from the other matches in the same row.
@@ -118,7 +120,7 @@ Not recommended as the table view’s default.
 3. Is cross-cell search required?
 4. Is raw CSV syntax search required, or should it live in a separate source view?
 5. Full scan order: file order, or current-row wrap?
-6. Do we keep the 5,000 navigable-match cap until a block index exists?
+6. Is 5,000 a navigation cap, or a page size with cursor-based loading?
 
 ## Suggested next design
 
@@ -132,12 +134,14 @@ cell matcher
 → header excluded
 → file-order scan
 → full scan parses rows with the same matcher
-→ 5,000 navigable occurrences
+→ 5,000 occurrences per page
+→ page cursors captured during the scan
+→ later pages loaded on demand
 ```
 
-Then a block index can store occurrence and matching-row counts per block and re-run
-the same matcher inside the selected block. Do not build the block index on the older
-mixed semantics.
+This avoids storing every occurrence; page starts are enough to re-run the matcher for one
+page. A future block index can add per-block counts for random jumps, but the page cursor is
+the compatibility boundary.
 
 ## Related implementation points
 
@@ -145,5 +149,5 @@ mixed semantics.
 - `previews/csv/match.ts` — pure cell matcher and count.
 - `previews/csv/search.ts` — CSV local search hook and text scan.
 - `previews/csv/table.tsx` — per-cell `Marked` with the active occurrence.
-- `previews/csv/scan.ts` — whole-file occurrence scan + 5,000 cap.
-- `kernel/row-file.ts` — byte slices, row parsing and file scan.
+- `previews/csv/scan.ts` — whole-file occurrence scan + page cursor navigation.
+- `kernel/row-file.ts` — byte slices, row parsing, full scan and `scanPage`.

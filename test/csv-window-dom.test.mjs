@@ -608,14 +608,24 @@ test('a scan hit past the loaded rows is one click away', { skip: !available }, 
   assert.match(view.container.querySelector('tr[data-row-index="99999"]')?.getAttribute('style') ?? '', /state-warn-primary/u,
     'the hit row is marked')
 
-  // A query that matches every row keeps the count whole and caps what is navigable.
+  // A query that matches every row keeps the count whole; the first page is loaded.
   await search('user_')
   await enter()
   await tick(800)
-  assert.match(view.container.textContent ?? '', /共 120,000 处匹配（可跳转前 5,000 处）/u)
+  assert.doesNotMatch(view.container.textContent ?? '', /可跳转前/u, 'the 5,000 cap is no longer a navigation limit')
   const capped = view.container.querySelector('[data-search-feedback="done"]')
   assert.ok(capped, 'the search row still reports the full total')
-  assert.match(capped.textContent ?? '', /1\/120,000/u, 'the count shows the whole scan, not the navigable cap')
+  assert.match(capped.textContent ?? '', /1\/120,000/u, 'the count shows the whole scan, not the page size')
+
+  // First-page "previous" wraps to the last page, which is loaded from its cursor.
+  const previous = view.container.querySelector('button[title="上一个匹配"]')
+  assert.ok(previous, 'the previous button is mounted')
+  await act(async () => { previous.click() })
+  const lastPage = await waitFor(
+    () => /120000\/120,000/u.test(view.container.textContent ?? ''),
+    5_000,
+  )
+  assert.ok(lastPage, 'the last page is reachable beyond the first 5,000 results')
 })
 
 test('an active search hit does not pin the view in the proportional mode', { skip: !available }, async (t) => {

@@ -17,7 +17,7 @@ import { readWindow } from '../../kernel/csv-window.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
 import { openRowFile } from '../../kernel/row-file.ts'
 import type { RowFile } from '../../kernel/row-file.ts'
-import { scanCsvText } from './search.ts'
+import { scanCsvText, scanCsvTextPage } from './search.ts'
 import type { SearchOccurrence } from '../../kernel/search.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -105,7 +105,9 @@ export interface CsvSource {
     readonly from: number
     readonly lineLimit: number
     readonly onSlice: (progress: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
-  }) => Promise<{ readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }>) | undefined
+  }) => Promise<{ readonly matches: number, readonly occurrences: readonly SearchOccurrence[], readonly pages: readonly SearchOccurrence[] }>) | undefined
+  /** Load one navigation page at or after a cursor, or undefined without a scan source. */
+  readonly page: ((pattern: RegExp, cursor: SearchOccurrence, signal: AbortSignal, limit: number) => Promise<readonly SearchOccurrence[]>) | undefined
 }
 
 /**
@@ -284,6 +286,17 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     return scanCsvText(text, pattern, options, delimiterRef.current)
   }, [fileMode, text])
 
+  const page = useCallback(async (
+    pattern: RegExp,
+    cursor: SearchOccurrence,
+    signal: AbortSignal,
+    limit: number,
+  ): Promise<readonly SearchOccurrence[]> => {
+    const file = fileRef.current
+    if (fileMode && file !== null) return file.scanPage(pattern, { signal, cursor, limit })
+    return scanCsvTextPage(text, pattern, cursor, limit, delimiterRef.current)
+  }, [fileMode, text])
+
   // A window cannot hide rows — it never holds the whole file — so a windowed table
   // keeps the highlight and drops filtering rather than filtering only what it can see.
   const windowed = textWindowed || fileMode
@@ -309,6 +322,7 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
     revision: fileMode ? (fileState.complete ? 1 : 0) : text.length,
     sourceKey: fileMode ? 'file' : 'text',
     scan: searchable ? scan : undefined,
+    page: searchable ? page : undefined,
   }
 }
 

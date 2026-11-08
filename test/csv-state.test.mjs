@@ -35,7 +35,7 @@ const occurrence = (row, cell = 0, start = 0, end = 1) => ({ row, cell, start, e
 
 test('a scan starts empty and reports what each slice found', () => {
   const started = scanState(undefined, { type: 'start', query: 'user' })
-  assert.deepEqual(started, { query: 'user', progress: 0, matches: 0, occurrences: [], done: false, aborted: false })
+  assert.deepEqual(started, { query: 'user', progress: 0, matches: 0, occurrences: [], pages: [], done: false, aborted: false })
   const sliced = scanState(started, {
     type: 'slice', progress: 0.4, matches: 7, occurrences: [occurrence(0), occurrence(1)],
   })
@@ -48,12 +48,13 @@ test('a scan starts empty and reports what each slice found', () => {
 test('a finished scan is done, and its occurrences are the ones to walk', () => {
   const started = scanState(undefined, { type: 'start', query: 'x' })
   const done = scanState(started, {
-    type: 'done', matches: 2, occurrences: [occurrence(4, 2, 3, 5), occurrence(8, 0, 1, 2)],
+    type: 'done', matches: 2, occurrences: [occurrence(4, 2, 3, 5), occurrence(8, 0, 1, 2)], pages: [],
   })
   assert.equal(done.done, true)
   assert.equal(done.aborted, false)
   assert.equal(done.progress, 1)
   assert.deepEqual(done.occurrences, [occurrence(4, 2, 3, 5), occurrence(8, 0, 1, 2)])
+  assert.deepEqual(done.pages, [])
 })
 
 test('stopping keeps the hits found so far', () => {

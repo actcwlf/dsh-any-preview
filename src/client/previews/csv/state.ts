@@ -67,6 +67,8 @@ export interface ScanState {
   readonly matches: number
   /** First occurrences for navigation, in file order. */
   readonly occurrences: readonly SearchOccurrence[]
+  /** First occurrence of each page after the first. */
+  readonly pages: readonly SearchOccurrence[]
   /** True when the scan reached the last slice or was stopped. */
   readonly done: boolean
   /** True when the reader stopped it. */
@@ -78,7 +80,7 @@ export type ScanEvent =
   | { readonly type: 'clear' }
   | { readonly type: 'start', readonly query: string }
   | { readonly type: 'slice', readonly progress: number, readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }
-  | { readonly type: 'done', readonly matches: number, readonly occurrences: readonly SearchOccurrence[] }
+  | { readonly type: 'done', readonly matches: number, readonly occurrences: readonly SearchOccurrence[], readonly pages: readonly SearchOccurrence[] }
   | { readonly type: 'stop' }
 
 /**
@@ -102,13 +104,13 @@ export function scanState(state: ScanState | undefined, event: ScanEvent): ScanS
     case 'clear':
       return undefined
     case 'start':
-      return { query: event.query, progress: 0, matches: 0, occurrences: NO_OCCURRENCES, done: false, aborted: false }
+      return { query: event.query, progress: 0, matches: 0, occurrences: NO_OCCURRENCES, pages: NO_OCCURRENCES, done: false, aborted: false }
     case 'slice':
       if (state === undefined) return state
       return { ...state, progress: event.progress, matches: event.matches, occurrences: event.occurrences }
     case 'done':
       if (state === undefined) return state
-      return { ...state, progress: 1, matches: event.matches, occurrences: event.occurrences, done: true }
+      return { ...state, progress: 1, matches: event.matches, occurrences: event.occurrences, pages: event.pages, done: true }
     case 'stop':
       // Stopping keeps what it found: the rows stay reachable, only the run ends.
       if (state === undefined) return state

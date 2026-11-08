@@ -11,6 +11,7 @@ import { parseCsvSlice } from './parse.ts'
 import {
   CSV_OCCURRENCE_LIMIT,
   EMPTY_CSV_SEARCH,
+  matchCsvPage,
   matchCsvRows,
 } from './match.ts'
 import type { CsvSearchResult } from './match.ts'
@@ -38,19 +39,21 @@ export interface CsvSearchState {
  * Compile and apply the CSV cell matcher, then navigate its occurrences.
  * @param rows - body rows.
  * @param options - query modes.
+ * @param limit - occurrences to keep; Infinity for a complete in-memory table.
  * @returns matches, their rows and wrapped occurrence navigation.
  */
 export function useCsvSearch(
   rows: readonly (readonly string[])[],
   options: SearchOptions,
+  limit?: number,
 ): CsvSearchState {
   const pattern = useMemo(
     () => compileSearch(options),
     [options.query, options.regex, options.caseSensitive],
   )
   const result = useMemo(
-    () => (pattern === undefined ? EMPTY_CSV_SEARCH : matchCsvRows(rows, pattern)),
-    [rows, rows.length, pattern],
+    () => (pattern === undefined ? EMPTY_CSV_SEARCH : matchCsvRows(rows, pattern, limit)),
+    [rows, rows.length, pattern, limit],
   )
   const [active, setActive] = useState(0)
   const count = result.occurrences.length
@@ -85,6 +88,7 @@ export interface CsvScanOptions {
 export interface CsvScanResult {
   readonly matches: number
   readonly occurrences: readonly SearchOccurrence[]
+  readonly pages: readonly SearchOccurrence[]
   readonly completed: boolean
 }
 
@@ -102,10 +106,30 @@ export async function scanCsvText(
   options: CsvScanOptions,
   delimiter: string,
 ): Promise<CsvScanResult> {
-  if (options.signal.aborted) return { matches: 0, occurrences: [], completed: false }
+  if (options.signal.aborted) return { matches: 0, occurrences: [], pages: [], completed: false }
   const parsed = parseCsvSlice(text, delimiter)
   const body = parsed.rows.slice(1)
   const result = matchCsvRows(body, pattern, options.lineLimit ?? CSV_OCCURRENCE_LIMIT)
   options.onSlice?.(1, result.total, result.occurrences)
-  return { matches: result.total, occurrences: result.occurrences, completed: true }
+  return { matches: result.total, occurrences: result.occurrences, pages: result.pages, completed: true }
+}
+
+/**
+ * Read one CSV text page at or after a cursor.
+ * @param text - complete text.
+ * @param pattern - compiled query.
+ * @param cursor - first occurrence wanted.
+ * @param limit - page size.
+ * @param delimiter - detected separator.
+ * @returns occurrences in file order.
+ */
+export async function scanCsvTextPage(
+  text: string,
+  pattern: RegExp,
+  cursor: SearchOccurrence,
+  limit: number,
+  delimiter: string,
+): Promise<readonly SearchOccurrence[]> {
+  const parsed = parseCsvSlice(text, delimiter)
+  return matchCsvPage(parsed.rows.slice(1), pattern, cursor, limit)
 }

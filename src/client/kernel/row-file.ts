@@ -14,6 +14,7 @@
  */
 import { countRows, skipLines } from './lines.ts'
 import { textUrl } from './file-url.ts'
+import { toFileRow } from './row-numbering.ts'
 import { forEachMatch } from './search.ts'
 import type { MatchRange, SearchOccurrence } from './search.ts'
 import { rowsAt, rowsPerByte } from '../../shared/inspect/density.ts'
@@ -69,6 +70,8 @@ export interface FileScan {
   readonly matches: number
   /** First occurrences for navigation, in file order. */
   readonly occurrences: readonly SearchOccurrence[]
+  /** First occurrence of each page after the first, in occurrence order. */
+  readonly pages: readonly SearchOccurrence[]
 }
 
 /** What a whole-file line scan found; one result per matching line. */
@@ -119,6 +122,16 @@ export interface RowFile {
     readonly onSlice?: (fraction: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
   }): Promise<FileScan>
   /**
+   * Read one page of occurrences starting at `cursor`.
+   * @param pattern - compiled expression.
+   * @param options - abort signal, first occurrence and page size.
+   */
+  scanPage(pattern: RegExp, options: {
+    readonly signal: AbortSignal
+    readonly cursor: SearchOccurrence
+    readonly limit: number
+  }): Promise<readonly SearchOccurrence[]>
+  /**
    * Search the whole file for matching lines, one result per line.
    *
    * Unlike {@link RowFile.scan} this is used by line-oriented formats: the first line is
@@ -142,6 +155,14 @@ export interface RowFile {
 interface Anchor {
   readonly row: number
   readonly byte: number
+}
+
+/** Order occurrences exactly as the scanner emits them. */
+function compareOccurrence(left: SearchOccurrence, right: SearchOccurrence): number {
+  if (left.row !== right.row) return left.row - right.row
+  if (left.cell !== right.cell) return left.cell - right.cell
+  if (left.start !== right.start) return left.start - right.start
+  return left.end - right.end
 }
 
 /**
@@ -330,8 +351,10 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       const anchor = requested > 0 ? anchorBefore(requested) : undefined
       const start = anchor === undefined ? { byte: 0, line: 0 } : { byte: anchor.byte, line: anchor.row }
       const occurrences: SearchOccurrence[] = []
+      const pages: SearchOccurrence[] = []
       let matches = 0
       let scanned = 0
+      const pageSize = Number.isFinite(limit) ? limit : Number.POSITIVE_INFINITY
 
       /**
        * Walk `[from, stop)`, parsing rows and counting cell occurrences.
@@ -354,10 +377,13 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
               const bodyRow = fileRow - 1
               const cells = parsed.rows[rowOffset] ?? []
               for (let cell = 0; cell < cells.length; cell += 1) {
-                matches += forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
-                  if (occurrences.length < limit) {
-                    occurrences.push({ row: bodyRow, cell, start: range.start, end: range.end })
+                forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
+                  const occurrence = { row: bodyRow, cell, start: range.start, end: range.end }
+                  if (matches > 0 && Number.isFinite(pageSize) && matches % pageSize === 0) {
+                    pages.push(occurrence)
                   }
+                  matches += 1
+                  if (occurrences.length < limit) occurrences.push(occurrence)
                 })
               }
             }
@@ -376,7 +402,49 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       await walk(start.byte, start.line, size)
       // Finish the file when the walk began in the middle of it.
       if (start.byte > 0 && options.signal.aborted !== true) await walk(0, 0, start.byte)
-      return { matches, occurrences }
+      return { matches, occurrences, pages }
+    },
+    async scanPage(pattern: RegExp, options: {
+      readonly signal: AbortSignal
+      readonly cursor: SearchOccurrence
+      readonly limit: number
+    }): Promise<readonly SearchOccurrence[]> {
+      const fileRow = toFileRow(options.cursor.row)
+      const anchor = fileRow > 0 ? anchorBefore(fileRow) : undefined
+      const startLine = anchor?.row ?? 0
+      let offset = anchor?.byte ?? 0
+      let line = startLine
+      const page: SearchOccurrence[] = []
+
+      while (offset < size && page.length < options.limit) {
+        if (options.signal.aborted === true) break
+        const slice = await fetchSlice(url, offset, SLICE_BYTES, true, options.signal)
+        if (slice.text.length === 0 || slice.end <= slice.start) break
+        const parsed = parse(slice.text)
+        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
+          const currentFileRow = line + rowOffset
+          if (currentFileRow === 0) continue
+          const bodyRow = currentFileRow - 1
+          const cells = parsed.rows[rowOffset] ?? []
+          for (let cell = 0; cell < cells.length; cell += 1) {
+            let stop = false
+            forEachMatch(cells[cell] ?? '', pattern, (range: MatchRange) => {
+              if (stop) return
+              const occurrence = { row: bodyRow, cell, start: range.start, end: range.end }
+              if (compareOccurrence(occurrence, options.cursor) < 0) return
+              page.push(occurrence)
+              if (page.length >= options.limit) stop = true
+            })
+            if (stop) break
+          }
+          if (page.length >= options.limit) break
+        }
+        if (page.length >= options.limit || slice.eof) break
+        line += parsed.rows.length
+        offset = slice.end
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      }
+      return page
     },
     async scanLines(pattern: RegExp, options: {
       readonly signal: AbortSignal

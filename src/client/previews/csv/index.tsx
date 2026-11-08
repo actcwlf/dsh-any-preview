@@ -66,7 +66,7 @@ export function CsvBody(props: PreviewBodyProps) {
   const [filter, setFilter] = useState(false)
   const { view, windowed } = source
 
-  const found = useCsvSearch(view?.body ?? [], options)
+  const found = useCsvSearch(view?.body ?? [], options, windowed ? undefined : Number.POSITIVE_INFINITY)
 
   const scroll = useRowScroll({
     scrollportRef: props.scrollportRef,
@@ -91,6 +91,7 @@ export function CsvBody(props: PreviewBodyProps) {
   }
   const scan = useWholeFileScan({
     scan: source.scan,
+    loadPage: source.page,
     query: options.query,
     regex: options.regex,
     caseSensitive: options.caseSensitive,
@@ -225,12 +226,9 @@ export function CsvBody(props: PreviewBodyProps) {
     ? t('csv.lineTooLong', { limit: LIMITS.csvLineChars.toLocaleString('en-US') })
     : scanState?.done === true && scanState.aborted
     ? t('csv.scanStopped', { count: scanState.matches.toLocaleString('en-US') })
-    : scanState?.done === true && scanState.occurrences.length < scanState.matches
-    ? t('csv.scanDoneCapped', {
-      count: scanState.matches.toLocaleString('en-US'),
-      shown: scanState.occurrences.length.toLocaleString('en-US'),
-    })
-    : found.matches > found.result.occurrences.length
+    : scan.loadingPage
+    ? t('csv.pageLoading')
+    : scanState === undefined && found.matches > found.result.occurrences.length
     ? t('csv.localCapped', {
       count: found.matches.toLocaleString('en-US'),
       shown: found.result.occurrences.length.toLocaleString('en-US'),
