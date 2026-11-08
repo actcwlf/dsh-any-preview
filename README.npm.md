@@ -7,27 +7,25 @@
 
 A file preview plugin for the DSH (DeepSeek Harness) sidebar. Open common file types and large text files without leaving the current task.
 
+Current beta version: `0.1.0-beta.1`
+
 For screenshots and the full README, see the [GitHub repository](https://github.com/actcwlf/dsh-any-preview).
 
-## Install
+## Install / uninstall
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview
+Install from the DSH GUI.
+
+![Install step 1](https://raw.githubusercontent.com/actcwlf/dsh-any-preview/dev/assets/installation1.jpg)
+
+Enter:
+
+```text
+dsh-any-preview@beta
 ```
 
-Install the current beta build:
+![Install step 2](https://raw.githubusercontent.com/actcwlf/dsh-any-preview/dev/assets/installation2.jpg)
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview@beta
-```
-
-Fully quit and restart DSH Desktop after installing.
-
-## Uninstall
-
-```sh
-dsh plugin --profile desktop remove dsh-any-preview
-```
+To uninstall, open the plugin from the same screen and use the uninstall button on its page.
 
 ## What it does
 
@@ -57,6 +55,15 @@ dsh plugin --profile desktop remove dsh-any-preview
 | Model weights | `gguf` | Inspect version, architecture, and quantization |
 | Databases | `sqlite` `sqlite3` `db` `db3` | Read tables, views, and indexes without writing |
 
+
+## Notes
+
+- Encrypted archives, ZIP64, and RAR are not supported. 7z support covers common unencrypted archives.
+- JSONL search works by record; field queries such as `level=error` are not supported.
+- Diff/patch has no full-text scan or paging.
+- Large files without an absolute path may be truncated to the text-buffer limit.
+- Page jumping currently has an API but no page-number input.
+- Video and audio playback depends on the codecs available to the WebView or operating system.
 
 ## License
 

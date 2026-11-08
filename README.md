@@ -27,7 +27,7 @@ Play video in the sidebar and scrub to the part you need.
 
 ![Archive preview](./assets/archive_1920_12fps.gif)
 
-Browse archive entries and open a member directly.
+Browse archive entries and open a member directly, without extracting the whole archive to a temporary directory first.
 
 ### Large files
 
@@ -49,25 +49,19 @@ See a file's structure, size, and key facts in the conversation before deciding 
 
 ## Install / uninstall
 
-Install from npm:
+Install from the DSH GUI.
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview
+![Install step 1](./assets/installation1.jpg)
+
+Enter:
+
+```text
+dsh-any-preview@beta
 ```
 
-Install the current beta build:
+![Install step 2](./assets/installation2.jpg)
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview@beta
-```
-
-Uninstall:
-
-```sh
-dsh plugin --profile desktop remove dsh-any-preview
-```
-
-Fully quit and restart DSH Desktop after installing or removing the plugin.
+To uninstall, open the plugin from the same screen and use the uninstall button on its page.
 
 ## Supported formats
 
@@ -88,6 +82,15 @@ Fully quit and restart DSH Desktop after installing or removing the plugin.
 | Model weights | `safetensors` | Inspect model structure, parameter scale, and metadata |
 | Model weights | `gguf` | Inspect version, architecture, and quantization details |
 | Databases | `sqlite` `sqlite3` `db` `db3` | Read tables, views, and indexes without modifying data |
+
+## Notes
+
+- Encrypted archives, ZIP64, and RAR are not supported. 7z support covers common unencrypted archives.
+- JSONL search works by record; field queries such as `level=error` are not supported.
+- Diff/patch has no full-text scan or paging.
+- Large files without an absolute path may be truncated to the text-buffer limit.
+- Page jumping currently has an API but no page-number input.
+- Video and audio playback depends on the codecs available to the WebView or operating system.
 
 ## License
 

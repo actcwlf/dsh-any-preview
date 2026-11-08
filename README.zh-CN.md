@@ -50,23 +50,17 @@ dsh-any-preview 为 DSH 侧栏带来更完整的文件预览体验。文本、�
 
 ## 安装 / 卸载
 
-从 npm 安装：
+通过GUI安装
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview
-```
+![安装](./assets/installation1.jpg)
 
-安装当前 beta 版：
+输入 dsh-any-preview@beta
 
-```sh
-dsh plugin --profile desktop add dsh-any-preview@beta
-```
+![安装](./assets/installation2.jpg)
 
-卸载：
+如需卸载插件，在同样的界面点击插件，进入页面后可以看到卸载按钮
 
-```sh
-dsh plugin --profile desktop remove dsh-any-preview
-```
+
 
 
 
