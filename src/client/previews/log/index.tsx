@@ -17,8 +17,8 @@ import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { levelOf } from './parse.ts'
 import type { LogLevel } from './parse.ts'
 import { useLogSource } from './source.ts'
-import { useLogScan } from './scan.ts'
-import { LOG_OVERSCAN, LOG_ROW_HEIGHT, useLogScroll } from './scroll.ts'
+import { useLineScan } from '../../kernel/useLineScan.ts'
+import { DEFAULT_OVERSCAN, DEFAULT_ROW_HEIGHT, useFixedRowScroll } from '../../kernel/useFixedRowScroll.ts'
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
   error: 'var(--dsw-alias-state-error-primary)',
@@ -34,7 +34,7 @@ export function LogBody(props: PreviewBodyProps) {
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
   const [follow, setFollow] = useState(true)
-  const scroll = useLogScroll({
+  const scroll = useFixedRowScroll({
     scrollportRef: props.scrollportRef,
     ready: source.windowed || source.totalRows > 0,
     totalRows: source.totalRows,
@@ -54,7 +54,7 @@ export function LogBody(props: PreviewBodyProps) {
   const windowLines = win.rows.map(row => row[0] ?? '')
   const lines = source.windowed ? windowLines : source.lines
   const found = useSearch(lines, options)
-  const scan = useLogScan({
+  const scan = useLineScan({
     scan: source.scan,
     loadPage: source.page,
     sourceKey: source.sourceKey,
@@ -103,7 +103,7 @@ export function LogBody(props: PreviewBodyProps) {
       style={{
         display: 'flex',
         gap: 10,
-        height: LOG_ROW_HEIGHT,
+        height: DEFAULT_ROW_HEIGHT,
         padding: '0 12px',
         whiteSpace: 'pre',
         background: index === activeRow ? ACTIVE_ROW : undefined,
@@ -118,9 +118,9 @@ export function LogBody(props: PreviewBodyProps) {
 
   const pinned = source.windowed && scroll.geometry !== undefined
   const band = pinned
-    ? stickyBand(scroll.logical, source.totalRows, scroll.geometry.visibleRows, LOG_ROW_HEIGHT, LOG_OVERSCAN)
+    ? stickyBand(scroll.logical, source.totalRows, scroll.geometry.visibleRows, DEFAULT_ROW_HEIGHT, DEFAULT_OVERSCAN)
     : undefined
-  const contentHeight = pinned ? scroll.contentHeight : source.windowed ? source.totalRows * LOG_ROW_HEIGHT : undefined
+  const contentHeight = pinned ? scroll.contentHeight : source.windowed ? source.totalRows * DEFAULT_ROW_HEIGHT : undefined
   const status = source.windowed
     ? scan.state?.done === true && scan.state.aborted
       ? t('log.scanStopped', { count: scan.count.toLocaleString('en-US') })
@@ -198,10 +198,10 @@ export function LogBody(props: PreviewBodyProps) {
                   })
                 ) : (
                   <>
-                    {win.startRow > 0 && <div style={{ height: win.startRow * LOG_ROW_HEIGHT }} />}
+                    {win.startRow > 0 && <div style={{ height: win.startRow * DEFAULT_ROW_HEIGHT }} />}
                     {win.rows.map((row, offset) => renderRow(win.startRow + offset, row[0] ?? ''))}
                     {source.totalRows - win.startRow - win.rows.length > 0 && (
-                      <div style={{ height: (source.totalRows - win.startRow - win.rows.length) * LOG_ROW_HEIGHT }} />
+                      <div style={{ height: (source.totalRows - win.startRow - win.rows.length) * DEFAULT_ROW_HEIGHT }} />
                     )}
                   </>
                 )}
@@ -221,7 +221,7 @@ export function LogBody(props: PreviewBodyProps) {
 const codeStyle = {
   fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
   fontSize: 12,
-  lineHeight: `${String(LOG_ROW_HEIGHT)}px`,
+  lineHeight: `${String(DEFAULT_ROW_HEIGHT)}px`,
 } as const
 
 const gutterStyle = {
@@ -235,7 +235,7 @@ const pinnedBlock = {
   overflow: 'hidden',
   fontFamily: 'var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
   fontSize: 12,
-  lineHeight: `${String(LOG_ROW_HEIGHT)}px`,
+  lineHeight: `${String(DEFAULT_ROW_HEIGHT)}px`,
 } as const
 
 /** What the client entry registers for this format. */

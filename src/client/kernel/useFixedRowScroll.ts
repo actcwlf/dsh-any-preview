@@ -1,19 +1,19 @@
 /**
- * Scroll geometry for a log viewer with fixed-height lines.
+ * Scroll geometry for a fixed-height row viewer (log or JSONL).
  *
- * The log has no table header, so its body rows start at the top of the scroller.
- * Past the browser's scroll-height cap the scrollbar becomes proportional, exactly
- * like the CSV table, while the rows keep their natural height.
+ * The body has no table header, so its rows start at the top of the scroller. Past the
+ * browser's scroll-height cap the scrollbar becomes proportional, exactly like the CSV
+ * table, while the rows keep their natural height.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { logicalRow, proportionalGeometry } from '../../kernel/window-state.ts'
-import type { ProportionalGeometry } from '../../kernel/window-state.ts'
+import { logicalRow, proportionalGeometry } from './window-state.ts'
+import type { ProportionalGeometry } from './window-state.ts'
 
-/** Natural height of one log line; matches the 12/18 code line box. */
-export const LOG_ROW_HEIGHT = 18
+/** Natural height of one code-style row. */
+export const DEFAULT_ROW_HEIGHT = 18
 
-/** Space left below the viewport so a drag can reveal the next line early. */
-export const LOG_OVERSCAN = 40
+/** Space left below the viewport so a drag can reveal the next row early. */
+export const DEFAULT_OVERSCAN = 40
 
 /** Browser-safe maximum content height, leaving room for the viewport. */
 const SCROLL_LIMIT_PX = 16_000_000
@@ -21,8 +21,8 @@ const SCROLL_LIMIT_PX = 16_000_000
 /** Viewport height before the first measurement. */
 const FALLBACK_VIEWPORT = 480
 
-/** Scroll state and geometry for one log. */
-export interface LogScroll {
+/** Scroll state and geometry for one fixed-row viewer. */
+export interface FixedRowScroll {
   readonly scrollTop: number
   readonly viewportHeight: number
   readonly totalRows: number
@@ -36,8 +36,8 @@ export interface LogScroll {
   readonly reveal: (row: number) => void
 }
 
-/** What the log scroll hook needs. */
-export interface LogScrollOptions {
+/** What the fixed-row scroll hook needs. */
+export interface FixedRowScrollOptions {
   readonly scrollportRef?: (element: HTMLElement | null) => void
   readonly ready: boolean
   readonly totalRows: number
@@ -45,12 +45,12 @@ export interface LogScrollOptions {
 }
 
 /**
- * Track a log scroller and derive its row geometry.
+ * Track a fixed-row scroller and derive its row geometry.
  * @param options - readiness, total lines and optional row height.
  * @returns scroll state and helpers.
  */
-export function useLogScroll(options: LogScrollOptions): LogScroll {
-  const { scrollportRef, ready, totalRows, rowHeight = LOG_ROW_HEIGHT } = options
+export function useFixedRowScroll(options: FixedRowScrollOptions): FixedRowScroll {
+  const { scrollportRef, ready, totalRows, rowHeight = DEFAULT_ROW_HEIGHT } = options
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(FALLBACK_VIEWPORT)

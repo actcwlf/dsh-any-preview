@@ -12,7 +12,7 @@ import { useLineFileSource } from '../../kernel/useLineFileSource.ts'
 import { createLogConsumer } from './parse.ts'
 import { parseLogSlice } from './rows.ts'
 import { matchLogPage, scanLogText } from './search.ts'
-import type { LogPageRunner, LogScanRunner } from './scan.ts'
+import type { LinePageRunner, LineScanRunner } from '../../kernel/useLineScan.ts'
 
 /** What the log body needs from its source. */
 export interface LogSource {
@@ -27,8 +27,8 @@ export interface LogSource {
   readonly revision: number
   readonly sourceKey: string
   readonly read: (startRow: number, count: number) => Promise<WindowRead>
-  readonly scan: LogScanRunner
-  readonly page: LogPageRunner
+  readonly scan: LineScanRunner
+  readonly page: LinePageRunner
 }
 
 /**

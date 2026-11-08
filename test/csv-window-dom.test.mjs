@@ -832,6 +832,24 @@ test('a small jsonl past the record budget switches to its file source', { skip:
   const found = await waitFor(() => /1\/1/u.test(container.textContent ?? ''), 4_000)
   assert.ok(found, 'the whole file is searchable after falling back to the file source')
   assert.ok(container.querySelector('tr[data-row-index="20399"]'), 'the recorded hit is revealed')
+
+  // Query every record, then load the last record page from its cursor.
+  await act(async () => {
+    setter.call(input, 'n')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  assert.ok(await waitFor(() => /1\/20,500/u.test(container.textContent ?? ''), 5_000), 'all records are scanned')
+  const previous = container.querySelector('button[title="上一个匹配"]')
+  assert.ok(previous, 'the previous button is mounted')
+  await act(async () => { previous.click() })
+  assert.ok(
+    await waitFor(() => /20500\/20,500/u.test(container.textContent ?? ''), 5_000),
+    'the last JSONL record page is loaded from its cursor',
+  )
+  assert.ok(container.querySelector('tr[data-row-index="20499"]'), 'the last record is reachable')
 })
 
 test('a small log past the line budget switches to its file source', { skip: !available }, async (t) => {

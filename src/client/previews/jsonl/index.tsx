@@ -14,8 +14,8 @@ import { useSearch } from '../../kernel/useSearch.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
 import { stickyBand } from '../../kernel/window-state.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { useLogScroll } from '../log/scroll.ts'
-import { useLogScan } from '../log/scan.ts'
+import { useFixedRowScroll } from '../../kernel/useFixedRowScroll.ts'
+import { useLineScan } from '../../kernel/useLineScan.ts'
 import { collectColumns, formatValue, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { useJsonlSource } from './source.ts'
@@ -31,7 +31,7 @@ export function JsonlBody(props: PreviewBodyProps) {
   const source = useJsonlSource(props)
   const [options, setOptions] = useState<SearchOptions>(DEFAULT_SEARCH)
   const [filter, setFilter] = useState(false)
-  const scroll = useLogScroll({
+  const scroll = useFixedRowScroll({
     scrollportRef: props.scrollportRef,
     ready: source.windowed || source.records.length > 0,
     totalRows: source.totalRows,
@@ -68,7 +68,7 @@ export function JsonlBody(props: PreviewBodyProps) {
   const found = useSearch(useMemo(() => searchRecords.map(record => record.raw), [searchRecords, searchRecords.length]), options)
   const activeRecord = found.activeRow === undefined ? undefined : searchRecords[found.activeRow]
   const localActiveLine = activeRecord === undefined ? undefined : activeRecord.line - 1
-  const scan = useLogScan({
+  const scan = useLineScan({
     scan: source.scan,
     loadPage: source.page,
     sourceKey: source.sourceKey,

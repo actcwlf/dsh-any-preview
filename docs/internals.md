@@ -168,7 +168,7 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 `useStreamedText`，保留 20,000 行上限；但一旦文本模型 `truncated` 且文件可寻址，也会
 自动切到文件源，避免“前 20,000 行之后直接消失”的空档。
 
-大文件输入阶段只搜索当前窗口，Enter 后由 `log/scan.ts` 对文件源做全文扫描：一行一个结果，
+大文件输入阶段只搜索当前窗口，Enter 后由 `kernel/useLineScan.ts` 对文件源做全文扫描：一行一个结果，
 行内高亮，匹配行总数完整，5,000 行是分页大小；页尾/页首按游标加载相邻页。扫描可停止，停止后保留
 部分结果。搜索时禁用
 “仅匹配”，避免把窗口过滤误当成全文件过滤。尾部跟随在文件源上调用 `scrollToBottom`，不再只滚到
@@ -241,7 +241,7 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 实现：`kernel/search.ts`（编译/区间/occurrence 遍历，纯函数可单测）、
 `previews/csv/match.ts`（CSV 单元格 matcher）、`previews/csv/search.ts`（本地扫描与
 全文文本扫描）、`previews/csv/scan.ts`（同语义状态机）、`previews/log/search.ts`（行匹配，
-一行一个结果）、`previews/log/scan.ts`（行全文扫描状态机）、`previews/jsonl/search.ts`
+一行一个结果）、`kernel/useLineScan.ts`（行全文扫描状态机，log/JSONL 共用）、`previews/jsonl/search.ts`
 （JSONL 记录匹配，空行跳过、坏行按 raw 参与）、`kernel/row-file.ts`
 （`scan` / `scanLines`，后者支持 `skipEmpty`）、`kernel/marks.tsx`（高亮渲染，支持单个
 active occurrence）、`kernel/SearchBar.tsx`（共用控件）。

@@ -1,15 +1,27 @@
-/** Whole-file log search: line results, progress, stop and cursor-paged navigation. */
+/** Whole-file line search: record results, progress, stop and cursor-paged navigation. */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { compileSearch } from '../../kernel/search.ts'
-import { usePagedResults } from '../../kernel/usePagedResults.ts'
-import { LOG_MATCH_LIMIT } from './search.ts'
-import type { LogScanOptions, LogScanResult } from './search.ts'
+import { compileSearch, SEARCH_PAGE_SIZE } from './search.ts'
+import { usePagedResults } from './usePagedResults.ts'
+
+/** What a line scan may report while it walks. */
+export interface LineScanOptions {
+  readonly signal: AbortSignal
+  readonly lineLimit: number
+  readonly onSlice: (progress: number, matches: number, lines: readonly number[]) => void
+}
+
+/** What one whole-file line scan produced. */
+export interface LineScanResult {
+  readonly matches: number
+  readonly lines: readonly number[]
+  readonly pages: readonly number[]
+}
 
 /** A scan function over a file or a delivered text. */
-export type LogScanRunner = (pattern: RegExp, options: LogScanOptions) => Promise<LogScanResult>
+export type LineScanRunner = (pattern: RegExp, options: LineScanOptions) => Promise<LineScanResult>
 
 /** Loads one page of matching lines at or after a line cursor. */
-export type LogPageRunner = (
+export type LinePageRunner = (
   pattern: RegExp,
   cursor: number,
   signal: AbortSignal,
@@ -17,7 +29,7 @@ export type LogPageRunner = (
 ) => Promise<readonly number[]>
 
 /** Scan state for one query. */
-export interface LogScanState {
+export interface LineScanState {
   readonly query: string
   readonly progress: number
   /** Matching lines in the whole file so far. */
@@ -30,9 +42,9 @@ export interface LogScanState {
   readonly aborted: boolean
 }
 
-/** What the log body needs for full-file search. */
-export interface LogScan {
-  readonly state: LogScanState | undefined
+/** What a line body needs for full-file search. */
+export interface LineScan {
+  readonly state: LineScanState | undefined
   readonly count: number
   readonly index: number
   readonly activeLine: number | undefined
@@ -57,18 +69,18 @@ const NO_PAGES: readonly number[] = []
  * @param options - runner, page loader, source identity, query and query modes.
  * @returns scan state and navigation.
  */
-export function useLogScan(options: {
-  readonly scan: LogScanRunner | undefined
-  readonly loadPage?: LogPageRunner
+export function useLineScan(options: {
+  readonly scan: LineScanRunner | undefined
+  readonly loadPage?: LinePageRunner
   /** Changes when the underlying file/text source changes. */
   readonly sourceKey: string
   readonly query: string
   readonly regex: boolean
   readonly caseSensitive: boolean
-}): LogScan {
+}): LineScan {
   const { scan, loadPage, sourceKey, query, regex, caseSensitive } = options
   const [request, setRequest] = useState<{ readonly query: string } | undefined>(undefined)
-  const [state, setState] = useState<LogScanState | undefined>(undefined)
+  const [state, setState] = useState<LineScanState | undefined>(undefined)
   const controller = useRef<AbortController | null>(null)
   const keyRef = useRef(sourceKey)
   const pageAbort = useRef<AbortController | null>(null)
@@ -122,7 +134,7 @@ export function useLogScan(options: {
     setState({ query: request.query, progress: 0, matches: 0, lines: [], pages: [], done: false, aborted: false })
     void scan(pattern, {
       signal: abort.signal,
-      lineLimit: LOG_MATCH_LIMIT,
+      lineLimit: SEARCH_PAGE_SIZE,
       onSlice: (progress, matches, lines) => {
         if (abort.signal.aborted) return
         setState(current => current === undefined
@@ -161,7 +173,7 @@ export function useLogScan(options: {
 
   const pager = usePagedResults<number, number>({
     total: state?.matches ?? 0,
-    pageSize: LOG_MATCH_LIMIT,
+    pageSize: SEARCH_PAGE_SIZE,
     pageStarts: state?.pages ?? NO_PAGES,
     initial: state?.lines ?? NO_LINES,
     resetKey: `${sourceKey}:${state?.query ?? ''}`,
