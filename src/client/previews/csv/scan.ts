@@ -58,6 +58,11 @@ export interface WholeFileScan extends ScanNavigation {
   readonly loadingPage: boolean
   /** True when the last page read failed. */
   readonly pageError: boolean
+  /** Zero-based current page and page count. */
+  readonly page: number
+  readonly pageCount: number
+  /** Jump to a zero-based result page. */
+  readonly goToPage: (page: number) => void
   /** Start a run from where the reader is (Enter, or the toolbar button). */
   readonly start: () => void
   /** Stop the run; the occurrences already on screen stay usable. */
@@ -211,6 +216,9 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     count: navigating ? (state?.matches ?? occurrences.length) : fallback.count,
     loadingPage: pager.loading,
     pageError: pager.error,
+    page: pager.page,
+    pageCount: pager.pageCount,
+    goToPage: pager.goToPage,
     next,
     prev,
     start,

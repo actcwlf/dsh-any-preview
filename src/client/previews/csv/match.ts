@@ -5,6 +5,9 @@ import type { MatchRange, SearchOccurrence } from '../../kernel/search.ts'
 /** Occurrences kept for navigation; the total count is always complete. */
 export const CSV_OCCURRENCE_LIMIT = SEARCH_PAGE_SIZE
 
+/** Occurrences kept for navigation in a complete in-memory table. */
+export const CSV_LOCAL_LIMIT = 20_000
+
 /** The result of matching one CSV body. */
 export interface CsvSearchResult {
   readonly pattern: RegExp | undefined

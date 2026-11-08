@@ -33,11 +33,11 @@ export type TextLineScan = (text: string, pattern: RegExp, options: LineScanOpti
 
 /** A text page callback supplied by the format. */
 export type TextLinePage = (
-  text: string,
+  lines: readonly string[],
   pattern: RegExp,
   cursor: number,
   limit: number,
-) => Promise<readonly number[]>
+) => readonly number[] | Promise<readonly number[]>
 
 /** What the line source needs from the format and the document owner. */
 export interface LineFileSourceOptions {
@@ -78,6 +78,7 @@ export function useLineFileSource(options: LineFileSourceOptions): LineFileSourc
   const openedRef = useRef<string | null>(null)
   const textRef = useRef(text)
   textRef.current = text
+  const textLinesRef = useRef<{ text: string, lines: readonly string[] }>({ text: '', lines: [] })
   const onOpenRef = useRef(onOpen)
   onOpenRef.current = onOpen
   const [fileMode, setFileMode] = useState(false)
@@ -181,7 +182,10 @@ export function useLineFileSource(options: LineFileSourceOptions): LineFileSourc
   ): Promise<readonly number[]> => {
     const file = fileRef.current
     if (file !== null) return file.scanPageLines(pattern, { signal, cursor, limit, skipEmpty })
-    return pageText(textRef.current, pattern, cursor, limit)
+    if (textLinesRef.current.text !== textRef.current) {
+      textLinesRef.current = { text: textRef.current, lines: textRef.current.split(/\r?\n/u) }
+    }
+    return pageText(textLinesRef.current.lines, pattern, cursor, limit)
   }, [pageText, skipEmpty])
 
   return {

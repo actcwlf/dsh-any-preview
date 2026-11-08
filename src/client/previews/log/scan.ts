@@ -38,6 +38,9 @@ export interface LogScan {
   readonly activeLine: number | undefined
   readonly loadingPage: boolean
   readonly pageError: boolean
+  readonly page: number
+  readonly pageCount: number
+  readonly goToPage: (page: number) => void
   readonly start: () => void
   readonly stop: () => void
   readonly next: () => void
@@ -173,6 +176,9 @@ export function useLogScan(options: {
     activeLine: pager.active,
     loadingPage: pager.loading,
     pageError: pager.error,
+    page: pager.page,
+    pageCount: pager.pageCount,
+    goToPage: pager.goToPage,
     start: (): void => {
       if (query === '') return
       setRequest({ query })

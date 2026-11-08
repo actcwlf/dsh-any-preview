@@ -8,6 +8,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { trimPageCache } from './page-cache.ts'
 
+/** Start loading the next page when this many items remain in the current page. */
+const PREFETCH_MARGIN = 50
+
 /** What a format supplies to the pager. */
 export interface PagedResultsOptions<T, C> {
   readonly total: number
@@ -27,10 +30,13 @@ export interface PagedResults<T> {
   readonly index: number
   readonly active: T | undefined
   readonly globalIndex: number
+  readonly page: number
+  readonly pageCount: number
   readonly loading: boolean
   readonly error: boolean
   readonly next: () => void
   readonly prev: () => void
+  readonly goToPage: (page: number) => void
   readonly cancel: () => void
 }
 
@@ -47,7 +53,9 @@ export function usePagedResults<T, C>(options: PagedResultsOptions<T, C>): Paged
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const prefetchAbortRef = useRef<AbortController | null>(null)
   const loadingRef = useRef(false)
+  const prefetchingRef = useRef(false)
   const cache = useRef(new Map<number, readonly T[]>([[0, initial]]))
   const loaderRef = useRef(loadPage)
   loaderRef.current = loadPage
@@ -60,7 +68,10 @@ export function usePagedResults<T, C>(options: PagedResultsOptions<T, C>): Paged
     initialRef.current = initial
     abortRef.current?.abort()
     abortRef.current = null
+    prefetchAbortRef.current?.abort()
+    prefetchAbortRef.current = null
     loadingRef.current = false
+    prefetchingRef.current = false
     cache.current.clear()
     cache.current.set(0, initial)
     setPageIndex(0)
@@ -86,6 +97,9 @@ export function usePagedResults<T, C>(options: PagedResultsOptions<T, C>): Paged
     }
     const cursor = pageStarts[page - 1]
     if (cursor === undefined) return
+    prefetchAbortRef.current?.abort()
+    prefetchAbortRef.current = null
+    prefetchingRef.current = false
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -124,9 +138,56 @@ export function usePagedResults<T, C>(options: PagedResultsOptions<T, C>): Paged
   const cancel = (): void => {
     abortRef.current?.abort()
     abortRef.current = null
+    prefetchAbortRef.current?.abort()
+    prefetchAbortRef.current = null
     loadingRef.current = false
+    prefetchingRef.current = false
     setLoading(false)
   }
 
-  return { items, index: globalIndex, active: activeItem, globalIndex, loading, error, next, prev, cancel }
+  const inspectNextPage = (): void => {
+    if (!enabled || loadingRef.current || prefetchingRef.current || items.length === 0) return
+    if (index < items.length - PREFETCH_MARGIN) return
+    const page = pageIndex + 1
+    if (page >= pageCount || cache.current.has(page)) return
+    const cursor = pageStarts[page - 1]
+    if (cursor === undefined) return
+    const controller = new AbortController()
+    prefetchAbortRef.current = controller
+    prefetchingRef.current = true
+    void loaderRef.current(cursor, controller.signal, pageSize).then((next) => {
+      if (controller.signal.aborted) return
+      cache.current.set(page, next)
+      trimPageCache(cache.current, page)
+    }).catch(() => { /* the real page load reports an error */ })
+      .finally(() => {
+        prefetchingRef.current = false
+        if (prefetchAbortRef.current === controller) prefetchAbortRef.current = null
+      })
+  }
+  useEffect(inspectNextPage, [enabled, index, items.length, pageIndex, pageCount])
+
+  const goToPage = (page: number): void => {
+    const nextPage = Math.max(0, Math.min(pageCount - 1, page))
+    if (nextPage === pageIndex) {
+      setActive(0)
+      return
+    }
+    load(nextPage, 'first')
+  }
+
+  return {
+    items,
+    index: globalIndex,
+    active: activeItem,
+    globalIndex,
+    page: pageIndex,
+    pageCount,
+    loading,
+    error,
+    next,
+    prev,
+    goToPage,
+    cancel,
+  }
 }

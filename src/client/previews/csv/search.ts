@@ -9,6 +9,7 @@ import { compileSearch } from '../../kernel/search.ts'
 import type { SearchOccurrence, SearchOptions } from '../../kernel/search.ts'
 import { parseCsvSlice } from './parse.ts'
 import {
+  CSV_LOCAL_LIMIT,
   CSV_OCCURRENCE_LIMIT,
   EMPTY_CSV_SEARCH,
   matchCsvPage,
@@ -16,7 +17,7 @@ import {
 } from './match.ts'
 import type { CsvSearchResult } from './match.ts'
 
-export { CSV_OCCURRENCE_LIMIT, EMPTY_CSV_SEARCH, matchCsvRows }
+export { CSV_LOCAL_LIMIT, CSV_OCCURRENCE_LIMIT, EMPTY_CSV_SEARCH, matchCsvRows }
 export type { CsvSearchResult }
 
 /** State and navigation for one CSV's local search. */

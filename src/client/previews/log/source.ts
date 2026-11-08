@@ -11,7 +11,7 @@ import type { WindowRead } from '../../kernel/useWindowedRows.ts'
 import { useLineFileSource } from '../../kernel/useLineFileSource.ts'
 import { createLogConsumer } from './parse.ts'
 import { parseLogSlice } from './rows.ts'
-import { scanLogText, scanLogTextPage } from './search.ts'
+import { matchLogPage, scanLogText } from './search.ts'
 import type { LogPageRunner, LogScanRunner } from './scan.ts'
 
 /** What the log body needs from its source. */
@@ -50,7 +50,7 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
     skipEmpty: false,
     text,
     scanText: scanLogText,
-    pageText: scanLogTextPage,
+    pageText: matchLogPage,
   })
 
   return {

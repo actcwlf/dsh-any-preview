@@ -17,7 +17,8 @@ import { readWindow } from '../../kernel/csv-window.ts'
 import type { WindowRead } from '../../kernel/useWindowedRows.ts'
 import { openRowFile } from '../../kernel/row-file.ts'
 import type { RowFile } from '../../kernel/row-file.ts'
-import { scanCsvText, scanCsvTextPage } from './search.ts'
+import { scanCsvText } from './search.ts'
+import { matchCsvPage } from './match.ts'
 import type { SearchOccurrence } from '../../kernel/search.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { fileUrl } from '../../kernel/file-url.ts'
@@ -129,6 +130,7 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
   const consumedRef = useRef(0)
   const fileRef = useRef<RowFile | null>(null)
   const openedRef = useRef<string | null>(null)
+  const parsedTextRef = useRef<{ text: string, rows: readonly (readonly string[])[] } | null>(null)
   const [fileState, dispatchFile] = useReducer(fileStateReducer, IDLE_FILE)
 
   const isText = content.kind === 'text'
@@ -294,7 +296,12 @@ export function useCsvSource(props: PreviewBodyProps): CsvSource {
   ): Promise<readonly SearchOccurrence[]> => {
     const file = fileRef.current
     if (fileMode && file !== null) return file.scanPage(pattern, { signal, cursor, limit })
-    return scanCsvTextPage(text, pattern, cursor, limit, delimiterRef.current)
+    let parsed = parsedTextRef.current
+    if (parsed === null || parsed.text !== text) {
+      parsed = { text, rows: parseCsvSlice(text, delimiterRef.current).rows.slice(1) }
+      parsedTextRef.current = parsed
+    }
+    return matchCsvPage(parsed.rows, pattern, cursor, limit)
   }, [fileMode, text])
 
   // A window cannot hide rows — it never holds the whole file — so a windowed table

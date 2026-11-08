@@ -12,7 +12,7 @@ import { DEFAULT_SEARCH } from '../../kernel/search.ts'
 import type { SearchOptions } from '../../kernel/search.ts'
 import { ACTIVE_ROW } from '../../kernel/layout.ts'
 import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
-import { useCsvSearch } from './search.ts'
+import { CSV_LOCAL_LIMIT, useCsvSearch } from './search.ts'
 import { bandRows, fitColumns, stickyBand, windowedBodyRows } from '../../kernel/window-state.ts'
 import type { BodyRow, WindowedBody } from '../../kernel/window-state.ts'
 import { useWindowedRows } from '../../kernel/useWindowedRows.ts'
@@ -66,7 +66,7 @@ export function CsvBody(props: PreviewBodyProps) {
   const [filter, setFilter] = useState(false)
   const { view, windowed } = source
 
-  const found = useCsvSearch(view?.body ?? [], options, windowed ? undefined : Number.POSITIVE_INFINITY)
+  const found = useCsvSearch(view?.body ?? [], options, windowed ? undefined : CSV_LOCAL_LIMIT)
 
   const scroll = useRowScroll({
     scrollportRef: props.scrollportRef,

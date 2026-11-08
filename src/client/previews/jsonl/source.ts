@@ -14,7 +14,7 @@ import type { RowFile } from '../../kernel/row-file.ts'
 import { collectColumns, createJsonlConsumer, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { parseJsonlSlice } from './rows.ts'
-import { scanJsonlText, scanJsonlTextPage } from './search.ts'
+import { matchJsonlPage, scanJsonlText } from './search.ts'
 import type { JsonlScanRunner } from './search.ts'
 
 /** Records sampled for the stable column set of a large file. */
@@ -75,7 +75,7 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
     skipEmpty: true,
     text,
     scanText: scanJsonlText,
-    pageText: scanJsonlTextPage,
+    pageText: matchJsonlPage,
     onOpen: sampleColumns,
   })
 
