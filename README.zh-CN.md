@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="./assets/logo.png" width="96" height="96" alt="dsh-any-preview logo">
-</p>
-
-# dsh-any-preview
+<table align="center">
+  <tr>
+    <td><img src="./assets/logo.png" width="96" height="96" alt="dsh-any-preview logo"></td>
+    <td><h1>dsh-any-preview</h1></td>
+  </tr>
+</table>
 
 [English](README.md) | 简体中文
 
