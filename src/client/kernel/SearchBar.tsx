@@ -70,7 +70,7 @@ export function SearchBar({
   const active = options.query.trim() !== ''
   const scanning = fullSearch === 'scanning'
   const stopped = fullSearch === 'stopped'
-  const committed = fullSearch === 'complete' || fullSearch === 'done'
+  const committed = fullSearch === 'complete' || fullSearch === 'done' || fullSearch === 'stopped'
   const idle = fullSearch === 'idle'
   const percent = Math.round(Math.max(0, Math.min(1, scanProgress)) * 100)
   const clear = (): void => {

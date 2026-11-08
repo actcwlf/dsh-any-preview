@@ -71,6 +71,14 @@ export interface FileScan {
   readonly occurrences: readonly SearchOccurrence[]
 }
 
+/** What a whole-file line scan found; one result per matching line. */
+export interface FileLineScan {
+  /** Total matching lines in the whole file. */
+  readonly matches: number
+  /** First matching lines for navigation, in file order (0-based). */
+  readonly lines: readonly number[]
+}
+
 /** A file-backed row source: byte windows in, rows out. */
 export interface RowFile {
   /** Bytes in the file. */
@@ -110,6 +118,20 @@ export interface RowFile {
     readonly lineLimit?: number
     readonly onSlice?: (fraction: number, matches: number, occurrences: readonly SearchOccurrence[]) => void
   }): Promise<FileScan>
+  /**
+   * Search the whole file for matching lines, one result per line.
+   *
+   * Unlike {@link RowFile.scan} this is used by line-oriented formats: the first line is
+   * content, not a header, and a line is counted once no matter how often the pattern
+   * occurs inside it.
+   * @param pattern - compiled expression; global, so `lastIndex` advances.
+   * @param options - abort signal, navigable-line limit and per-slice reporting.
+   */
+  scanLines(pattern: RegExp, options: {
+    readonly signal: AbortSignal
+    readonly lineLimit?: number
+    readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
+  }): Promise<FileLineScan>
   /** Forget everything read so far. */
   dispose(): void
 }
@@ -353,6 +375,47 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
       // Finish the file when the walk began in the middle of it.
       if (start.byte > 0 && options.signal.aborted !== true) await walk(0, 0, start.byte)
       return { matches, occurrences }
+    },
+    async scanLines(pattern: RegExp, options: {
+      readonly signal: AbortSignal
+      readonly lineLimit?: number
+      readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
+    }): Promise<FileLineScan> {
+      const limit = options.lineLimit ?? Number.POSITIVE_INFINITY
+      const lines: number[] = []
+      let matches = 0
+      let scanned = 0
+      let line = 0
+
+      while (scanned < size) {
+        if (options.signal.aborted === true) break
+        const slice = await fetchSlice(url, scanned, SLICE_BYTES, true, options.signal)
+        if (slice.text.length === 0 || slice.end <= slice.start) break
+        const previous = scanAnchors[scanAnchors.length - 1]
+        if (previous === undefined || previous.byte !== slice.start) scanAnchors.push({ row: line, byte: slice.start })
+        const parsed = parse(slice.text)
+        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
+          const cells = parsed.rows[rowOffset] ?? []
+          let matched = false
+          for (const cell of cells) {
+            if (forEachMatch(cell, pattern, () => {}) > 0) {
+              matched = true
+              break
+            }
+          }
+          if (matched) {
+            matches += 1
+            if (lines.length < limit) lines.push(line + rowOffset)
+          }
+        }
+        line += parsed.rows.length
+        scanCounted = Math.max(scanCounted, line)
+        scanned = slice.end
+        options.onSlice?.(Math.min(1, scanned / Math.max(1, size)), matches, lines.slice())
+        if (slice.eof) break
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      }
+      return { matches, lines }
     },
     dispose(): void {
       disposed = true

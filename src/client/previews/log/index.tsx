@@ -17,6 +17,7 @@ import type { PreviewBodyProps, PreviewModule } from '../../kernel/types.ts'
 import { levelOf } from './parse.ts'
 import type { LogLevel } from './parse.ts'
 import { useLogSource } from './source.ts'
+import { useLogScan } from './scan.ts'
 import { LOG_OVERSCAN, LOG_ROW_HEIGHT, useLogScroll } from './scroll.ts'
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
@@ -53,8 +54,24 @@ export function LogBody(props: PreviewBodyProps) {
   const windowLines = win.rows.map(row => row[0] ?? '')
   const lines = source.windowed ? windowLines : source.lines
   const found = useSearch(lines, options)
+  const scan = useLogScan({
+    scan: source.scan,
+    query: options.query,
+    regex: options.regex,
+    caseSensitive: options.caseSensitive,
+  })
   const baseRow = source.windowed ? win.startRow : 0
-  const activeRow = found.activeRow === undefined ? undefined : baseRow + found.activeRow
+  const localActive = found.activeRow === undefined ? undefined : baseRow + found.activeRow
+  const activeRow = scan.activeLine ?? localActive
+  const scanning = scan.state !== undefined && !scan.state.done
+  const searched = scan.state !== undefined
+  const fullSearch = source.windowed
+    ? scan.state === undefined
+      ? 'idle'
+      : scan.state.done
+        ? scan.state.aborted ? 'stopped' : 'done'
+        : 'scanning'
+    : 'complete'
 
   const visible = useMemo(() => {
     if (!filter || found.pattern === undefined) {
@@ -103,7 +120,14 @@ export function LogBody(props: PreviewBodyProps) {
     : undefined
   const contentHeight = pinned ? scroll.contentHeight : source.windowed ? source.totalRows * LOG_ROW_HEIGHT : undefined
   const status = source.windowed
-    ? source.complete ? undefined : t('log.indexing', { percent: String(Math.round(source.progress * 100)) })
+    ? scan.state?.done === true && scan.state.aborted
+      ? t('log.scanStopped', { count: scan.count.toLocaleString('en-US') })
+      : scan.state?.done === true && scan.state.lines.length < scan.state.matches
+        ? t('log.scanDoneCapped', {
+          count: scan.count.toLocaleString('en-US'),
+          shown: scan.state.lines.length.toLocaleString('en-US'),
+        })
+        : source.complete ? undefined : t('log.indexing', { percent: String(Math.round(source.progress * 100)) })
     : source.truncated ? t('common.truncated') : undefined
 
   return (
@@ -115,15 +139,28 @@ export function LogBody(props: PreviewBodyProps) {
           compact={compact}
           options={options}
           onChange={setOptions}
-          matches={found.matches.length}
-          index={found.index}
+          matches={searched ? scan.count : found.matches.length}
+          index={searched ? scan.index : found.index}
           total={source.totalRows}
-          onPrev={found.prev}
-          onNext={found.next}
+          onPrev={searched ? scan.prev : found.prev}
+          onNext={searched ? scan.next : found.next}
+          onSubmit={source.windowed
+            ? () => {
+              if (scan.state?.done === true) {
+                if (scan.state.aborted) scan.start()
+                else if (scan.count > 0) scan.next()
+              } else if (!scanning) {
+                scan.start()
+              }
+            }
+            : undefined}
+          onCancel={source.windowed ? scan.stop : undefined}
+          fullSearch={fullSearch}
+          scanProgress={scan.state?.progress ?? 0}
           filter={filter}
           onFilter={setFilter}
           filterable={!source.windowed}
-          placeholder={source.windowed ? t('log.windowSearch') : undefined}
+          placeholder={source.windowed ? t('log.searchFull') : undefined}
         />
       )}
       status={status}

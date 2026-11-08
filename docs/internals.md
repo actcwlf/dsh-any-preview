@@ -163,9 +163,11 @@ CSV 的行是**虚拟滚动**的：固定行高 + overscan，只挂载视口内�
 上限后按比例映射（`logicalRow` / `stickyBand`），文件尾部仍可达。小文件继续走
 `useStreamedText`，保留 20,000 行上限和明确的 truncated 状态。
 
-大文件当前只搜索**当前窗口**（搜索框占位与状态会说明），尚未接入全文扫描；尾部跟随在
-文件源上调用 `scrollToBottom`，不再只滚到已加载前缀的底部。`log/rows.ts` 只负责把
-line-aligned slice 变成 one-cell rows。
+大文件输入阶段只搜索当前窗口，Enter 后由 `log/scan.ts` 对文件源做全文扫描：一行一个结果，
+行内高亮，匹配行总数完整，导航保留前 5,000 行；扫描可停止，停止后保留部分结果。搜索时禁用
+“仅匹配”，避免把窗口过滤误当成全文件过滤。尾部跟随在文件源上调用 `scrollToBottom`，不再只滚到
+已加载前缀的底部。`log/rows.ts` 只负责把 line-aligned slice 变成 one-cell rows，
+`log/search.ts` 只负责行匹配与文本扫描。
 
 ### JSONL 文件源
 
@@ -215,22 +217,24 @@ owner 的 `text-pages` 是**顺序累积**的：它只会 `loadPage(loadedThroug
 - **上一个/下一个**（↑ ↓）：循环跳转，并把目标行滚到视口中央；CSV 用固定行高定位，
   其余用 `data-row-index` + `scrollIntoView`
 - **计数**：已提交搜索的 `当前/总数`；CSV 的计数单位是**单元格内出现次数**，导航也按
-  occurrence 移动；diff / log / JSONL 仍是一行一个结果。CSV 大文件在输入阶段只显示
-  `Enter 搜索全文`，不把已加载行的局部命中当作总数
+  occurrence 移动；log 是**匹配行**，一行只算一次；diff / JSONL 仍是一行一个结果。CSV / log
+  大文件在输入阶段只显示 `Enter 搜索全文`，不把已加载行的局部命中当作总数
 - **`Aa`** 区分大小写、**`.*`** 正则模式；正则写了一半不合法时按「无查询」处理，不报错
 - **「仅匹配」** 勾选后才过滤（等价于原来的行为），行号始终是原始行号
-- **全文扫描**：完整内容输入即全文；windowed CSV 由 Enter 提交，扫描中显示已找到数和
-  进度，可停止；扫描完成后显示全量出现次数，但可跳转 occurrence 仍受 5,000 上限约束，
-  状态栏会说明。扫描按文件顺序进行，表头不参与匹配
+- **全文扫描**：完整内容输入即全文；windowed CSV / log 由 Enter 提交，扫描中显示已找到数和
+  进度，可停止；扫描完成后显示全量出现次数（CSV）或匹配行数（log），但可跳转结果仍受
+  5,000 上限约束，状态栏会说明。扫描按文件顺序进行，CSV 表头 / log 无表头
 
 实现：`kernel/search.ts`（编译/区间/occurrence 遍历，纯函数可单测）、
 `previews/csv/match.ts`（CSV 单元格 matcher）、`previews/csv/search.ts`（本地扫描与
-全文文本扫描）、`previews/csv/scan.ts`（同语义状态机）、`kernel/marks.tsx`（高亮渲染，
-支持单个 active occurrence）、`kernel/SearchBar.tsx`（共用控件）。
+全文文本扫描）、`previews/csv/scan.ts`（同语义状态机）、`previews/log/search.ts`（行匹配，
+一行一个结果）、`previews/log/scan.ts`（log 全文扫描状态机）、`kernel/row-file.ts`
+（`scan` / `scanLines`）、`kernel/marks.tsx`（高亮渲染，支持单个 active occurrence）、
+`kernel/SearchBar.tsx`（共用控件）。
 
 CSV 已统一为 A2：单元格出现次数计数 + occurrence 导航，详见
-[`search-semantics.md`](search-semantics.md)。diff / log / JSONL 仍使用旧的单行搜索，
-暂不复用这套 CSV 语义。
+[`search-semantics.md`](search-semantics.md)。log 使用行级全文扫描，但仍然是一行一个结果；
+diff / JSONL 暂未复用全文扫描。
 
 ## 启动与懒加载
 
