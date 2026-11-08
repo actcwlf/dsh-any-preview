@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, inspectImage, inspectPdf, inspectFont, inspectModel, inspectMedia, inspectOffice, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool } from '../src/host/inspect-tool.ts'
+import { detectDelimiter, inferType, inspectCsv, inspectGguf, inspectJsonl, inspectSqlite, inspectZip, inspectSafetensors, inspectRst, inspectNotebook, inspectEpub, inspectSevenZip, inspectTar, inspectEml, inspectDiff, inspectImage, inspectPdf, inspectFont, inspectModel, inspectMedia, inspectOffice, previewFamily, previewOnlyResult, sniffFormat, unknownResult, registerInspectTool, sevenZipWasmPath } from '../src/host/inspect-tool.ts'
 const samples = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'samples')
 const imageSample = join(samples, 'asstes', '【女主角_荧】_by_原神_39fd8673fd145a6c65858227788cb173', 'Texture', '髪.png')
 const imageSkip = existsSync(imageSample) ? false : 'samples image fixture not found'
@@ -398,6 +398,13 @@ test('a compressed 7z header is decoded before summarising', async () => {
   const result = await inspectSevenZip(sevenZipReader('sample-solid.7z'))
   assert.equal(result.kind, '7z')
   assert.match(result.summary, /3 files/u)
+})
+
+test('the 7z wasm path works from source and the bundled host', async () => {
+  const source = await sevenZipWasmPath(new URL('../src/host/inspect-tool.ts', import.meta.url))
+  const bundled = await sevenZipWasmPath(new URL('../lib/index.js', import.meta.url))
+  assert.match(source, /lib[\\/]lzma\.wasm$/u)
+  assert.equal(bundled, source, 'both layouts resolve the package asset, not a sibling node_modules/lib')
 })
 
 test('a ZIP central directory larger than the cap is refused before reading it', async () => {

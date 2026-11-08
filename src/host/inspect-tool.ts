@@ -9,7 +9,7 @@
  * Scope: workspace files, read through the same fs service the previews use. The
  * read itself is not fenced to the workspace — see docs/security-notes.md.
  */
-import { basename, extname, isAbsolute, join } from 'node:path'
+import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import { gunzipSync, inflateRawSync } from 'node:zlib'
 import type { HostFileSystem, RouteContext } from './contracts.ts'
 import { looksLikeGguf, parseGguf } from '../client/previews/gguf/parse.ts'
@@ -1388,12 +1388,40 @@ async function inspectEpub(size: number, read: Reader): Promise<InspectResult> {
 }
 /** Load lib/lzma.wasm once, for archives whose header is compressed. */
 let cachedDecoder: Promise<Decoder> | undefined
+
+/**
+ * Resolve `lib/lzma.wasm` from either the source tree or the bundled host.
+ *
+ * Source imports run from `src/host/`, where the asset is two directories up;
+ * the published host runs from `lib/index.js`, where it is one directory up.
+ * Walk parents instead of hard-coding one layout, so the packaged host does
+ * not look for `node_modules/lib/lzma.wasm` beside the package.
+ * @param from - module URL to start from, normally `import.meta.url`.
+ * @returns absolute path to the wasm asset.
+ */
+export async function sevenZipWasmPath(from: string | URL = import.meta.url): Promise<string> {
+  const { access } = await import('node:fs/promises')
+  const { fileURLToPath } = await import('node:url')
+  let directory = dirname(fileURLToPath(from))
+  for (let depth = 0; depth < 6; depth += 1) {
+    const candidate = join(directory, 'lib', 'lzma.wasm')
+    try {
+      await access(candidate)
+      return candidate
+    } catch {
+      // Try the next parent; source and bundled hosts sit at different depths.
+    }
+    const parent = dirname(directory)
+    if (parent === directory) break
+    directory = parent
+  }
+  throw new Error('lib/lzma.wasm not found')
+}
+
 async function sevenZipDecoder(): Promise<Decoder> {
   cachedDecoder ??= (async () => {
     const { readFile } = await import('node:fs/promises')
-    const { fileURLToPath } = await import('node:url')
-    const path = fileURLToPath(new URL('../../lib/lzma.wasm', import.meta.url))
-    const module = await WebAssembly.compile(await readFile(path))
+    const module = await WebAssembly.compile(await readFile(await sevenZipWasmPath()))
     const instance = await WebAssembly.instantiate(module, {})
     return instance.exports as unknown as Decoder
   })()

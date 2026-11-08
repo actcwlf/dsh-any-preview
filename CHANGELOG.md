@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-test.2 — 2026-11-08
+
+### Fixed
+
+- `preview_inspect` 在打包后的 `lib/index.js` 中按错误层级查找 `lib/lzma.wasm`，导致 7z 的
+  `ENOENT .../node_modules/lib/lzma.wasm`；现在同时兼容源码 `src/host/` 和打包后的 `lib/`，
+  7z 头部解码恢复正常。
+- 新增回归测试，覆盖源码路径和打包后 host 路径都能解析到同一个 wasm。
+
 ## 0.1.0-test.1 — 2026-11-08
 
 第一个内部测试版。重点是 CSV / log / JSONL 的大文件浏览、全文搜索和分页导航。
