@@ -1,4 +1,4 @@
-/** Whole-file log search: line results, progress, stop and 5,000-line navigation. */
+/** Whole-file log search: line results, progress, stop and cursor-paged navigation. */
 import { useEffect, useRef, useState } from 'react'
 import { compileSearch } from '../../kernel/search.ts'
 import { LOG_MATCH_LIMIT } from './search.ts'
@@ -7,14 +7,24 @@ import type { LogScanOptions, LogScanResult } from './search.ts'
 /** A scan function over a file or a delivered text. */
 export type LogScanRunner = (pattern: RegExp, options: LogScanOptions) => Promise<LogScanResult>
 
+/** Loads one page of matching lines at or after a line cursor. */
+export type LogPageRunner = (
+  pattern: RegExp,
+  cursor: number,
+  signal: AbortSignal,
+  limit: number,
+) => Promise<readonly number[]>
+
 /** Scan state for one query. */
 export interface LogScanState {
   readonly query: string
   readonly progress: number
   /** Matching lines in the whole file so far. */
   readonly matches: number
-  /** Matching lines kept for navigation, in file order. */
+  /** Matching lines kept for the current navigation page. */
   readonly lines: readonly number[]
+  /** First matching line of each page after the first. */
+  readonly pages: readonly number[]
   readonly done: boolean
   readonly aborted: boolean
 }
@@ -25,6 +35,7 @@ export interface LogScan {
   readonly count: number
   readonly index: number
   readonly activeLine: number | undefined
+  readonly loadingPage: boolean
   readonly start: () => void
   readonly stop: () => void
   readonly next: () => void
@@ -34,28 +45,43 @@ export interface LogScan {
 
 /**
  * Run one full-file scan for the current query, with line navigation.
- * @param options - runner, query and query modes.
+ * @param options - runner, page loader, query and query modes.
  * @returns scan state and navigation.
  */
 export function useLogScan(options: {
   readonly scan: LogScanRunner | undefined
+  readonly loadPage?: LogPageRunner
   readonly query: string
   readonly regex: boolean
   readonly caseSensitive: boolean
 }): LogScan {
-  const { scan, query, regex, caseSensitive } = options
+  const { scan, loadPage, query, regex, caseSensitive } = options
   const [request, setRequest] = useState<{ readonly query: string } | undefined>(undefined)
   const [state, setState] = useState<LogScanState | undefined>(undefined)
   const [active, setActive] = useState(0)
+  const [pageIndex, setPageIndex] = useState(0)
+  const [pageLines, setPageLines] = useState<readonly number[] | undefined>(undefined)
+  const [loadingPage, setLoadingPage] = useState(false)
   const controller = useRef<AbortController | null>(null)
+  const pageAbort = useRef<AbortController | null>(null)
+  const pageCache = useRef(new Map<number, readonly number[]>())
+  const patternRef = useRef<RegExp | undefined>(undefined)
+  const loaderRef = useRef(loadPage)
+  loaderRef.current = loadPage
 
   useEffect(() => {
     if (request !== undefined && request.query !== query) {
       controller.current?.abort()
       controller.current = null
+      pageAbort.current?.abort()
+      pageAbort.current = null
+      pageCache.current.clear()
       setRequest(undefined)
       setState(undefined)
       setActive(0)
+      setPageIndex(0)
+      setPageLines(undefined)
+      setLoadingPage(false)
     }
   }, [query, request])
 
@@ -63,9 +89,15 @@ export function useLogScan(options: {
     if (state !== undefined && state.query !== query) {
       controller.current?.abort()
       controller.current = null
+      pageAbort.current?.abort()
+      pageAbort.current = null
+      pageCache.current.clear()
       setRequest(undefined)
       setState(undefined)
       setActive(0)
+      setPageIndex(0)
+      setPageLines(undefined)
+      setLoadingPage(false)
     }
   }, [query, state])
 
@@ -75,18 +107,38 @@ export function useLogScan(options: {
     if (pattern === undefined) return undefined
     const abort = new AbortController()
     controller.current = abort
+    pageAbort.current?.abort()
+    pageAbort.current = null
+    pageCache.current.clear()
+    patternRef.current = pattern
     setActive(0)
-    setState({ query: request.query, progress: 0, matches: 0, lines: [], done: false, aborted: false })
+    setPageIndex(0)
+    setPageLines(undefined)
+    setLoadingPage(false)
+    setState({ query: request.query, progress: 0, matches: 0, lines: [], pages: [], done: false, aborted: false })
     void scan(pattern, {
       signal: abort.signal,
       lineLimit: LOG_MATCH_LIMIT,
       onSlice: (progress, matches, lines) => {
         if (abort.signal.aborted) return
-        setState({ query: request.query, progress, matches, lines, done: false, aborted: false })
+        setState(current => current === undefined
+          ? undefined
+          : { ...current, progress, matches, lines })
       },
     }).then((result) => {
       if (abort.signal.aborted) return
-      setState({ query: request.query, progress: 1, matches: result.matches, lines: result.lines, done: true, aborted: false })
+      pageCache.current.set(0, result.lines)
+      setPageIndex(0)
+      setPageLines(result.lines)
+      setState({
+        query: request.query,
+        progress: 1,
+        matches: result.matches,
+        lines: result.lines,
+        pages: result.pages,
+        done: true,
+        aborted: false,
+      })
     }).catch(() => {
       if (abort.signal.aborted) return
       setState(current => current === undefined
@@ -99,39 +151,107 @@ export function useLogScan(options: {
     }
   }, [request, scan, regex, caseSensitive])
 
+  const lines = pageLines ?? (state?.lines ?? [])
   const count = state?.matches ?? 0
-  const total = state?.lines.length ?? 0
-  const index = total === 0 ? -1 : Math.min(active, total - 1)
-  const activeLine = index < 0 ? undefined : state?.lines[index]
+  const pageCount = state?.pages.length !== undefined && state.pages.length > 0
+    ? Math.ceil(state.matches / LOG_MATCH_LIMIT)
+    : 1
+  const index = lines.length === 0 ? -1 : Math.min(active, lines.length - 1)
+  const activeLine = index < 0 ? undefined : lines[index]
+  const globalIndex = index < 0 ? -1 : pageIndex * LOG_MATCH_LIMIT + index
+
+  const resetPages = (): void => {
+    pageAbort.current?.abort()
+    pageAbort.current = null
+    pageCache.current.clear()
+    setPageIndex(0)
+    setPageLines(undefined)
+    setLoadingPage(false)
+  }
+
+  const load = (page: number, position: 'first' | 'last'): void => {
+    if (page < 0 || page >= pageCount || page === pageIndex || lines.length === 0) return
+    const cached = pageCache.current.get(page)
+    if (cached !== undefined) {
+      setPageIndex(page)
+      setPageLines(cached)
+      setActive(position === 'last' ? Math.max(0, cached.length - 1) : 0)
+      return
+    }
+    const loader = loaderRef.current
+    const pattern = patternRef.current
+    const cursor = state?.pages[page - 1]
+    if (loader === undefined || pattern === undefined || cursor === undefined) return
+    pageAbort.current?.abort()
+    const abort = new AbortController()
+    pageAbort.current = abort
+    setLoadingPage(true)
+    void loader(pattern, cursor, abort.signal, LOG_MATCH_LIMIT).then((next) => {
+      if (abort.signal.aborted) return
+      pageCache.current.set(page, next)
+      if (pageCache.current.size > 6) {
+        for (const key of pageCache.current.keys()) {
+          if (key !== page) pageCache.current.delete(key)
+        }
+        pageCache.current.set(0, state?.lines ?? [])
+        pageCache.current.set(page, next)
+      }
+      setPageIndex(page)
+      setPageLines(next)
+      setActive(position === 'last' ? Math.max(0, next.length - 1) : 0)
+    }).catch(() => { /* stopped, or the source went away */ })
+      .finally(() => {
+        if (!abort.signal.aborted) setLoadingPage(false)
+      })
+  }
+
+  const start = (): void => {
+    if (query === '') return
+    resetPages()
+    setRequest({ query })
+    setState(undefined)
+    setActive(0)
+  }
+  const stop = (): void => {
+    controller.current?.abort()
+    pageAbort.current?.abort()
+    pageAbort.current = null
+    setLoadingPage(false)
+    setState(current => current === undefined ? undefined : { ...current, done: true, aborted: true })
+  }
+  const next = (): void => {
+    if (lines.length === 0) return
+    if (index + 1 < lines.length) setActive(index + 1)
+    else if (pageIndex + 1 < pageCount) load(pageIndex + 1, 'first')
+    else if (pageCount > 1) load(0, 'first')
+    else setActive(0)
+  }
+  const prev = (): void => {
+    if (lines.length === 0) return
+    if (index > 0) setActive(index - 1)
+    else if (pageIndex > 0) load(pageIndex - 1, 'last')
+    else if (pageCount > 1) load(pageCount - 1, 'last')
+    else setActive(Math.max(0, lines.length - 1))
+  }
+  const clear = (): void => {
+    controller.current?.abort()
+    controller.current = null
+    resetPages()
+    setRequest(undefined)
+    setState(undefined)
+    setActive(0)
+  }
 
   return {
     state,
     count,
-    index,
+    index: globalIndex,
     activeLine,
-    start: (): void => {
-      if (query === '') return
-      setRequest({ query })
-      setState(undefined)
-      setActive(0)
-    },
-    stop: (): void => {
-      controller.current?.abort()
-      controller.current = null
-      setState(current => current === undefined ? undefined : { ...current, done: true, aborted: true })
-    },
-    next: (): void => {
-      if (total > 0) setActive((index + 1) % total)
-    },
-    prev: (): void => {
-      if (total > 0) setActive((index - 1 + total) % total)
-    },
-    clear: (): void => {
-      controller.current?.abort()
-      controller.current = null
-      setRequest(undefined)
-      setState(undefined)
-      setActive(0)
-    },
+    loadingPage,
+    start,
+    stop,
+    next,
+    prev,
+    clear,
   }
 }

@@ -56,6 +56,7 @@ export function LogBody(props: PreviewBodyProps) {
   const found = useSearch(lines, options)
   const scan = useLogScan({
     scan: source.scan,
+    loadPage: source.page,
     query: options.query,
     regex: options.regex,
     caseSensitive: options.caseSensitive,
@@ -122,11 +123,8 @@ export function LogBody(props: PreviewBodyProps) {
   const status = source.windowed
     ? scan.state?.done === true && scan.state.aborted
       ? t('log.scanStopped', { count: scan.count.toLocaleString('en-US') })
-      : scan.state?.done === true && scan.state.lines.length < scan.state.matches
-        ? t('log.scanDoneCapped', {
-          count: scan.count.toLocaleString('en-US'),
-          shown: scan.state.lines.length.toLocaleString('en-US'),
-        })
+      : scan.loadingPage
+        ? t('log.pageLoading')
         : source.complete ? undefined : t('log.indexing', { percent: String(Math.round(source.progress * 100)) })
     : source.truncated ? t('common.truncated') : undefined
 

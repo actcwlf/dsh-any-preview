@@ -865,6 +865,25 @@ test('a small log past the line budget switches to its file source', { skip: !av
   })
   await tick(400)
   assert.ok(container.querySelector('[data-row-index="20400"]'), 'the log tail is reachable from the file source')
+
+  const input = container.querySelector('input[type="search"]')
+  assert.ok(input, 'the search field is mounted')
+  const setter = Object.getOwnPropertyDescriptor(globalThis.window.HTMLInputElement.prototype, 'value').set
+  await act(async () => {
+    setter.call(input, 'line')
+    input.dispatchEvent(new globalThis.window.Event('input', { bubbles: true }))
+  })
+  await act(async () => {
+    input.dispatchEvent(new globalThis.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  })
+  assert.ok(await waitFor(() => /1\/20,500/u.test(container.textContent ?? ''), 5_000), 'the full line scan runs')
+  const previous = container.querySelector('button[title="上一个匹配"]')
+  assert.ok(previous, 'the previous button is mounted')
+  await act(async () => { previous.click() })
+  assert.ok(
+    await waitFor(() => /20500\/20,500/u.test(container.textContent ?? ''), 5_000),
+    'the last line page is loaded from its cursor',
+  )
 })
 
 test('archive rows are keyboard reachable and open a single embedded chrome', { skip: !archiveAvailable }, async (t) => {

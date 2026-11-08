@@ -16,7 +16,7 @@ import { fileSize } from '../../kernel/zip.ts'
 import { collectColumns, createJsonlConsumer, parseJsonlRecord } from './parse.ts'
 import type { JsonlRecord } from './parse.ts'
 import { parseJsonlSlice } from './rows.ts'
-import { scanJsonlText } from './search.ts'
+import { scanJsonlText, matchJsonlPage } from './search.ts'
 import type { JsonlScanRunner } from './search.ts'
 
 /** Text larger than this attempts the file-backed path. */
@@ -41,6 +41,7 @@ export interface JsonlSource {
   readonly sourceKey: string
   readonly read: (startRow: number, count: number) => Promise<WindowRead>
   readonly scan: JsonlScanRunner
+  readonly page: (pattern: RegExp, cursor: number, signal: AbortSignal, limit: number) => Promise<readonly number[]>
 }
 
 /**
@@ -169,9 +170,20 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
     const file = fileRef.current
     if (file !== null) {
       const result = await file.scanLines(pattern, { ...options, skipEmpty: true })
-      return { matches: result.matches, lines: result.lines }
+      return { matches: result.matches, lines: result.lines, pages: result.pages }
     }
     return scanJsonlText(textRef.current, pattern, options)
+  }, [])
+
+  const page = useCallback(async (
+    pattern: RegExp,
+    cursor: number,
+    signal: AbortSignal,
+    limit: number,
+  ): Promise<readonly number[]> => {
+    const file = fileRef.current
+    if (file !== null) return file.scanPageLines(pattern, { signal, cursor, limit, skipEmpty: true })
+    return matchJsonlPage(textRef.current.split(/\r?\n/u), pattern, cursor, limit)
   }, [])
 
   return {
@@ -187,5 +199,6 @@ export function useJsonlSource(props: PreviewBodyProps): JsonlSource {
     sourceKey,
     read,
     scan,
+    page,
   }
 }

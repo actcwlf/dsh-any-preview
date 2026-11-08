@@ -15,8 +15,8 @@ import { fileUrl } from '../../kernel/file-url.ts'
 import { fileSize } from '../../kernel/zip.ts'
 import { createLogConsumer } from './parse.ts'
 import { parseLogSlice } from './rows.ts'
-import { scanLogText } from './search.ts'
-import type { LogScanRunner } from './scan.ts'
+import { matchLogPage, scanLogText } from './search.ts'
+import type { LogPageRunner, LogScanRunner } from './scan.ts'
 
 /** Text larger than this attempts the file-backed path. */
 const LARGE_TEXT_CHARS = 2 * 1024 * 1024
@@ -35,6 +35,7 @@ export interface LogSource {
   readonly sourceKey: string
   readonly read: (startRow: number, count: number) => Promise<WindowRead>
   readonly scan: LogScanRunner
+  readonly page: LogPageRunner
 }
 
 /**
@@ -144,9 +145,15 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
     const file = fileRef.current
     if (file !== null) {
       const result = await file.scanLines(pattern, options)
-      return { matches: result.matches, lines: result.lines }
+      return { matches: result.matches, lines: result.lines, pages: result.pages }
     }
     return scanLogText(textRef.current, pattern, options)
+  }, [])
+
+  const page = useCallback<LogPageRunner>(async (pattern, cursor, signal, limit) => {
+    const file = fileRef.current
+    if (file !== null) return file.scanPageLines(pattern, { signal, cursor, limit })
+    return matchLogPage(textRef.current.split(/\r?\n/u), pattern, cursor, limit)
   }, [])
 
   return {
@@ -160,5 +167,6 @@ export function useLogSource(props: PreviewBodyProps): LogSource {
     sourceKey,
     read,
     scan,
+    page,
   }
 }

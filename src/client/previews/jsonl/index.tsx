@@ -70,6 +70,7 @@ export function JsonlBody(props: PreviewBodyProps) {
   const localActiveLine = activeRecord === undefined ? undefined : activeRecord.line - 1
   const scan = useLogScan({
     scan: source.scan,
+    loadPage: source.page,
     query: options.query,
     regex: options.regex,
     caseSensitive: options.caseSensitive,
@@ -120,11 +121,8 @@ export function JsonlBody(props: PreviewBodyProps) {
   const status = source.fileMode
     ? scan.state?.done === true && scan.state.aborted
       ? t('jsonl.scanStopped', { count: scan.count.toLocaleString('en-US') })
-      : scan.state?.done === true && scan.state.lines.length < scan.state.matches
-        ? t('jsonl.scanDoneCapped', {
-          count: scan.count.toLocaleString('en-US'),
-          shown: scan.state.lines.length.toLocaleString('en-US'),
-        })
+      : scan.loadingPage
+        ? t('jsonl.pageLoading')
         : source.complete ? undefined : t('jsonl.indexing', { percent: String(Math.round(source.progress * 100)) })
     : source.truncated ? t('common.truncated') : undefined
   const count = source.fileMode ? source.totalRows : source.records.length

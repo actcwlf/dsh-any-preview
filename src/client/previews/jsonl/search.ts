@@ -9,6 +9,8 @@ export interface JsonlSearchResult {
   readonly pattern: RegExp
   /** Matching 0-based line indices for navigation, in file order. */
   readonly lines: readonly number[]
+  /** First matching line of each page after the first. */
+  readonly pages: readonly number[]
   /** Total matching records. */
   readonly total: number
 }
@@ -26,15 +28,41 @@ export function matchJsonlLines(
   limit = JSONL_MATCH_LIMIT,
 ): JsonlSearchResult {
   const matches: number[] = []
+  const pages: number[] = []
   let total = 0
   for (let line = 0; line < lines.length; line += 1) {
     const raw = lines[line] ?? ''
     if (raw.trim() === '') continue
     if (forEachMatch(raw, pattern, () => {}) === 0) continue
+    if (total > 0 && total % limit === 0) pages.push(line)
     total += 1
     if (matches.length < limit) matches.push(line)
   }
-  return { pattern, lines: matches, total }
+  return { pattern, lines: matches, pages, total }
+}
+
+/**
+ * Collect one page of matching records at or after `cursor`.
+ * @param lines - raw lines.
+ * @param pattern - compiled expression.
+ * @param cursor - first line wanted (0-based).
+ * @param limit - page size.
+ * @returns matching line indices in file order.
+ */
+export function matchJsonlPage(
+  lines: readonly string[],
+  pattern: RegExp,
+  cursor: number,
+  limit: number,
+): number[] {
+  const page: number[] = []
+  for (let line = cursor; line < lines.length && page.length < limit; line += 1) {
+    const raw = lines[line] ?? ''
+    if (raw.trim() === '') continue
+    if (forEachMatch(raw, pattern, () => {}) === 0) continue
+    page.push(line)
+  }
+  return page
 }
 
 /** What a JSONL text scan may report. */
@@ -48,6 +76,7 @@ export interface JsonlScanOptions {
 export interface JsonlScanResult {
   readonly matches: number
   readonly lines: readonly number[]
+  readonly pages: readonly number[]
 }
 
 /** A scan function over a JSONL file or delivered text. */
@@ -65,8 +94,8 @@ export async function scanJsonlText(
   pattern: RegExp,
   options: JsonlScanOptions,
 ): Promise<JsonlScanResult> {
-  if (options.signal.aborted) return { matches: 0, lines: [] }
+  if (options.signal.aborted) return { matches: 0, lines: [], pages: [] }
   const result = matchJsonlLines(text.split(/\r?\n/u), pattern, options.lineLimit)
   options.onSlice(1, result.total, result.lines)
-  return { matches: result.total, lines: result.lines }
+  return { matches: result.total, lines: result.lines, pages: result.pages }
 }

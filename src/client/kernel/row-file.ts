@@ -80,6 +80,8 @@ export interface FileLineScan {
   readonly matches: number
   /** First matching lines for navigation, in file order (0-based). */
   readonly lines: readonly number[]
+  /** First matching line of each page after the first. */
+  readonly pages: readonly number[]
 }
 
 /** A file-backed row source: byte windows in, rows out. */
@@ -143,10 +145,20 @@ export interface RowFile {
   scanLines(pattern: RegExp, options: {
     readonly signal: AbortSignal
     readonly lineLimit?: number
-    /** Ignore blank lines; line-oriented JSONL skips them, log does not. */
     readonly skipEmpty?: boolean
     readonly onSlice?: (fraction: number, matches: number, lines: readonly number[]) => void
   }): Promise<FileLineScan>
+  /**
+   * Read one page of matching lines at or after `cursor`.
+   * @param pattern - compiled expression.
+   * @param options - abort signal, first line and page size.
+   */
+  scanPageLines(pattern: RegExp, options: {
+    readonly signal: AbortSignal
+    readonly cursor: number
+    readonly limit: number
+    readonly skipEmpty?: boolean
+  }): Promise<readonly number[]>
   /** Forget everything read so far. */
   dispose(): void
 }
@@ -454,6 +466,7 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
     }): Promise<FileLineScan> {
       const limit = options.lineLimit ?? Number.POSITIVE_INFINITY
       const lines: number[] = []
+      const pages: number[] = []
       let matches = 0
       let scanned = 0
       let line = 0
@@ -477,6 +490,9 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
           if (matched) {
             const raw = cells[0] ?? ''
             if (options.skipEmpty === true && raw.trim() === '') continue
+            if (matches > 0 && Number.isFinite(limit) && matches % limit === 0) {
+              pages.push(line + rowOffset)
+            }
             matches += 1
             if (lines.length < limit) lines.push(line + rowOffset)
           }
@@ -488,7 +504,46 @@ export async function openRowFile(path: string, options: RowFileOptions, signal:
         if (slice.eof) break
         await new Promise(resolve => { setTimeout(resolve, 0) })
       }
-      return { matches, lines }
+      return { matches, lines, pages }
+    },
+    async scanPageLines(pattern: RegExp, options: {
+      readonly signal: AbortSignal
+      readonly cursor: number
+      readonly limit: number
+      readonly skipEmpty?: boolean
+    }): Promise<readonly number[]> {
+      const anchor = options.cursor > 0 ? anchorBefore(options.cursor) : undefined
+      let line = anchor?.row ?? 0
+      let offset = anchor?.byte ?? 0
+      const page: number[] = []
+      while (offset < size && page.length < options.limit) {
+        if (options.signal.aborted === true) break
+        const slice = await fetchSlice(url, offset, SLICE_BYTES, true, options.signal)
+        if (slice.text.length === 0 || slice.end <= slice.start) break
+        const parsed = parse(slice.text)
+        for (let rowOffset = 0; rowOffset < parsed.rows.length; rowOffset += 1) {
+          const current = line + rowOffset
+          if (current < options.cursor) continue
+          const cells = parsed.rows[rowOffset] ?? []
+          const raw = cells[0] ?? ''
+          if (options.skipEmpty === true && raw.trim() === '') continue
+          let matched = false
+          for (const cell of cells) {
+            if (forEachMatch(cell, pattern, () => {}) > 0) {
+              matched = true
+              break
+            }
+          }
+          if (!matched) continue
+          page.push(current)
+          if (page.length >= options.limit) break
+        }
+        if (page.length >= options.limit || slice.eof) break
+        line += parsed.rows.length
+        offset = slice.end
+        await new Promise(resolve => { setTimeout(resolve, 0) })
+      }
+      return page
     },
     dispose(): void {
       disposed = true
