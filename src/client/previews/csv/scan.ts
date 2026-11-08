@@ -4,18 +4,14 @@
  *
  * Typing only searches the rows already in memory (that is the caller's own search); this
  * hook owns the expensive run and the navigation that takes over once it has occurrences.
- * The first page is kept for navigation; later pages are loaded from cursors captured by
- * the scan, so the 5,000 cap is a page size rather than a navigable limit.
+ * Page navigation itself is shared with log/JSONL through {@link usePagedResults}.
  */
-import { useEffect, useReducer, useRef, useState } from 'react'
-import type { SearchOccurrence } from '../../kernel/search.ts'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import { SEARCH_PAGE_SIZE } from '../../kernel/search.ts'
-import { trimPageCache } from '../../kernel/page-cache.ts'
+import type { SearchOccurrence } from '../../kernel/search.ts'
+import { usePagedResults } from '../../kernel/usePagedResults.ts'
 import { NO_OCCURRENCES, scanState as scanReducer } from './state.ts'
 import type { ScanState } from './state.ts'
-
-/** Occurrences kept per navigation page; the total count stays whole. */
-const SCAN_PAGE_SIZE = SEARCH_PAGE_SIZE
 
 /** One request for a whole-file search: what to look for. */
 export interface ScanRequest {
@@ -108,15 +104,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
   const { scan, loadPage, query, regex, caseSensitive, revision, sourceKey, fallback } = options
   const [request, setRequest] = useState<ScanRequest | undefined>(undefined)
   const [state, dispatchScan] = useReducer(scanReducer, undefined)
-  const [index, setIndex] = useState(0)
-  const [pageIndex, setPageIndex] = useState(0)
-  const [pageOccurrences, setPageOccurrences] = useState<readonly SearchOccurrence[] | undefined>(undefined)
-  const [loadingPage, setLoadingPage] = useState(false)
-  const [pageError, setPageError] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
-  const pageAbortRef = useRef<AbortController | null>(null)
-  const loadingRef = useRef(false)
-  const pageCache = useRef(new Map<number, readonly SearchOccurrence[]>())
   const patternRef = useRef<RegExp | undefined>(undefined)
   const runnerRef = useRef(scan)
   const loaderRef = useRef(loadPage)
@@ -136,15 +124,7 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     }
     const controller = new AbortController()
     abortRef.current = controller
-    pageAbortRef.current?.abort()
-    pageAbortRef.current = null
-    pageCache.current.clear()
     patternRef.current = pattern
-    setPageIndex(0)
-    setPageOccurrences(undefined)
-    setLoadingPage(false)
-    setPageError(false)
-    setIndex(0)
     dispatchScan({ type: 'start', query: request.query })
     const report = (progress: number, matches: number, occurrences: readonly SearchOccurrence[]): void => {
       dispatchScan({ type: 'slice', progress, matches, occurrences })
@@ -153,13 +133,10 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
       signal: controller.signal,
       // File order: line 1 is body row 0; the header is skipped by the scanner.
       from: 1,
-      lineLimit: SCAN_PAGE_SIZE,
+      lineLimit: SEARCH_PAGE_SIZE,
       onSlice: report,
     }).then((result) => {
       if (controller.signal.aborted) return
-      pageCache.current.set(0, result.occurrences)
-      setPageIndex(0)
-      setPageOccurrences(result.occurrences)
       dispatchScan({
         type: 'done',
         matches: result.matches,
@@ -175,108 +152,51 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     if (request === undefined) return
     if (request.query !== query.trim()) {
       setRequest(undefined)
-      pageAbortRef.current?.abort()
-      pageAbortRef.current = null
-      pageCache.current.clear()
-      setPageIndex(0)
-      setPageOccurrences(undefined)
-      setLoadingPage(false)
-      setPageError(false)
       dispatchScan({ type: 'clear' })
     }
   }, [query, request])
 
-  const occurrences = pageOccurrences ?? (state === undefined ? NO_OCCURRENCES : state.occurrences)
-  const navigating = occurrences.length > 0
-  const activeIndex = navigating ? Math.min(index, occurrences.length - 1) : fallback.index
-  const activeOccurrence = navigating ? occurrences[activeIndex] : fallback.activeOccurrence
-  const activeRow = activeOccurrence?.row ?? fallback.activeRow
-  const canPage = loadPage !== undefined && state?.done === true && state.aborted !== true && state.pages.length > 0
-  const pageCount = canPage ? Math.ceil(state.matches / SCAN_PAGE_SIZE) : 1
-
-  const resetPages = (): void => {
-    pageAbortRef.current?.abort()
-    pageAbortRef.current = null
-    pageCache.current.clear()
-    loadingRef.current = false
-    setPageIndex(0)
-    setPageOccurrences(undefined)
-    setLoadingPage(false)
-    setPageError(false)
-  }
-
-  const load = (page: number, position: 'first' | 'last'): void => {
-    if (loadingRef.current || !navigating || page < 0 || page >= pageCount || page === pageIndex) return
-    const cached = pageCache.current.get(page)
-    if (cached !== undefined) {
-      setPageIndex(page)
-      setPageOccurrences(cached)
-      setIndex(position === 'last' ? Math.max(0, cached.length - 1) : 0)
-      return
-    }
+  const pageLoader = useCallback((cursor: SearchOccurrence, signal: AbortSignal, limit: number) => {
     const loader = loaderRef.current
     const pattern = patternRef.current
-    const cursor = state?.pages[page - 1]
-    if (loader === undefined || pattern === undefined || cursor === undefined) return
-    pageAbortRef.current?.abort()
-    const controller = new AbortController()
-    pageAbortRef.current = controller
-    loadingRef.current = true
-    setPageError(false)
-    setLoadingPage(true)
-    void loader(pattern, cursor, controller.signal, SCAN_PAGE_SIZE).then((next) => {
-      if (controller.signal.aborted) return
-      pageCache.current.set(page, next)
-      trimPageCache(pageCache.current, page)
-      setPageIndex(page)
-      setPageOccurrences(next)
-      setIndex(position === 'last' ? Math.max(0, next.length - 1) : 0)
-    }).catch(() => {
-      if (!controller.signal.aborted) setPageError(true)
-    })
-      .finally(() => {
-        loadingRef.current = false
-        if (!controller.signal.aborted) setLoadingPage(false)
-      })
-  }
+    if (loader === undefined || pattern === undefined) return Promise.resolve<readonly SearchOccurrence[]>([])
+    return loader(pattern, cursor, signal, limit)
+  }, [])
+  const pager = usePagedResults<SearchOccurrence, SearchOccurrence>({
+    total: state?.matches ?? 0,
+    pageSize: SEARCH_PAGE_SIZE,
+    pageStarts: state?.pages ?? [],
+    initial: state?.occurrences ?? NO_OCCURRENCES,
+    resetKey: `${sourceKey}:${String(revision)}:${state?.query ?? ''}`,
+    enabled: state !== undefined,
+    loadPage: pageLoader,
+  })
+
+  const occurrences = pager.items
+  const navigating = occurrences.length > 0
+  const activeOccurrence = navigating ? pager.active : fallback.activeOccurrence
+  const activeRow = activeOccurrence?.row ?? fallback.activeRow
 
   const start = (): void => {
     const text = query.trim()
     if (text === '') return
-    resetPages()
+    pager.cancel()
     dispatchScan({ type: 'clear' })
     // A fresh request object, so asking again with the same query restarts the scan.
     setRequest({ query: text })
   }
   const stop = (): void => {
     abortRef.current?.abort()
-    pageAbortRef.current?.abort()
-    pageAbortRef.current = null
-    loadingRef.current = false
-    setLoadingPage(false)
+    pager.cancel()
     dispatchScan({ type: 'stop' })
   }
   const next = (): void => {
-    if (loadingRef.current) return
-    if (!navigating) {
-      fallback.next()
-      return
-    }
-    if (activeIndex + 1 < occurrences.length) setIndex(activeIndex + 1)
-    else if (pageIndex + 1 < pageCount) load(pageIndex + 1, 'first')
-    else if (pageCount > 1) load(0, 'first')
-    else setIndex(0)
+    if (navigating) pager.next()
+    else fallback.next()
   }
   const prev = (): void => {
-    if (loadingRef.current) return
-    if (!navigating) {
-      fallback.prev()
-      return
-    }
-    if (activeIndex > 0) setIndex(activeIndex - 1)
-    else if (pageIndex > 0) load(pageIndex - 1, 'last')
-    else if (pageCount > 1) load(pageCount - 1, 'last')
-    else setIndex(Math.max(0, occurrences.length - 1))
+    if (navigating) pager.prev()
+    else fallback.prev()
   }
   const commit = (): void => {
     if (navigating) next()
@@ -287,10 +207,10 @@ export function useWholeFileScan(options: WholeFileScanOptions): WholeFileScan {
     state,
     activeOccurrence,
     activeRow,
-    index: navigating ? pageIndex * SCAN_PAGE_SIZE + activeIndex : fallback.index,
+    index: navigating ? pager.index : fallback.index,
     count: navigating ? (state?.matches ?? occurrences.length) : fallback.count,
-    loadingPage,
-    pageError,
+    loadingPage: pager.loading,
+    pageError: pager.error,
     next,
     prev,
     start,
