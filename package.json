@@ -5,6 +5,11 @@
   "type": "module",
   "private": true,
   "main": "lib/index.js",
+  "packageManager": "pnpm@11.28.5",
+  "engines": {
+    "node": ">=20.9.0",
+    "pnpm": ">=11"
+  },
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",

@@ -15,3 +15,9 @@ samples/
 tmp-wasm/
 tmp-emcc/
 .emsdk-config
+
+# pnpm is the only package manager
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+.pnpm-store/

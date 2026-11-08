@@ -9,7 +9,7 @@
 | 所有上限集中一处 | [`src/shared/limits.ts`](src/shared/limits.ts) | 13 个文件里的 15 个常量统一为命名限额，改一处即可调整 |
 | 构建产物压缩 + 带 sourcemap | `tsdown.config.ts` | 堆栈能映射回源码行；`lib/*.js.map` 只用于本地调试 |
 | 启动时做契约自检 | `src/client/contracts.ts`、`src/host/self-check.ts` | 上游改名时打印一行诊断，而不是静默地什么都不渲染 |
-| 类型检查 | `npm run typecheck` | `strict` + `noUncheckedIndexedAccess`；依赖类型本机缺失，用 `externals.d.ts` 声明 |
+| 类型检查 | `pnpm typecheck` | `strict` + `noUncheckedIndexedAccess`；依赖类型本机缺失，用 `externals.d.ts` 声明 |
 
 ## 结构
 
@@ -416,13 +416,13 @@ clip 同时播放时按轨道名去重，默认只叠加互不冲突的 clip，�
 `tsdown` 是 devDependency；安装依赖后一次构建即可：
 
 ```sh
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
 
 `sync-decoders.mjs` 把 three 自带的 Draco（glTF 构建）与 Basis 转码器从
 `node_modules/three/examples/jsm/libs/` 拷到 `lib/`，名字与 `ASSET_MIME` 对应；
-`npm run build` 会依次执行这两步。
+`pnpm build` 会依次执行这两步。
 
 产物：
 
@@ -436,7 +436,7 @@ npm run build
 ## 测试
 
 ```sh
-npm test
+pnpm test
 ```
 
 - `test/pipeline.test.mjs`：在所有可能的切分点上比对「分块解析」与「整串解析」，

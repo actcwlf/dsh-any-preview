@@ -1,0 +1,6 @@
+packages:
+  - '.'
+
+storeDir: .pnpm-store
+engineStrict: true
+autoInstallPeers: true

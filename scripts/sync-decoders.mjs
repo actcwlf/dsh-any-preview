@@ -8,7 +8,7 @@
  * time keeps the repository free of ~836 KB of third-party binaries while the
  * installed plugin still has everything it needs.
  *
- * Run after the tsdown build; `npm run build` does both.
+ * Run after the tsdown build; `pnpm build` does both.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { createHash } from 'node:crypto'
