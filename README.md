@@ -27,13 +27,13 @@ Play video in the sidebar and scrub to the part you need.
 
 ![Archive preview](./assets/archive_1920_12fps.gif)
 
-Browse archive entries and open a member directly, without extracting the whole archive to a temporary directory first.
+Browse archive entries and open a member directly.
 
 ### Large files
 
 ![CSV preview](./assets/csv_1920.gif)
 
-Open large tables and logs without loading the whole file. Search, locate, and page through results in the sidebar.
+Quickly preview large tables and logs; search, locate, and page through them in the sidebar.
 
 ### 3D models
 

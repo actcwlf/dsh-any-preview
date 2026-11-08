@@ -9,6 +9,10 @@ A file preview plugin for the DSH (DeepSeek Harness) sidebar. Open common file t
 
 Current beta version: `0.1.0-beta.1`
 
+[![npm beta](https://img.shields.io/npm/v/dsh-any-preview/beta?style=flat-square&label=npm%20beta)](https://www.npmjs.com/package/dsh-any-preview)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](https://github.com/actcwlf/dsh-any-preview/blob/master/LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D20.9-339933?style=flat-square)](https://github.com/actcwlf/dsh-any-preview/blob/master/package.json)
+
 For screenshots and the full README, see the [GitHub repository](https://github.com/actcwlf/dsh-any-preview).
 
 ## Install / uninstall
