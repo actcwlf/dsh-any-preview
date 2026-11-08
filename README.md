@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A file preview plugin for the DSH sidebar: open the formats DSH does not cover, and handle the large text files it does not handle well. Stay in the current task instead of switching apps just to look at a file.
+A file preview plugin for the DSH sidebar. It opens the formats DSH does not cover and handles the large text files it does not handle well. Stay in the current task instead of switching apps just to look at a file.
 
 Current beta version: `0.1.0-beta.1`
 
