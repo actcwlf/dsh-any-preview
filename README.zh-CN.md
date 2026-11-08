@@ -1,9 +1,9 @@
-<table align="center">
-  <tr>
-    <td><img src="./assets/logo.png" width="96" height="96" alt="dsh-any-preview logo"></td>
-    <td><h1>dsh-any-preview</h1></td>
-  </tr>
-</table>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/lockup-dark.png">
+    <img src="./assets/lockup-light.png" width="360" alt="dsh-any-preview">
+  </picture>
+</p>
 
 [English](README.md) | 简体中文
 
