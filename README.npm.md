@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/actcwlf/dsh-any-preview/dev/assets/logo.png" width="80" height="80" alt="dsh-any-preview logo">
+</p>
+
 # dsh-any-preview
 
 A file preview plugin for the DSH (DeepSeek Harness) sidebar. Open common file types and large text files without leaving the current task.

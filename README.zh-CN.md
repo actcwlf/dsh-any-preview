@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="./assets/logo.png" width="96" height="96" alt="dsh-any-preview logo">
+</p>
+
 # dsh-any-preview
 
 [English](README.md) | 简体中文
+
+[![npm beta](https://img.shields.io/npm/v/dsh-any-preview/beta?style=flat-square&label=npm%20beta)](https://www.npmjs.com/package/dsh-any-preview)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D20.9-339933?style=flat-square)](./package.json)
 
 dsh-any-preview 为 DSH 侧栏带来更完整的文件预览体验。文本、音视频、3D 模型、压缩包等文件，都能在这里直接打开。少一次界面切换，多一分专注，让工作顺着心流继续。
 

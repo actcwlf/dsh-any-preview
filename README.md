@@ -1,6 +1,14 @@
+<p align="center">
+  <img src="./assets/logo.png" width="96" height="96" alt="dsh-any-preview logo">
+</p>
+
 # dsh-any-preview
 
 [English](README.md) | [简体中文](README.zh-CN.md)
+
+[![npm beta](https://img.shields.io/npm/v/dsh-any-preview/beta?style=flat-square&label=npm%20beta)](https://www.npmjs.com/package/dsh-any-preview)
+[![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D20.9-339933?style=flat-square)](./package.json)
 
 A file preview plugin for the DSH sidebar. It opens the formats DSH does not cover and handles the large text files it does not handle well. Stay in the current task instead of switching apps just to look at a file.
 
