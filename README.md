@@ -61,7 +61,13 @@ dsh-any-preview@beta
 
 ![Install step 2](./assets/installation2.jpg)
 
-To uninstall, open the plugin from the same screen and use the uninstall button on its page.
+Or install into the DSH Web profile from the command line:
+
+```sh
+dsh plugin --profile web add dsh-any-preview@beta
+```
+
+To uninstall, open the plugin from the same screen and use the uninstall button on its page. Restart DSH after installing or removing the plugin.
 
 ## Supported formats
 

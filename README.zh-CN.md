@@ -58,7 +58,13 @@ dsh-any-preview 为 DSH 侧栏带来更完整的文件预览体验。文本、�
 
 ![安装](./assets/installation2.jpg)
 
-如需卸载插件，在同样的界面点击插件，进入页面后可以看到卸载按钮
+也可以通过命令行安装到 Web profile：
+
+```sh
+dsh plugin --profile web add dsh-any-preview@beta
+```
+
+如需卸载插件，在同样的界面点击插件，进入页面后可以看到卸载按钮。安装或卸载后，请重新启动 DSH。
 
 
 
